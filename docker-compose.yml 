@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  dockermate:
+    build: .
+    image: dockermate:latest
+    container_name: dockermate
+    restart: unless-stopped
+    
+    ports:
+      - "5000:5000"  # HTTPS (HTTP redirects to HTTPS)
+    
+    volumes:
+      # Docker socket (read-only for security)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+      # Persistent data
+      - ./data:/app/data              # Database, SSL certs, configs
+      - ./stacks:/app/stacks           # Compose files
+      - ./exports:/app/exports         # Configuration exports
+    
+    environment:
+      # Timezone
+      - TZ=UTC
+      
+      # Initial setup (optional - wizard prompts if not set)
+      # WARNING: Remove after first setup for security
+      # - DOCKERMATE_INITIAL_PASSWORD=YourSecurePassword123
+      
+      # Emergency password reset (use once, then remove)
+      # - DOCKERMATE_RESET_PASSWORD=true
+      
+      # HTTPS mode
+      - DOCKERMATE_SSL_MODE=self-signed  # or 'letsencrypt' or 'custom'
+      
+      # Let's Encrypt (if using)
+      # Requires public domain and ports 80/443 accessible
+      # - DOCKERMATE_DOMAIN=dockermate.home.example.com
+      # - DOCKERMATE_EMAIL=admin@example.com
+      
+      # Session settings
+      - DOCKERMATE_SESSION_EXPIRY=8h     # Default session expiry
+      - DOCKERMATE_REMEMBER_ME_EXPIRY=7d # Remember me duration
+      
+      # Hardware profile (optional - auto-detected if not set)
+      # Options: RASPBERRY_PI, LOW_END, MEDIUM_SERVER, HIGH_END, ENTERPRISE
+      # - DOCKERMATE_HARDWARE_PROFILE=MEDIUM_SERVER
+      
+      # Host environment (optional - wizard asks if not set)
+      # Options: DEV, UAT, PRD, SANDBOX, MIXED
+      # - DOCKERMATE_HOST_ENVIRONMENT=DEV
+      
+      # Update check interval (per hardware profile if not set)
+      # - DOCKERMATE_UPDATE_CHECK_INTERVAL=6h
+      
+      # Health check interval (per hardware profile if not set)
+      # - DOCKERMATE_HEALTH_CHECK_INTERVAL=5m
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    labels:
+      - "com.dockermate.managed=false"  # Don't manage itself
+      - "com.dockermate.description=DockerMate Docker Management Interface"

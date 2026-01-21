@@ -1,0 +1,48 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+venv/
+env/
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development
+.vscode/
+.idea/
+*.swp
+
+# Data directories (mount volumes instead)
+data/
+stacks/
+exports/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
