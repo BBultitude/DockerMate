@@ -1167,17 +1167,113 @@ Step 4: Review & Complete
 ### 15.3 Authentication System
 
 #### **Password Requirements:**
-- Minimum 12 characters
-- Uppercase letter
-- Lowercase letter
-- Number
-- Special character (recommended)
+
+DockerMate enforces modern password best practices aligned with SSH.com and NIST 2024 guidelines:
+
+**Core Requirements:**
+- **Minimum 12 characters** (industry standard for 2024+)
+- **Required:** Uppercase letter (A-Z), lowercase letter (a-z), and digit (0-9)
+- **Recommended:** Special characters for additional strength (but not required)
+
+**Smart Weak Password Detection:**
+DockerMate uses regex pattern matching to reject common weak passwords in any position:
+
+**Rejected Patterns:**
+- Base weak words with only numbers/symbols: `password123`, `123password`, `admin!@#`, `!!!admin2024!!!`
+- Common keyboard patterns: `qwerty123`, `12345678`
+- Repeated characters: `aaaa1111`, `pass1111`
+
+**Accepted Passwords:**
+- Complex compounds: `MySecurePassword2024`, `DockerMatePass!`
+- Passphrases: `CorrectHorseBattery42`, `coffee-laptop-docker-2026`
+- Mixed complexity: `HomeLabSecure2026!`
+
+**Design Philosophy:**
+Modern research (including retraction by original password complexity author Bill Burr) shows:
+- **Length matters more than complexity** - A 16-character simple password is stronger than an 8-character complex one
+- **Forced complexity creates predictable patterns** - Users just add `!` or `1` to the end
+- **Passphrases are stronger and more memorable** - `correct-horse-battery-staple` vs `P@ssw0rd!`
+
+DockerMate balances security with usability:
+- Strong enough to prevent basic attacks (12 chars, mixed case, digits)
+- Flexible enough to allow passphrases and natural patterns
+- Smart enough to catch actual weak passwords regardless of position
+- Not overly complex (no forced symbols, allows simple long passwords)
+
+**References:**
+- SSH.com Password Strength Best Practices (12-14 character minimum)
+- NIST SP 800-63B Digital Identity Guidelines (length is primary factor)
+- Wikipedia Password Strength article (2024 - complexity rules debunked)
 
 #### **Password Hashing:**
 ```python
 # bcrypt with work factor 12
 password_hash = bcrypt.hashpw(password, bcrypt.gensalt(12))
 ```
+
+**Password Strength Validation:**
+
+DockerMate implements comprehensive password validation that goes beyond simple character requirements:
+
+**Validation Logic:**
+```python
+# 1. Length check (minimum 12 characters)
+if len(password) < 12:
+    reject()
+
+# 2. Character requirements (uppercase, lowercase, digit)
+if not has_upper or not has_lower or not has_digit:
+    reject()
+
+# 3. Weak pattern detection (regex-based)
+# Catches: password123, 123password, admin!, qwerty456, etc.
+weak_pattern = r'^[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*(password|admin|welcome|letmein|qwerty|monkey|dragon|master|login|user)[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*$'
+
+if re.match(weak_pattern, password.lower()):
+    reject("Don't use common words with just numbers/symbols")
+
+# 4. Sequential pattern detection
+if re.search(r'(12345|qwerty|abcde)', password.lower()):
+    reject("Avoid sequential patterns")
+
+# 5. Repeated character detection
+if re.search(r'(.)\1{3,}', password):
+    reject("Avoid repeated characters")
+```
+
+**Why This Approach:**
+
+Traditional password complexity rules (enforced uppercase, lowercase, number, symbol) have been **debunked by research**:
+- Original author Bill Burr apologized in 2017 for creating these rules
+- Research shows they lead to predictable patterns: `Password1!`, `Welcome123!`
+- Users just add minimum required characters, making passwords weaker
+- US and UK cybersecurity departments now advise against forced complexity
+
+**Modern Best Practice (What DockerMate Uses):**
+- **Length is king** - Long passwords are exponentially harder to crack
+- **Simplicity is fine** - `MyLongPasswordForDockerMate` is stronger than `P@ssw0rd!`
+- **Passphrases encouraged** - `correct-horse-battery-staple` is memorable and strong
+- **Detect actual weak patterns** - Reject `password123` in any form, not just the word "password"
+
+**Examples:**
+
+| Password | Result | Reason |
+|----------|--------|--------|
+| `weak` | ❌ Rejected | Too short (< 12 chars) |
+| `password123` | ❌ Rejected | Common weak pattern |
+| `123password` | ❌ Rejected | Reversed weak pattern (caught!) |
+| `admin!@#456` | ❌ Rejected | Weak base word + symbols |
+| `qwerty123456` | ❌ Rejected | Keyboard pattern |
+| `aaaa1111` | ❌ Rejected | Repeated characters |
+| `MyPassword` | ❌ Rejected | Too short (11 chars) |
+| `MySecurePass2024` | ✅ Accepted | Long, mixed case, digit |
+| `CorrectHorseBattery42` | ✅ Accepted | Passphrase style |
+| `DockerMate2026!` | ✅ Accepted | Complex, special char |
+| `MyLongPasswordForDockerInHomeLab` | ✅ Accepted | Length + complexity |
+
+**Security Note:**
+Even with strong password requirements, the Docker socket access is the primary security concern.
+Network isolation and proper firewall rules are more important than password complexity for home lab deployments.
 
 #### **Session Management:**
 - Session tokens: 256-bit cryptographically secure
@@ -1254,10 +1350,35 @@ For corporate/advanced home labs
 - Never expose to public internet
 
 **Password Security:**
-- Use strong, unique password
-- Store in password manager
-- Change periodically
+
+**Password Creation:**
+- Use strong, unique password (12+ characters)
+- Passphrases are encouraged: `correct-horse-battery-staple`
+- Password managers recommended for generation and storage
+- Avoid common patterns even if they meet length requirements
+
+**Password Management:**
+- Store in password manager (recommended)
+- Change periodically (every 90 days for production environments)
 - Never reuse from other services
+- Consider using temporary password feature for initial setup
+
+**What Makes a Strong Password for DockerMate:**
+- ✅ Length (12+ characters, 16+ is better)
+- ✅ Mixed case and digits
+- ✅ Unique to DockerMate
+- ✅ Memorable but not predictable
+- ❌ Not a dictionary word + numbers (`password123`, `admin2024`)
+- ❌ Not a keyboard pattern (`qwerty`, `12345`)
+- ❌ Not personal information (birthdate, name, etc.)
+
+**Examples:**
+- Good: `MyDockerLabPassword2026`, `CorrectHorseBattery42`, `HomeServerSecure!`
+- Bad: `password123`, `admin`, `docker`, `Welcome2026`
+
+**Remember:**
+Strong passwords are important, but they're just one layer of security.
+Network isolation, firewall rules, and not exposing DockerMate to the public internet are equally critical.
 
 **HTTPS:**
 - Always use HTTPS (self-signed OK)

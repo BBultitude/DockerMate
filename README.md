@@ -1,65 +1,40 @@
-# 🐳 DockerMate
+# DockerMate
 
-**Intelligent Docker Management for Home Labs**
+**Docker Management for Home Labs**
 
-DockerMate is a lightweight, user-friendly web interface for managing Docker containers, designed specifically for home lab enthusiasts and self-hosters. It grows with you from beginner to advanced user while respecting your hardware limitations.
+A lightweight, intelligent Docker management tool designed specifically for home lab environments and self-hosters.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com/)
 
 ---
 
-## ⚡ Key Features
+## 🎯 Project Overview
 
-### 🔄 Automatic Updates
-- **Auto-detect updates** for all your containers
-- **One-click update all** with automatic rollback on failure
-- **Safe redeploy** with health verification
-- Environment-based safety (skip production containers in bulk updates)
+DockerMate is a **home lab focused** Docker management tool designed for:
+- Single-user home lab environments (5-50 containers)
+- Self-hosters running personal services
+- Learning developers who want to understand Docker
+- Resource-constrained hardware (Raspberry Pi to home servers)
 
-### 🌐 Intelligent Networking (IPAM)
-- **Hardware-aware network sizing** - never create oversized networks
-- **Smart IP allocation** with visual IP maps
-- **IP reservations** with labels and color coding
-- **Multi-IP container support** for VLAN separation
-- Auto-generated network documentation
+**Explicitly NOT for:**
+- Enterprise deployments with compliance requirements
+- Multi-user/multi-tenant scenarios
+- Cloud-based services requiring external dependencies
+- Large-scale operations (100+ containers, multiple hosts)
 
-### 📊 Smart Resource Management
-- **Hardware detection** - Raspberry Pi to Enterprise servers
-- **Container limits** based on your hardware
-- **Performance warnings** for oversized networks
-- Adaptive monitoring intervals
+---
 
-### 🏥 Health Monitoring
-- **Automatic health checks** (lightweight, scheduled)
-- **Manual log analysis** (on-demand, detailed)
-- Error pattern detection
-- Health history tracking
+## ✨ Key Features
 
-### 📦 Export & Backup
-- Export as **Docker run scripts**, **Compose files**, or **JSON**
-- **Complete documentation** generated automatically
-- Bulk export by environment (PRD/UAT/DEV)
-- Volume backup commands included
-
-### 🎓 Educational CLI Display
-- See **CLI equivalent** for every action
-- Three modes: Simple, Intermediate, Advanced
-- Learn Docker while using the GUI
-- Copy-paste ready commands
-
-### 🔒 Simple Security
-- Password-protected access (single-user)
-- **HTTPS by default** (self-signed or Let's Encrypt)
-- Session management with remember-me
-- No enterprise bloat (LDAP/SAML/etc)
-
-### 🎯 Environment Tags
-- Tag containers as **PRD** / **UAT** / **DEV** / **SANDBOX**
-- Environment-based safety features
-- Host-level or per-container tagging
-- Custom environments supported
+- **🔄 Auto Update Detection** - Automatically detect when container images have updates available
+- **🚀 One-Click Updates** - Update all containers with a single click (with safety confirmations)
+- **🌐 Smart Network IPAM** - Hardware-aware IP address management with reservation system
+- **🏷️ Environment Tags** - Organize containers by environment (PRD/UAT/DEV/SANDBOX)
+- **📚 Educational CLI Display** - See the Docker CLI equivalent for every action (3 modes)
+- **💚 Health Monitoring** - Automatic health checks with on-demand log analysis
+- **📦 Export System** - Export container configurations in multiple formats
+- **🔧 Hardware-Aware** - Automatically adjusts features based on available resources
 
 ---
 
@@ -68,363 +43,277 @@ DockerMate is a lightweight, user-friendly web interface for managing Docker con
 ### Prerequisites
 
 - Docker 20.10+
-- Docker Compose 2.0+
-- x86_64, ARM64, or ARMv7 architecture
-- 512MB RAM minimum (2GB+ recommended)
+- Docker Compose 2.0+ (optional, for easy deployment)
+- Python 3.11+ (for local development)
 
 ### Installation
 
 #### Option 1: Docker Compose (Recommended)
 
 ```bash
-# Clone repository
+# Clone the repository
 git clone https://github.com/BBultitude/DockerMate.git
 cd DockerMate
 
-# Create data directories
-mkdir -p data stacks exports
-
 # Start DockerMate
-docker compose up -d
+docker-compose up -d
 
-# View logs
-docker compose logs -f
+# Access at https://localhost:5000
+# (Accept self-signed certificate warning)
 ```
 
 #### Option 2: Docker Run
 
 ```bash
-# Clone repository
+docker run -d \
+  --name dockermate \
+  -p 5000:5000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v ./data:/app/data \
+  dockermate/dockermate:latest
+```
+
+#### Option 3: Local Development
+
+```bash
+# Clone the repository
 git clone https://github.com/BBultitude/DockerMate.git
 cd DockerMate
 
-# Build image
-docker build -t dockermate:latest .
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Run container
-docker run -d \
-  --name dockermate \
-  --restart unless-stopped \
-  -p 5000:5000 \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  -v ./data:/app/data \
-  -v ./stacks:/app/stacks \
-  -v ./exports:/app/exports \
-  dockermate:latest
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python3 app.py
 ```
 
-### First-Time Setup
+---
 
-1. **Access DockerMate**: Navigate to `https://your-server-ip:5000`
-2. **Accept Certificate Warning**: Click "Advanced" → "Proceed" (self-signed cert)
-3. **Complete Setup Wizard**:
-   - Create strong password
-   - Choose HTTPS method (self-signed recommended for home labs)
-   - Review hardware detection
-   - Finish setup
+## 🔐 Password Requirements
 
-4. **Login**: Use your password to access DockerMate
+When setting up DockerMate for the first time, you'll create an admin password.
+
+### Requirements
+
+DockerMate enforces modern password security best practices:
+
+- **Minimum 12 characters** (industry standard for 2024+)
+- **Required:** Uppercase letter, lowercase letter, and digit
+- **Recommended:** Special characters for extra strength
+- **Blocked:** Common weak patterns in any position
+
+### What Makes a Good Password?
+
+**✅ Good Examples:**
+```
+MyDockerLabPass2026
+CorrectHorseBattery42
+SecureHomeLab!2026
+DockerMatePassword2026
+HomeServerSecure!
+```
+
+**❌ Avoid These (Will Be Rejected):**
+```
+password123     ← Common pattern (rejected)
+123password     ← Reversed pattern (rejected)
+admin2024       ← Too predictable (rejected)
+docker          ← Too short (rejected)
+Welcome123!     ← Common pattern (rejected)
+qwerty123       ← Keyboard pattern (rejected)
+```
+
+### Why These Requirements?
+
+DockerMate follows modern password security research:
+
+- **SSH.com recommendation**: 12-14 character minimum
+- **NIST 2024 guidelines**: Length is the primary security factor
+- **Industry consensus**: Complexity requirements create predictable patterns
+
+Our smart validation detects weak passwords in any form:
+- Catches `password123`, `123password`, and `!!!password!!!`
+- Allows strong passphrases like `CorrectHorseBattery42`
+- Encourages length over forced complexity
+- Rejects common patterns even with symbol padding
+
+### Password Tips
+
+1. **Use a password manager** to generate and store strong passwords
+2. **Passphrases are great**: `correct-horse-battery-staple` is strong and memorable
+3. **Length matters most**: A 16-character simple password beats an 8-character complex one
+4. **Make it unique**: Don't reuse passwords from other services
+5. **Write it down**: If you keep it secure (safe, locked drawer), writing passwords down is safer than reusing weak ones
+
+### Password Reset
+
+If you forget your password, you can reset it using one of these methods:
+
+**Method 1: Docker CLI (Recommended)**
+```bash
+# Generate a new temporary password
+docker exec -it dockermate python reset_password.py
+
+# Output will show:
+# Temporary Password: Correct-horse-battery-42
+# Force password change on next login: Yes
+```
+
+**Method 2: Environment Variable**
+```bash
+# Edit docker-compose.yml, add to environment section:
+environment:
+  - DOCKERMATE_RESET_PASSWORD=true
+
+# Restart container
+docker-compose restart
+
+# Check logs for temporary password
+docker-compose logs
+
+# IMPORTANT: Remove the variable and restart again
+# (Edit docker-compose.yml, remove the line, then restart)
+```
 
 ---
 
 ## 📖 Documentation
 
-- **[Complete Design Document](DESIGN.md)** - Full technical specification
-- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
-- **[Issues & Bug Reports](https://github.com/BBultitude/DockerMate/issues)** - Report bugs or request features
-- **[Discussions](https://github.com/BBultitude/DockerMate/discussions)** - Ask questions and share ideas
+- **[DESIGN.md](DESIGN.md)** - Complete technical design specification
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute to the project
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current development status
 
 ---
 
-## 🎯 Use Cases
+## 🏗️ Project Status
 
-### Media Server Management
-Perfect for managing Jellyfin, Plex, *arr stacks with organized networking and automatic updates.
+**Current Version:** Pre-release (Sprint 1 in progress)
 
-### Development Environments
-Learn Docker while building - see CLI commands for every action, experiment safely in DEV mode.
+DockerMate is currently under active development. Sprint 1 focuses on foundation and authentication:
 
-### Home Lab Production Services
-Separate DEV/UAT/PRD environments, health monitoring, safe updates with rollback.
+- ✅ Task 1: Project Structure Setup
+- ✅ Task 2: Database Models & Schema
+- ✅ Task 3: Authentication System
+- ⏳ Task 4: SSL/TLS Certificate Management (Next)
+- ⏳ Task 5: Flask Application Setup
+- ⏳ Task 6: Frontend Templates
+- ⏳ Task 7: API Endpoints
+- ⏳ Task 8: Unit Tests
 
-### Resource-Constrained Deployments
-Optimized for Raspberry Pi and low-power devices with intelligent resource limits.
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```yaml
-# docker-compose.yml
-environment:
-  # Timezone
-  - TZ=UTC
-  
-  # Initial setup password (optional - wizard prompts if not set)
-  # - DOCKERMATE_INITIAL_PASSWORD=YourSecurePassword123
-  
-  # HTTPS mode
-  - DOCKERMATE_SSL_MODE=self-signed  # or 'letsencrypt' or 'custom'
-  
-  # Let's Encrypt (if using)
-  # - DOCKERMATE_DOMAIN=dockermate.home.example.com
-  # - DOCKERMATE_EMAIL=admin@example.com
-  
-  # Session expiry
-  - DOCKERMATE_SESSION_EXPIRY=8h
-  - DOCKERMATE_REMEMBER_ME_EXPIRY=7d
-  
-  # Hardware profile (optional - auto-detected)
-  # - DOCKERMATE_HARDWARE_PROFILE=MEDIUM_SERVER
-  
-  # Host environment (optional - wizard asks if not set)
-  # - DOCKERMATE_HOST_ENVIRONMENT=DEV
-```
-
-### Storage Paths
-
-```
-dockermate/
-├── data/                   # Database, SSL certs, configs
-│   ├── dockermate.db      # SQLite database
-│   ├── config.json        # Settings
-│   └── ssl/               # SSL certificates
-├── stacks/                # Docker Compose files
-└── exports/               # Configuration exports
-```
+See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed progress.
 
 ---
 
 ## 🛡️ Security
 
-### Network Security
-✅ **DO**: Run on isolated VLAN  
-✅ **DO**: Use firewall rules  
-✅ **DO**: Use VPN for remote access  
-❌ **DON'T**: Expose to public internet  
+### Docker Socket Access
 
-### Password Security
-✅ **DO**: Use strong, unique password  
-✅ **DO**: Store in password manager  
-✅ **DO**: Change periodically  
-❌ **DON'T**: Reuse passwords  
+DockerMate requires access to `/var/run/docker.sock` to manage containers. This grants root-equivalent privileges. Important security considerations:
+
+- **Network Isolation**: Run DockerMate on an isolated VLAN
+- **Firewall Rules**: Restrict access to trusted IPs only
+- **Never Public**: Never expose DockerMate to the public internet
+- **VPN Access**: Use VPN for remote access
+- **Regular Updates**: Keep DockerMate updated
 
 ### HTTPS
-✅ **DO**: Use HTTPS (self-signed OK for home)  
-✅ **DO**: Add browser exception for your IP  
-❌ **DON'T**: Disable HTTPS  
 
-See [DESIGN.md](DESIGN.md) for complete security best practices.
+DockerMate runs with HTTPS by default:
+- Self-signed certificates generated automatically
+- Let's Encrypt support available (requires public domain)
+- HTTP automatically redirects to HTTPS
 
----
+### Reporting Security Issues
 
-## 🔄 Password Reset
+If you discover a security vulnerability, please email: security@dockermate.project
 
-If you forget your password:
-
-### Method 1: Docker CLI (Recommended)
-```bash
-docker exec -it dockermate python reset_password.py
-# Follow prompts, receive temporary password
-```
-
-### Method 2: Environment Variable
-```bash
-# Edit docker-compose.yml, add:
-# - DOCKERMATE_RESET_PASSWORD=true
-
-docker compose down
-docker compose up -d
-
-# Check logs for temporary password
-docker compose logs
-
-# Remove environment variable and restart
-```
-
----
-
-## 🆚 Comparison
-
-| Feature | Portainer CE | Dockge | **DockerMate** |
-|---------|--------------|---------|----------------|
-| Auto Update Detection | ❌ | ❌ | ✅ |
-| One-Click Update All | ❌ | ⚠️ | ✅ |
-| Hardware-Aware Limits | ❌ | ❌ | ✅ |
-| IP Address Management | ⚠️ Basic | ❌ | ✅ Advanced |
-| CLI Learning Mode | ❌ | ❌ | ✅ |
-| Environment Tagging | ❌ | ❌ | ✅ |
-| Home Lab Optimized | ❌ | ⚠️ | ✅ |
-| Resource Required | High | Low | Low |
-| Learning Curve | Steep | Easy | Easy → Advanced |
+**Do NOT** open public GitHub issues for security problems.
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Ways to Contribute
-- 🐛 Bug reports and fixes
-- 📖 Documentation improvements
-- ✨ Feature requests (home lab focused)
-- 🌍 Translations
-- 🧪 Testing and feedback
+**Good Contributions:**
+- Bug fixes
+- Performance improvements
+- Documentation improvements
+- Home lab-specific features
+- Test coverage improvements
 
-### What We Won't Accept
-- ❌ Enterprise features (LDAP, SAML, multi-user)
-- ❌ Cloud dependencies
-- ❌ Features that violate KISS principle
-
-**Want enterprise features?** Fork the project! See [DESIGN.md](DESIGN.md) for fork guidelines.
+**Not Accepted:**
+- Enterprise features (LDAP, SAML, multi-user, RBAC)
+- Complex dependencies that violate KISS principle
+- Features that don't work on Raspberry Pi
 
 ---
 
-## 🗺️ Roadmap
+## 📝 License
 
-### v1.0.0 (Current Sprint)
-- [x] Design complete
-- [ ] Authentication & HTTPS
-- [ ] Container management
-- [ ] Auto-update system
-- [ ] Network IPAM
-- [ ] Health monitoring
-- [ ] Export system
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-### v1.1.0 (Q2 2026)
-- [ ] Enhanced UI/UX
-- [ ] Additional export formats
-- [ ] More stack templates
-- [ ] Performance improvements
-
-### v1.2.0 (Q3 2026)
-- [ ] Webhook notifications
-- [ ] Custom health check scripts
-- [ ] Advanced scheduling
-
-### v2.0.0 (Q4 2026)
-- [ ] Optional multi-host management
-- [ ] Plugin system (maybe)
-- [ ] Enhanced backup/restore
-
----
-
-## 📊 System Requirements
-
-### Minimum
-- **CPU**: 1 core
-- **RAM**: 512MB
-- **Disk**: 100MB
-- **OS**: Linux with Docker
-
-### Recommended
-- **CPU**: 2+ cores
-- **RAM**: 2GB+
-- **Disk**: 1GB+
-- **OS**: Ubuntu 22.04+ or Debian 12+
-
-### Tested Platforms
-- ✅ x86_64 (AMD64)
-- ✅ ARM64 (Raspberry Pi 4, Apple M1/M2)
-- ✅ ARMv7 (Raspberry Pi 3)
-
-### Tested Distributions
-- ✅ Ubuntu 22.04, 24.04
-- ✅ Debian 11, 12
-- ✅ Raspberry Pi OS
-- ✅ Proxmox (LXC containers)
-- ✅ Unraid (Docker)
-- ✅ TrueNAS Scale
-
----
-
-## 🐛 Troubleshooting
-
-### Container won't start
-```bash
-# Check logs
-docker logs dockermate
-
-# Check permissions
-ls -la /var/run/docker.sock
-
-# Verify Docker access
-docker exec dockermate docker ps
-```
-
-### Can't access web interface
-```bash
-# Check if running
-docker ps | grep dockermate
-
-# Check port binding
-docker port dockermate
-
-# Check firewall
-sudo ufw status
-```
-
-### Certificate errors
-```bash
-# Regenerate self-signed certificate
-docker exec dockermate python -c "from backend.ssl.cert_manager import CertificateManager; CertificateManager.generate_self_signed_cert()"
-
-# Restart
-docker restart dockermate
-```
-
-For more troubleshooting help, [open an issue](https://github.com/BBultitude/DockerMate/issues) on GitHub.
-
----
-
-## 📜 License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-**TL;DR**: 
-- ✅ Use commercially
-- ✅ Modify freely
-- ✅ Distribute
-- ✅ Private use
-- ⚠️ No warranty
-- ⚠️ License must be included
+**In Summary:**
+- ✅ Commercial use allowed
+- ✅ Modification allowed
+- ✅ Distribution allowed
+- ✅ Private use allowed
+- ⚠️ No liability or warranty
+- ⚠️ License and copyright notice required
 
 ---
 
 ## 🙏 Acknowledgments
 
-**Inspiration**
+**Inspiration:**
 - Portainer - For proving Docker GUIs are valuable
 - Dockge - For stack-focused simplicity
 - Home Assistant - For hardware-aware design
 - Pi-hole - For excellent home lab UX
 
-**Built With**
-- [Docker SDK](https://docker-py.readthedocs.io/) - Docker integration
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [Tailwind CSS](https://tailwindcss.com/) - UI styling
-- [Alpine.js](https://alpinejs.dev/) - Reactive components
-- [SQLite](https://www.sqlite.org/) - Database
+**Technologies:**
+- Docker & Docker SDK
+- Flask & SQLAlchemy
+- Tailwind CSS & Alpine.js
+- The amazing Python ecosystem
 
 ---
 
-## 📞 Support
+## 📧 Contact & Support
 
-### Getting Help
-- 📖 [Documentation](https://github.com/BBultitude/DockerMate/blob/main/DESIGN.md) - Read the design document
-- 💬 [GitHub Discussions](https://github.com/BBultitude/DockerMate/discussions) - Ask questions
-- 🐛 [Issue Tracker](https://github.com/BBultitude/DockerMate/issues) - Report bugs
-
-### Security Issues
-**Found a vulnerability?**
-- 🔒 Open a private security advisory on GitHub
-- Or create an issue with `[SECURITY]` prefix
-- ⏱️ We'll respond as soon as possible
+- **GitHub Issues**: [Report bugs or request features](https://github.com/BBultitude/DockerMate/issues)
+- **GitHub Discussions**: [Ask questions or share ideas](https://github.com/BBultitude/DockerMate/discussions)
+- **Documentation**: See [DESIGN.md](DESIGN.md) for technical details
 
 ---
 
-**Made with ❤️ for the home lab community**
+## 🗺️ Roadmap
 
-[GitHub Repository](https://github.com/BBultitude/DockerMate)
+### v1.0.0 (Target: Q1 2026)
+- ✅ Authentication system
+- ⏳ Container management (CRUD operations)
+- ⏳ Image management & updates
+- ⏳ Network management with IPAM
+- ⏳ Volume management
+- ⏳ Stack deployment (Docker Compose)
+- ⏳ Health monitoring
+- ⏳ Configuration export
+
+### v1.1.0 (Target: Q2 2026)
+- Enhanced health monitoring
+- Additional export formats
+- Stack templates library
+- UI improvements
+
+### v2.0.0 (Future)
+- Optional multi-host support (keeping home lab focus)
+- Advanced scheduling
+- Plugin system (maybe)
+
+---
+
+**Made with ❤️ for home lab enthusiasts**
