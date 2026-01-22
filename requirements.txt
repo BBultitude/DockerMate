@@ -1,37 +1,17 @@
-# Core
-Flask==3.0.0
-flask-cors==4.0.0
-Werkzeug==3.0.1
-
-# Docker
-docker==7.0.0
+# DockerMate - Python Dependencies
+# Sprint 1: Foundation & Authentication
 
 # Database
-SQLAlchemy==2.0.23
-alembic==1.13.0
-
-# Background Jobs
-APScheduler==3.10.4
+SQLAlchemy==2.0.25
+# ORM and database toolkit
 
 # Security
 bcrypt==4.1.2
-cryptography==41.0.7
-certbot==2.8.0
+# Password hashing
 
-# Validation
-pydantic==2.5.3
-email-validator==2.1.0
+cryptography==42.0.2
+# SSL/TLS certificate generation
 
-# HTTP Client
-requests==2.31.0
-
-# System Info
-psutil==5.9.6
-
-# Utilities
-python-dateutil==2.8.2
-python-dotenv==1.0.0
-click==8.1.7
-
-# Logging
-structlog==24.1.0
+# Testing (for verification scripts)
+pytest==7.4.4
+pytest-cov==4.1.0
