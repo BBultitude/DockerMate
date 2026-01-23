@@ -409,7 +409,6 @@ def dashboard():
     """
     return render_template('dashboard.html')
 
-
 @app.route('/settings')
 @login_required
 def settings():
@@ -425,6 +424,23 @@ def settings():
     """
     return render_template('settings.html')
 
+@app.route('/containers')
+@login_required
+def containers():
+    """Containers page (Sprint 2)"""
+    return render_template('containers.html')
+
+@app.route('/images')
+@login_required
+def images():
+    """Images page (Sprint 3)"""
+    return render_template('images.html')
+
+@app.route('/networks')
+@login_required
+def networks():
+    """Networks page (Sprint 4)"""
+    return render_template('networks.html')
 
 # ============================================
 # ERROR HANDLERS
