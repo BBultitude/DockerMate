@@ -1,8 +1,18 @@
+# DockerMate .gitignore
+# Comprehensive ignore file for Python/Flask/Docker project
+
+# ============================================
 # Python
+# ============================================
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -16,56 +26,175 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
-venv/
-ENV/
-env/
 
-# Testing
-.pytest_cache/
-.coverage
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
 htmlcov/
 .tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
 .hypothesis/
 
-# IDEs
+# ============================================
+# Virtual Environments
+# ============================================
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# ============================================
+# IDEs and Editors
+# ============================================
+# VSCode
 .vscode/
+*.code-workspace
+
+# PyCharm
 .idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
 *~
-.DS_Store
 
-# DockerMate specific
-data/dockermate.db
-data/config.json
-data/ssl/*.pem
-data/backups/
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Operating System
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ============================================
+# Application Specific - DockerMate
+# ============================================
+# Runtime data directory (contains SQLite DB, SSL certs, backups)
+data/
+!data/.gitkeep
+
+# Stack compose files (user-generated)
 stacks/
+!stacks/.gitkeep
+
+# Configuration exports (user-generated)
 exports/
+!exports/.gitkeep
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Logs
-*.log
 logs/
+*.log
 
-# Environment variables
-.env
-.env.local
-
-# Temporary files
-*.tmp
-*.bak
-tmp/
-
-# Node (if we add any frontend build tools)
-node_modules/
-package-lock.json
-
-# Secrets
-secrets/
+# SSL certificates (auto-generated)
+*.pem
 *.key
 *.crt
-*.pem
+*.csr
+
+# ============================================
+# Docker
+# ============================================
+# Don't ignore Dockerfile and docker-compose.yml (we want these)
+# But ignore runtime Docker volumes
+.dockerignore
+
+# ============================================
+# Flask
+# ============================================
+instance/
+.webassets-cache
+
+# Flask session files
+flask_session/
+
+# ============================================
+# Environment Variables
+# ============================================
+.env
+.env.local
+.env.*.local
+.flaskenv
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ============================================
+# Verification Scripts Output
+# ============================================
+# Keep the verification scripts, but ignore their outputs if any
+verification_results.txt
+
+# ============================================
+# Documentation Build Artifacts
+# ============================================
+docs/_build/
+site/
+
+# ============================================
+# Security
+# ============================================
+# Ignore any secret files
+secrets/
+*.secret
+*_secret.py
+*_secrets.py
+
+# API keys or sensitive config (should use environment variables instead)
+api_keys.txt
+config_local.py
+
+# ============================================
+# Backup Files
+# ============================================
+*.bak
+*.backup
+*~
