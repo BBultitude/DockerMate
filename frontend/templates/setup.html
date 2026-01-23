@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Setup - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4" x-data="setupPage()">
+    <div class="max-w-md w-full space-y-8 p-8 bg-slate-800 rounded-lg shadow-xl">
+        <!-- Header -->
+        <div class="text-center">
+            <h1 class="text-4xl font-bold text-blue-400">🐳 DockerMate</h1>
+            <h2 class="mt-2 text-2xl font-semibold">Initial Setup</h2>
+            <p class="mt-2 text-slate-400">Welcome! Let's set up your Docker management platform.</p>
+        </div>
+        
+        <!-- Error Messages -->
+        <div x-show="errors.length > 0" class="space-y-2" x-transition>
+            <template x-for="error in errors" :key="error">
+                <div class="p-3 rounded bg-red-900/50 text-red-200 text-sm" x-text="error"></div>
+            </template>
+        </div>
+        
+        <!-- Success Message -->
+        <div x-show="success" class="p-3 rounded bg-green-900/50 text-green-200 text-sm" x-transition>
+            Setup complete! Redirecting to login...
+        </div>
+        
+        <!-- Setup Form -->
+        <form @submit.prevent="submitSetup" class="mt-8 space-y-6">
+            <div>
+                <label for="password" class="block text-sm font-medium text-slate-300">
+                    Create Admin Password
+                </label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    x-model="password"
+                    required
+                    minlength="12"
+                    class="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Minimum 12 characters"
+                    :disabled="loading"
+                >
+                <p class="mt-1 text-xs text-slate-400">
+                    Minimum 12 characters. Must include uppercase, lowercase, and digit.
+                </p>
+            </div>
+            
+            <!-- Password Requirements -->
+            <div class="bg-slate-700/50 p-4 rounded text-sm">
+                <p class="font-medium text-slate-300 mb-2">Password Requirements:</p>
+                <ul class="space-y-1 text-slate-400">
+                    <li>✓ At least 12 characters</li>
+                    <li>✓ Uppercase letter (A-Z)</li>
+                    <li>✓ Lowercase letter (a-z)</li>
+                    <li>✓ Digit (0-9)</li>
+                    <li>✓ Avoid common patterns</li>
+                </ul>
+            </div>
+            
+            <!-- Submit Button -->
+            <button 
+                type="submit"
+                :disabled="loading"
+                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <span x-show="!loading">Complete Setup</span>
+                <span x-show="loading">Setting up...</span>
+            </button>
+        </form>
+        
+        <!-- Info -->
+        <div class="mt-6 text-center text-sm text-slate-400">
+            <p>🔒 Your password is hashed with bcrypt and never stored in plain text.</p>
+            <p class="mt-2">After setup, you'll be redirected to the login page.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function setupPage() {
+    return {
+        password: '',
+        loading: false,
+        errors: [],
+        success: false,
+        
+        async submitSetup() {
+            this.errors = [];
+            this.loading = true;
+            
+            try {
+                const response = await fetch('/setup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: this.password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.success = true;
+                    // Redirect to login after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 2000);
+                } else {
+                    this.errors = data.errors || ['Setup failed'];
+                    this.loading = false;
+                }
+            } catch (error) {
+                this.errors = ['Setup failed. Please try again.'];
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

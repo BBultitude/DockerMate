@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Login - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4" x-data="loginPage()">
+    <div class="max-w-md w-full space-y-8 p-8 bg-slate-800 rounded-lg shadow-xl">
+        <!-- Header -->
+        <div class="text-center">
+            <h1 class="text-4xl font-bold text-blue-400">🐳 DockerMate</h1>
+            <h2 class="mt-2 text-2xl font-semibold">Docker Management</h2>
+            <p class="mt-2 text-slate-400">Sign in to continue</p>
+        </div>
+        
+        <!-- Error Message -->
+        <div x-show="errorMessage" x-text="errorMessage" 
+             class="p-3 rounded bg-red-900/50 text-red-200 text-sm" 
+             x-transition></div>
+        
+        <!-- Login Form -->
+        <form @submit.prevent="login" class="mt-8 space-y-6">
+            <div>
+                <label for="password" class="block text-sm font-medium text-slate-300">
+                    Password
+                </label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    x-model="password"
+                    required
+                    class="mt-1 block w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter your password"
+                    :disabled="loading"
+                >
+            </div>
+            
+            <div class="flex items-center">
+                <input 
+                    type="checkbox" 
+                    id="remember_me" 
+                    x-model="rememberMe"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    :disabled="loading"
+                >
+                <label for="remember_me" class="ml-2 block text-sm text-slate-300">
+                    Remember me for 7 days
+                </label>
+            </div>
+            
+            <button 
+                type="submit"
+                :disabled="loading"
+                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <span x-show="!loading">Sign In</span>
+                <span x-show="loading">Signing in...</span>
+            </button>
+        </form>
+        
+        <!-- Security Notice -->
+        <div class="mt-6 text-center text-xs text-slate-400">
+            <p>🔒 Connection secured with HTTPS</p>
+            <p class="mt-1">Session expires after 8 hours (7 days if "remember me" checked)</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function loginPage() {
+    return {
+        password: '',
+        rememberMe: false,
+        loading: false,
+        errorMessage: '',
+        
+        async login() {
+            this.errorMessage = '';
+            this.loading = true;
+            
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: this.password,
+                        remember_me: this.rememberMe
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Redirect to dashboard
+                    window.location.href = data.redirect;
+                } else {
+                    this.errorMessage = data.error || 'Login failed';
+                    this.loading = false;
+                }
+            } catch (error) {
+                this.errorMessage = 'Login failed. Please try again.';
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
