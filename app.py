@@ -105,9 +105,14 @@ def force_https():
     HTTPS is better than plain HTTP.
     
     Exceptions:
+    - Testing mode (app.config['TESTING'])
     - Let's Encrypt validation paths (/.well-known/acme-challenge/)
     - Requests already using HTTPS
     """
+    # Skip HTTPS redirect in testing mode
+    if app.config.get('TESTING'):
+        return
+    
     if request.is_secure:
         return
     

@@ -202,6 +202,47 @@ class SessionManager:
         return info['id'] if info else None
     
     @staticmethod
+    def delete_session(session_token: str) -> bool:
+        """
+        Delete a session from database (cleanup helper)
+        
+        Args:
+            session_token: Session token to delete
+            
+        Returns:
+            bool: True if session was deleted, False if not found
+        
+        This is a cleanup helper used by tests and administrative functions.
+        For normal user session revocation, use revoke_session() instead.
+        
+        Use Cases:
+        - Test cleanup (remove sessions after tests)
+        - Administrative cleanup
+        - Force removal of specific sessions
+        
+        Verification:
+        token = SessionManager.create_session()
+        success = SessionManager.delete_session(token)
+        print(f"Deleted: {success}")  # True
+        print(SessionManager.validate_session(token))  # False
+        """
+        if not session_token:
+            return False
+        
+        token_hash = SessionManager._hash_token(session_token)
+        
+        db = SessionLocal()
+        try:
+            session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
+            if session:
+                db.delete(session)
+                db.commit()
+                return True
+            return False
+        finally:
+            db.close()
+    
+    @staticmethod
     def get_all_sessions(current_token: str) -> list:
         """
         Get all active sessions
