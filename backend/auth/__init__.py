@@ -16,13 +16,13 @@ Usage:
     from backend.auth.session_manager import SessionManager
     
     # Import middleware
-    from backend.auth.middleware import login_required, get_current_user
+    from backend.auth.middleware import require_auth, is_authenticated
     
     # Or import everything
-    from backend.auth import PasswordManager, SessionManager, login_required
+    from backend.auth import PasswordManager, SessionManager, require_auth
 
 Example - Complete Login Flow:
-    from backend.auth import PasswordManager, SessionManager, login_required
+    from backend.auth import PasswordManager, SessionManager, require_auth
     from flask import Flask, request, make_response, redirect
     
     app = Flask(__name__)
@@ -43,13 +43,13 @@ Example - Complete Login Flow:
             
             # Set cookie
             response = make_response(redirect('/dashboard'))
-            response.set_cookie('session', session_token, httponly=True)
+            response.set_cookie('session', session_token, httponly=True, secure=True)
             return response
         else:
             return "Invalid password", 401
     
     @app.route('/dashboard')
-    @login_required
+    @require_auth()
     def dashboard():
         return "Welcome to dashboard!"
 """
@@ -58,11 +58,9 @@ Example - Complete Login Flow:
 from backend.auth.password_manager import PasswordManager
 from backend.auth.session_manager import SessionManager
 from backend.auth.middleware import (
-    login_required,
-    get_current_user,
+    require_auth,
     is_authenticated,
-    logout_user,
-    init_auth_middleware
+    get_current_session_info
 )
 
 # Public API
@@ -74,9 +72,7 @@ __all__ = [
     'SessionManager',
     
     # Middleware
-    'login_required',
-    'get_current_user',
+    'require_auth',
     'is_authenticated',
-    'logout_user',
-    'init_auth_middleware',
+    'get_current_session_info',
 ]

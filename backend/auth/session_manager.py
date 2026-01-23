@@ -1,181 +1,56 @@
 """
-Session Manager - Session Token Management
+Session Management
 
-This module handles all session-related operations for DockerMate authentication.
+This module handles user session creation, validation, and revocation.
+Sessions are used to keep users logged in after successful authentication.
 
-Security Design:
-- Session tokens: 256-bit cryptographically secure random
-- Token hashing: SHA-256 before database storage
-- Configurable expiry: 8 hours default, 7 days with "remember me"
-- IP and user agent tracking for security auditing
-- Automatic cleanup of expired sessions
+Design Philosophy:
+- Single-user home lab (only one user account)
+- Session tokens are cryptographically secure (256-bit)
+- Tokens are hashed before storage (SHA-256)
+- Configurable expiry times
+- IP and User-Agent tracking for security
 
-Why Hash Session Tokens:
-- If database is compromised, attacker can't use session tokens
-- Similar to password hashing, but SHA-256 is sufficient (not bcrypt)
-- Bcrypt is intentionally slow - not needed for sessions
-- Fast validation is important for every request
-
-Session Flow:
-    1. User logs in → create_session()
-    2. Generate random 256-bit token
-    3. Hash with SHA-256
-    4. Store hash in database
-    5. Send plain token to browser (httpOnly cookie)
-    6. On each request → validate_session()
-    7. Hash incoming token, lookup in database
-    8. If found and not expired → valid session
-
-Usage:
-    from backend.auth.session_manager import SessionManager
-    from flask import request, make_response
-    
-    # After successful login
-    session_token = SessionManager.create_session(
-        remember_me=False,
-        user_agent=request.headers.get('User-Agent'),
-        ip_address=request.remote_addr
-    )
-    
-    # Set cookie (httpOnly, secure, SameSite)
-    response = make_response(redirect('/dashboard'))
-    response.set_cookie('session', session_token, httponly=True, secure=True)
-    
-    # On each request
-    token = request.cookies.get('session')
-    if SessionManager.validate_session(token):
-        # Valid session
-        pass
-    else:
-        # Invalid or expired
-        redirect('/login')
-
-Verification:
-    python3 -c "from backend.auth.session_manager import SessionManager; \
-                token = SessionManager.create_session(); \
-                print('Valid:', SessionManager.validate_session(token))"
+Security Notes:
+- Never store plain session tokens in database
+- Always hash tokens before storage
+- Clean up expired sessions automatically
+- Track IP and User-Agent for audit trail
 """
 
 import secrets
 import hashlib
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
+from typing import Optional
 from backend.models.database import SessionLocal
 from backend.models.session import Session as SessionModel
 
+
 class SessionManager:
-    """
-    Session management for authentication
+    """Session management for single-user home lab"""
     
-    Handles creation, validation, and cleanup of user sessions.
-    All session tokens are hashed with SHA-256 before storage.
-    
-    Security Features:
-    - 256-bit cryptographically secure tokens
-    - SHA-256 hashing before storage
-    - Configurable expiry times
-    - IP and user agent tracking
-    - Automatic cleanup
-    
-    Example:
-        # Login flow
-        @app.route('/login', methods=['POST'])
-        def login():
-            password = request.form.get('password')
-            user = User.get_admin(db)
-            
-            if PasswordManager.verify_password(password, user.password_hash):
-                # Create session
-                session_token = SessionManager.create_session(
-                    remember_me=request.form.get('remember_me') == 'on',
-                    user_agent=request.headers.get('User-Agent'),
-                    ip_address=request.remote_addr
-                )
-                
-                # Set cookie
-                response = make_response(redirect('/dashboard'))
-                response.set_cookie(
-                    'session',
-                    session_token,
-                    httponly=True,
-                    secure=True,
-                    samesite='Strict'
-                )
-                return response
-        
-        # Validation on each request
-        @app.route('/api/containers')
-        def containers():
-            token = request.cookies.get('session')
-            if not SessionManager.validate_session(token):
-                return redirect('/login')
-            
-            # Valid session - continue
-            return jsonify(containers)
-    """
-    
-    # Session expiry times
     SESSION_EXPIRY_DEFAULT = timedelta(hours=8)
     SESSION_EXPIRY_REMEMBER = timedelta(days=7)
     
-    # ==========================================================================
-    # Session Creation
-    # ==========================================================================
-    
     @staticmethod
-    def create_session(
-        remember_me: bool = False,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None
-    ) -> str:
+    def create_session(remember_me: bool = False, 
+                      user_agent: Optional[str] = None,
+                      ip_address: Optional[str] = None) -> str:
         """
         Create new session after successful login
         
-        Generates secure 256-bit random token, hashes it with SHA-256,
-        stores hash in database, and returns plain token for cookie.
-        
-        Args:
-            remember_me: If True, session lasts 7 days instead of 8 hours
-            user_agent: Browser user agent string (for security auditing)
-            ip_address: Client IP address (for security auditing)
-            
-        Returns:
-            Plain session token (64 hex characters)
-            Send this to browser as httpOnly cookie
-            
-        Example:
-            # After password verification
-            session_token = SessionManager.create_session(
-                remember_me=True,
-                user_agent='Mozilla/5.0 ...',
-                ip_address='192.168.1.100'
-            )
-            
-            # Set cookie
-            response.set_cookie(
-                'session',
-                session_token,
-                httponly=True,      # Not accessible via JavaScript
-                secure=True,        # HTTPS only
-                samesite='Strict',  # CSRF protection
-                max_age=604800      # 7 days if remember_me
-            )
-            
-        Security Note:
-            The plain token is ONLY sent to the browser once.
-            It's never stored in the database in plain form.
-            Database only stores SHA-256 hash of the token.
+        Returns: session token (64 char hex)
         """
-        # Generate secure random token (256 bits = 32 bytes = 64 hex chars)
-        session_token = secrets.token_hex(32)
+        # Generate secure token
+        session_token = secrets.token_hex(32)  # 256 bits
         
-        # Set expiry based on remember_me
+        # Set expiry
         if remember_me:
             expires_at = datetime.utcnow() + SessionManager.SESSION_EXPIRY_REMEMBER
         else:
             expires_at = datetime.utcnow() + SessionManager.SESSION_EXPIRY_DEFAULT
         
-        # Hash token before storing (SHA-256)
+        # Hash token before storing
         token_hash = SessionManager._hash_token(session_token)
         
         # Store in database
@@ -192,194 +67,90 @@ class SessionManager:
         finally:
             db.close()
         
-        # Return plain token (send to browser)
         return session_token
-    
-    # ==========================================================================
-    # Session Validation
-    # ==========================================================================
     
     @staticmethod
     def validate_session(session_token: str) -> bool:
-        """
-        Validate session token
-        
-        Checks if token exists in database and is not expired.
-        Updates last_accessed timestamp if valid.
-        
-        This should be called on EVERY authenticated request.
-        
-        Args:
-            session_token: Plain session token from cookie
-            
-        Returns:
-            True if valid and not expired, False otherwise
-            
-        Example:
-            # Flask middleware or decorator
-            @app.before_request
-            def check_session():
-                if request.path.startswith('/api/'):
-                    token = request.cookies.get('session')
-                    if not SessionManager.validate_session(token):
-                        return redirect('/login')
-            
-            # Or manual check
-            token = request.cookies.get('session')
-            if SessionManager.validate_session(token):
-                # Valid session - proceed
-                return render_template('dashboard.html')
-            else:
-                # Invalid or expired
-                return redirect('/login')
-                
-        Performance Note:
-            This function is called on every request, so it needs to be fast.
-            That's why we use SHA-256 (fast) instead of bcrypt (slow).
-        """
+        """Validate session token"""
         if not session_token:
             return False
         
-        # Hash incoming token
         token_hash = SessionManager._hash_token(session_token)
         
         db = SessionLocal()
         try:
-            # Find session by hash
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
             
             if not session:
                 return False
             
-            # Check if expired
+            # Check expiry
             if session.expires_at < datetime.utcnow():
-                # Expired - delete it
                 db.delete(session)
                 db.commit()
                 return False
             
-            # Valid session - update last accessed
+            # Update last accessed
             session.last_accessed = datetime.utcnow()
             db.commit()
             
             return True
-            
-        except Exception:
-            # Any error = invalid session
-            return False
         finally:
             db.close()
     
-    # ==========================================================================
-    # Session Revocation
-    # ==========================================================================
-    
     @staticmethod
-    def revoke_session(session_token: str) -> bool:
-        """
-        Revoke (delete) a specific session
-        
-        Used for logout. Removes session from database so token
-        becomes invalid immediately.
-        
-        Args:
-            session_token: Plain session token from cookie
-            
-        Returns:
-            True if session was found and deleted, False otherwise
-            
-        Example:
-            # Logout endpoint
-            @app.route('/logout', methods=['POST'])
-            def logout():
-                token = request.cookies.get('session')
-                SessionManager.revoke_session(token)
-                
-                # Clear cookie
-                response = make_response(redirect('/login'))
-                response.set_cookie('session', '', expires=0)
-                return response
-        """
+    def revoke_session(session_token: str):
+        """Revoke a session token"""
         if not session_token:
-            return False
+            return
         
-        # Hash token
         token_hash = SessionManager._hash_token(session_token)
         
         db = SessionLocal()
         try:
-            # Find and delete session
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
-            
             if session:
                 db.delete(session)
                 db.commit()
-                return True
-            
-            return False
-            
         finally:
             db.close()
     
     @staticmethod
-    def revoke_all_sessions() -> int:
-        """
-        Revoke ALL sessions (force logout everywhere)
-        
-        Used when:
-        - User changes password (security best practice)
-        - Security incident detected
-        - Admin wants to force re-login
-        
-        Returns:
-            Number of sessions revoked
-            
-        Example:
-            # After password change
-            @app.route('/change-password', methods=['POST'])
-            def change_password():
-                # ... verify old password, set new password ...
-                
-                # Revoke all sessions (force re-login)
-                revoked = SessionManager.revoke_all_sessions()
-                
-                flash(f"Password changed. {revoked} sessions revoked. Please login.")
-                return redirect('/login')
-        """
-        db = SessionLocal()
-        try:
-            count = SessionModel.revoke_all_sessions(db)
-            return count
-        finally:
-            db.close()
+    def _hash_token(token: str) -> str:
+        """Hash token using SHA-256"""
+        return hashlib.sha256(token.encode()).hexdigest()
     
-    # ==========================================================================
-    # Session Information
-    # ==========================================================================
+    # ========================================
+    # NEW METHODS ADDED FOR TASK 7
+    # ========================================
     
     @staticmethod
-    def get_session_info(session_token: str) -> Optional[Dict]:
+    def get_session_info(session_token: str) -> Optional[dict]:
         """
-        Get information about a session
-        
-        Returns session details without validating expiry.
-        Useful for displaying active sessions to user.
+        Get session information without modifying it
         
         Args:
-            session_token: Plain session token from cookie
+            session_token: Session token from cookie
             
         Returns:
-            Dictionary with session info, or None if not found
-            
-        Example:
-            # Show current session info
-            token = request.cookies.get('session')
-            info = SessionManager.get_session_info(token)
-            
-            if info:
-                print(f"Logged in from: {info['ip_address']}")
-                print(f"Browser: {info['user_agent']}")
-                print(f"Expires: {info['expires_at']}")
+            dict with session info or None if not found/expired
+            {
+                'id': 1,
+                'expires_at': datetime,
+                'last_accessed': datetime,
+                'ip_address': '192.168.1.100',
+                'user_agent': 'Mozilla/5.0...'
+            }
+        
+        Use Cases:
+        - Display session info to user
+        - Check expiry time
+        - Security audit
+        
+        Verification:
+        token = SessionManager.create_session()
+        info = SessionManager.get_session_info(token)
+        print(info)
         """
         if not session_token:
             return None
@@ -390,215 +161,183 @@ class SessionManager:
         try:
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
             
-            if session:
-                return session.to_dict()
+            if not session:
+                return None
             
-            return None
-            
-        finally:
-            db.close()
-    
-    @staticmethod
-    def get_active_sessions() -> List[Dict]:
-        """
-        Get all active (non-expired) sessions
-        
-        Useful for showing user all their active sessions
-        so they can revoke suspicious ones.
-        
-        Returns:
-            List of session dictionaries
-            
-        Example:
-            # Show active sessions page
-            @app.route('/sessions')
-            @login_required
-            def sessions_page():
-                active = SessionManager.get_active_sessions()
-                return render_template('sessions.html', sessions=active)
-        """
-        db = SessionLocal()
-        try:
-            sessions = SessionModel.get_active_sessions(db)
-            return [s.to_dict() for s in sessions]
-        finally:
-            db.close()
-    
-    # ==========================================================================
-    # Session Cleanup
-    # ==========================================================================
-    
-    @staticmethod
-    def cleanup_expired_sessions() -> int:
-        """
-        Delete all expired sessions from database
-        
-        Should be run periodically (e.g., daily via cron or scheduler)
-        to keep database clean and small.
-        
-        Returns:
-            Number of expired sessions deleted
-            
-        Example:
-            # Run daily cleanup (in scheduler or cron)
-            from apscheduler.schedulers.background import BackgroundScheduler
-            
-            scheduler = BackgroundScheduler()
-            scheduler.add_job(
-                SessionManager.cleanup_expired_sessions,
-                'cron',
-                hour=3  # Run at 3 AM daily
-            )
-            scheduler.start()
-            
-            # Or manual cleanup
-            deleted = SessionManager.cleanup_expired_sessions()
-            print(f"Cleaned up {deleted} expired sessions")
-        """
-        db = SessionLocal()
-        try:
-            count = SessionModel.cleanup_expired(db)
-            return count
-        finally:
-            db.close()
-    
-    # ==========================================================================
-    # Private Helper Functions
-    # ==========================================================================
-    
-    @staticmethod
-    def _hash_token(token: str) -> str:
-        """
-        Hash session token using SHA-256
-        
-        This is a private function - only used internally.
-        Session tokens are hashed before storage for security.
-        
-        Args:
-            token: Plain session token (64 hex chars)
-            
-        Returns:
-            SHA-256 hash (64 hex chars)
-            
-        Why SHA-256 (not bcrypt):
-        - Fast validation (called on every request)
-        - Tokens are already high-entropy (256 bits random)
-        - Bcrypt's slowness is unnecessary for random tokens
-        - SHA-256 is still secure for this use case
-        """
-        return hashlib.sha256(token.encode()).hexdigest()
-    
-    # ==========================================================================
-    # Statistics and Monitoring
-    # ==========================================================================
-    
-    @staticmethod
-    def get_session_stats() -> Dict:
-        """
-        Get session statistics
-        
-        Useful for monitoring and debugging.
-        
-        Returns:
-            Dictionary with:
-            - total_sessions: Total sessions in database
-            - active_sessions: Non-expired sessions
-            - expired_sessions: Expired sessions (should be cleaned)
-            
-        Example:
-            stats = SessionManager.get_session_stats()
-            print(f"Active sessions: {stats['active_sessions']}")
-            
-            if stats['expired_sessions'] > 100:
-                print("Running cleanup...")
-                SessionManager.cleanup_expired_sessions()
-        """
-        db = SessionLocal()
-        try:
-            total = db.query(SessionModel).count()
-            active = SessionModel.count_active_sessions(db)
-            expired = total - active
+            # Check if expired
+            if session.expires_at < datetime.utcnow():
+                return None
             
             return {
-                'total_sessions': total,
-                'active_sessions': active,
-                'expired_sessions': expired
+                'id': session.id,
+                'expires_at': session.expires_at,
+                'last_accessed': session.last_accessed,
+                'ip_address': session.ip_address,
+                'user_agent': session.user_agent
             }
         finally:
             db.close()
-
-# =============================================================================
-# Testing and Verification
-# =============================================================================
-
-if __name__ == "__main__":
-    """
-    Test the SessionManager when run directly
     
-    Usage:
-        python3 backend/auth/session_manager.py
-    """
-    from backend.models.database import init_db
+    @staticmethod
+    def get_session_id(session_token: str) -> Optional[int]:
+        """
+        Get session database ID from token
+        
+        Args:
+            session_token: Session token from cookie
+            
+        Returns:
+            int: Session ID or None if not found
+        
+        Use Cases:
+        - Check if session is current session
+        - Prevent revoking current session
+        
+        Verification:
+        token = SessionManager.create_session()
+        session_id = SessionManager.get_session_id(token)
+        print(f"Session ID: {session_id}")
+        """
+        info = SessionManager.get_session_info(session_token)
+        return info['id'] if info else None
     
-    print("=" * 80)
-    print("DockerMate Session Manager Test")
-    print("=" * 80)
+    @staticmethod
+    def get_all_sessions(current_token: str) -> list:
+        """
+        Get all active sessions
+        
+        Args:
+            current_token: Current session token (to mark as current)
+            
+        Returns:
+            List of session dictionaries:
+            [
+                {
+                    'id': 1,
+                    'created_at': '2026-01-23T10:00:00',
+                    'expires_at': '2026-01-23T18:00:00',
+                    'last_accessed': '2026-01-23T10:30:00',
+                    'ip_address': '192.168.1.100',
+                    'user_agent': 'Mozilla/5.0...',
+                    'current': True
+                }
+            ]
+        
+        Use Cases:
+        - Show user all logged-in devices
+        - Security audit
+        - Revoke old/suspicious sessions
+        
+        Verification:
+        token = SessionManager.create_session()
+        sessions = SessionManager.get_all_sessions(token)
+        for s in sessions:
+            print(f"Session {s['id']}: {s['ip_address']} (current: {s['current']})")
+        """
+        current_hash = SessionManager._hash_token(current_token)
+        
+        db = SessionLocal()
+        try:
+            # Get only non-expired sessions
+            sessions = db.query(SessionModel).filter(
+                SessionModel.expires_at > datetime.utcnow()
+            ).order_by(SessionModel.created_at.desc()).all()
+            
+            result = []
+            for session in sessions:
+                result.append({
+                    'id': session.id,
+                    'created_at': session.created_at.isoformat(),
+                    'expires_at': session.expires_at.isoformat(),
+                    'last_accessed': session.last_accessed.isoformat() if session.last_accessed else None,
+                    'ip_address': session.ip_address,
+                    'user_agent': session.user_agent,
+                    'current': session.token_hash == current_hash
+                })
+            
+            return result
+        finally:
+            db.close()
     
-    # Initialize database
-    print("\n1. Initializing database...")
-    init_db()
-    print("   ✅ Database initialized")
+    @staticmethod
+    def revoke_session_by_id(session_id: int) -> bool:
+        """
+        Revoke session by database ID
+        
+        Args:
+            session_id: Database ID of session to revoke
+            
+        Returns:
+            bool: True if revoked, False if not found
+        
+        Use Cases:
+        - Revoke session from lost/stolen device
+        - Security cleanup
+        - Manual session management
+        
+        Security:
+        - Should check this isn't current session before calling
+        - Prevents accidental logout
+        
+        Verification:
+        token = SessionManager.create_session()
+        session_id = SessionManager.get_session_id(token)
+        # Don't revoke current session in real code!
+        # success = SessionManager.revoke_session_by_id(session_id)
+        """
+        db = SessionLocal()
+        try:
+            session = db.query(SessionModel).filter_by(id=session_id).first()
+            
+            if not session:
+                return False
+            
+            db.delete(session)
+            db.commit()
+            return True
+        finally:
+            db.close()
     
-    # Test 2: Create session
-    print("\n2. Creating session...")
-    session_token = SessionManager.create_session(
-        remember_me=False,
-        user_agent='Test Browser 1.0',
-        ip_address='192.168.1.100'
-    )
-    print(f"   Token: {session_token[:20]}... ({len(session_token)} chars)")
-    print("   ✅ Session created")
-    
-    # Test 3: Validate session
-    print("\n3. Validating session...")
-    if SessionManager.validate_session(session_token):
-        print("   ✅ Session is valid")
-    else:
-        print("   ❌ Session validation failed")
-    
-    # Test 4: Get session info
-    print("\n4. Getting session info...")
-    info = SessionManager.get_session_info(session_token)
-    if info:
-        print(f"   IP: {info['ip_address']}")
-        print(f"   User Agent: {info['user_agent']}")
-        print(f"   Expires: {info['expires_at']}")
-        print("   ✅ Session info retrieved")
-    else:
-        print("   ❌ Failed to get session info")
-    
-    # Test 5: Session statistics
-    print("\n5. Getting session statistics...")
-    stats = SessionManager.get_session_stats()
-    print(f"   Total sessions: {stats['total_sessions']}")
-    print(f"   Active sessions: {stats['active_sessions']}")
-    print(f"   Expired sessions: {stats['expired_sessions']}")
-    print("   ✅ Statistics retrieved")
-    
-    # Test 6: Revoke session
-    print("\n6. Revoking session (logout)...")
-    if SessionManager.revoke_session(session_token):
-        print("   ✅ Session revoked")
-    else:
-        print("   ❌ Failed to revoke session")
-    
-    # Test 7: Validate after revocation
-    print("\n7. Validating after revocation...")
-    if not SessionManager.validate_session(session_token):
-        print("   ✅ Session correctly invalid after revocation")
-    else:
-        print("   ❌ Session still valid (BAD!)")
-    
-    print("\n" + "=" * 80)
-    print("Session Manager test complete!")
-    print("=" * 80)
+    @staticmethod
+    def revoke_all_sessions_except(keep_token: str):
+        """
+        Revoke all sessions except the specified one
+        
+        Args:
+            keep_token: Session token to keep active
+            
+        Use Cases:
+        - After password change (security best practice)
+        - Force re-login on all other devices
+        - Security incident response
+        
+        Security:
+        - Keeps current session active
+        - User doesn't get logged out unexpectedly
+        - All other devices must re-authenticate
+        
+        Verification:
+        # Create multiple sessions
+        token1 = SessionManager.create_session()
+        token2 = SessionManager.create_session()
+        token3 = SessionManager.create_session()
+        
+        # Revoke all except token1
+        SessionManager.revoke_all_sessions_except(token1)
+        
+        # Verify: token1 valid, token2 and token3 invalid
+        print(SessionManager.validate_session(token1))  # True
+        print(SessionManager.validate_session(token2))  # False
+        print(SessionManager.validate_session(token3))  # False
+        """
+        keep_hash = SessionManager._hash_token(keep_token)
+        
+        db = SessionLocal()
+        try:
+            # Delete all sessions except the one we want to keep
+            db.query(SessionModel).filter(
+                SessionModel.token_hash != keep_hash
+            ).delete()
+            db.commit()
+        finally:
+            db.close()
