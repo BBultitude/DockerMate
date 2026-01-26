@@ -15,3 +15,6 @@ cryptography==42.0.2
 # Testing (for verification scripts)
 pytest==7.4.4
 pytest-cov==4.1.0
+
+# Hardware detection (CPU,RAM)
+psutil>=5.9.0
