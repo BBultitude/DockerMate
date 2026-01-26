@@ -9,7 +9,7 @@ SQLAlchemy==2.0.25
 bcrypt==4.1.2
 # Password hashing
 
-cryptography==42.0.2
+cryptography==44.0.1
 # SSL/TLS certificate generation
 
 # Testing (for verification scripts)
