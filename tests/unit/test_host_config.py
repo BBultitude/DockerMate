@@ -269,7 +269,8 @@ class TestContainerLimitMessages:
             cpu_cores=8,
             ram_gb=32.0,
             max_containers=50,
-            container_limit_warning_threshold=75
+            container_limit_warning_threshold=75,
+            container_limit_critical_threshold=90 
         )
         
         message = config.get_container_limit_message(current_count=38)

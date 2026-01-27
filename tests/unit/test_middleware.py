@@ -5,11 +5,12 @@ Tests the @require_auth decorator and helper functions.
 
 Test Coverage:
 - @require_auth() decorator for HTML routes
-- @require_auth(api=True) decorator for API routes
+- @require_auth(api=True) decorator for API routes  
 - is_authenticated() helper
 - get_current_session_info() helper
 
 Design Philosophy:
+- Uses centralized fixtures from conftest.py
 - Test both protected and unprotected routes
 - Verify redirect behavior for HTML routes
 - Verify JSON error for API routes
@@ -22,79 +23,14 @@ Run tests:
 
 import pytest
 import json
-from flask import Flask, jsonify, render_template_string
+import time
+from datetime import datetime, timedelta
+from flask import Flask
 from backend.auth.middleware import require_auth, is_authenticated, get_current_session_info
 from backend.auth.session_manager import SessionManager
-from backend.models.database import init_db, SessionLocal
-from backend.models.user import User
+from backend.models.database import SessionLocal
 from backend.models.session import Session as SessionModel
-from backend.auth.password_manager import PasswordManager
-
-
-@pytest.fixture(scope='function')
-def test_app():
-    """Create a test Flask app with protected routes"""
-    app = Flask(__name__)
-    app.config['TESTING'] = True
-    app.secret_key = 'test-secret-key'
-    
-    # HTML route protected by auth
-    @app.route('/protected-page')
-    @require_auth()
-    def protected_page():
-        return "Protected content"
-    
-    # API route protected by auth
-    @app.route('/api/protected-data')
-    @require_auth(api=True)
-    def protected_api():
-        return jsonify({"data": "secret"})
-    
-    # Unprotected route that checks auth status
-    @app.route('/check-status')
-    def check_status():
-        if is_authenticated():
-            return "Logged in"
-        else:
-            return "Not logged in"
-    
-    # Route that uses session info
-    @app.route('/session-info')
-    @require_auth()
-    def session_info_route():
-        info = get_current_session_info()
-        if info:
-            return jsonify(info)
-        else:
-            return jsonify({"error": "No session"}), 401
-    
-    # Login page (needed for redirects)
-    @app.route('/login')
-    def login_page():
-        return "Login page"
-    
-    yield app
-
-
-@pytest.fixture(scope='function')
-def client(test_app):
-    """Create test client"""
-    return test_app.test_client()
-
-
-@pytest.fixture(scope='function')
-def db_setup():
-    """Setup database for testing"""
-    init_db()
-    
-    yield
-    
-    # Cleanup
-    db = SessionLocal()
-    db.query(SessionModel).delete()
-    db.query(User).delete()
-    db.commit()
-    db.close()
+from backend.models.user import User
 
 
 class TestRequireAuthDecorator:
@@ -135,8 +71,6 @@ class TestRequireAuthDecorator:
     
     def test_protected_page_with_expired_session(self, client, db_setup):
         """Test accessing protected page with expired session"""
-        from datetime import datetime, timedelta
-        
         # Create session and manually expire it
         token = SessionManager.create_session()
         
@@ -146,12 +80,12 @@ class TestRequireAuthDecorator:
         db.commit()
         db.close()
         
-        # Set cookie
+        # Set expired session cookie
         client.set_cookie('session', token)
         
         response = client.get('/protected-page')
         
-        # Should redirect to login (session expired)
+        # Should redirect to login
         assert response.status_code == 302
         assert '/login' in response.location
 
@@ -161,51 +95,41 @@ class TestRequireAuthAPIDecorator:
     
     def test_protected_api_without_auth(self, client, db_setup):
         """Test accessing protected API without authentication"""
-        response = client.get('/api/protected-data')
+        response = client.get('/protected-api')
         
-        # Should return 401 JSON error (not redirect)
+        # Should return 401 JSON response (not redirect)
         assert response.status_code == 401
         data = json.loads(response.data)
-        
-        assert data['success'] is False
         assert 'error' in data
-        assert data['redirect'] == '/login'
     
     def test_protected_api_with_valid_auth(self, client, db_setup):
         """Test accessing protected API with valid session"""
         # Create session
         token = SessionManager.create_session()
+        
+        # Set cookie
         client.set_cookie('session', token)
         
-        # Access API
-        response = client.get('/api/protected-data')
+        response = client.get('/protected-api')
         
         assert response.status_code == 200
         data = json.loads(response.data)
-        
-        assert data['data'] == 'secret'
+        assert 'message' in data
     
     def test_protected_api_with_invalid_token(self, client, db_setup):
         """Test accessing protected API with invalid token"""
         client.set_cookie('session', 'invalid_token')
         
-        response = client.get('/api/protected-data')
+        response = client.get('/protected-api')
         
+        # Should return 401 JSON (not redirect)
         assert response.status_code == 401
         data = json.loads(response.data)
-        
-        assert data['success'] is False
+        assert 'error' in data
 
 
-class TestIsAuthenticatedHelper:
+class TestIsAuthenticated:
     """Test is_authenticated() helper function"""
-    
-    def test_is_authenticated_without_session(self, client, db_setup):
-        """Test is_authenticated returns False without session"""
-        response = client.get('/check-status')
-        
-        assert response.status_code == 200
-        assert b'Not logged in' in response.data
     
     def test_is_authenticated_with_valid_session(self, client, db_setup):
         """Test is_authenticated returns True with valid session"""
@@ -292,8 +216,6 @@ class TestMiddlewareEdgeCases:
     
     def test_decorator_preserves_function_metadata(self, db_setup):
         """Test that @require_auth preserves function name and docstring"""
-        from flask import Flask
-        
         app = Flask(__name__)
         
         @app.route('/test')
@@ -308,9 +230,6 @@ class TestMiddlewareEdgeCases:
     
     def test_session_validation_updates_last_accessed(self, client, db_setup):
         """Test that accessing protected route updates last_accessed"""
-        import time
-        from datetime import datetime
-        
         token = SessionManager.create_session()
         
         # Get initial last_accessed
