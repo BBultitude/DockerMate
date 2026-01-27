@@ -147,6 +147,37 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 
 ---
 
+### FEAT-011: Post-Creation Container Health Validation
+**Priority:** High  
+**Effort:** 2-3 hours  
+**Sprint:** 2 Task 4 (Container CRUD)  
+**Status:** ✅ Approved for Implementation  
+**Description:**
+- After auto-starting container, wait 10-20 seconds (randomized)
+- Check container.status, health check status, exit code, error message
+- Update database with health validation results
+- Return structured health status to user
+- Provide actionable feedback if startup failed
+**Rationale:**
+- Catches immediate startup failures
+- Educational (teaches health check concepts)
+- Aligns with Docker best practices
+- Improves user experience with clear error messages
+**Implementation Details:**
+```python
+# After container.start()
+time.sleep(random.uniform(10, 20))
+container.reload()
+health_status = {
+    "running": container.status == "running",
+    "health": container.attrs.get("State", {}).get("Health", {}).get("Status"),
+    "exit_code": container.attrs.get("State", {}).get("ExitCode"),
+    "error": container.attrs.get("State", {}).get("Error")
+}
+```
+
+---
+
 ## FIX ITEMS
 
 ### FIX-001: Database Initialization Test Failures
@@ -360,10 +391,78 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 
 ---
 
+## SPRINT 2 TASK 4: CONTAINER CRUD OPERATIONS
+
+### Implementation Scope (Approved 2025-01-27)
+
+#### Lifecycle Management
+- ✅ **Auto-start:** Default True, configurable parameter
+- ✅ **Pull-if-missing:** Default True, configurable parameter  
+- ✅ **Hardware validation:** Always enforced (non-negotiable)
+- ✅ **Health check:** 10-20 second post-creation validation (FEAT-011)
+
+#### Update Operations (Phased Approach)
+- **Phase 1 (Task 4):** Labels-only updates (non-destructive)
+- **Phase 2 (Task 6):** Full updates via recreate workflow in UI
+
+#### Validation Requirements
+| Validation | Priority | Task 4 Implementation |
+|------------|----------|----------------------|
+| Hardware limits | Critical | ✅ Always enforced |
+| Image existence | High | ✅ Conditional (if pull_if_missing=False) |
+| Port conflicts | Medium | ⏸️ Deferred to Task 5 (API layer) |
+| Volume paths | Low | ✅ Basic syntax check only |
+
+#### Error Handling Strategy
+- **Daemon connection:** Retry 3x with exponential backoff
+- **State conflicts:** Check current state, descriptive error
+- **Resource exhaustion:** Pre-validate against hardware profile
+- **Missing dependencies:** Auto-pull if enabled, else instructional error
+
+#### Service Layer Structure
+```
+src/services/container_manager.py
+├── ContainerManager class
+│   ├── create_container()      # Create + auto-start + health check
+│   ├── get_container()         # Retrieve single
+│   ├── list_containers()       # Query with filters
+│   ├── update_container()      # Labels only (Phase 1)
+│   ├── delete_container()      # Stop + remove
+│   ├── start_container()       # Lifecycle controls
+│   ├── stop_container()
+│   └── restart_container()
+└── Validation helpers
+    ├── _validate_create_request()
+    ├── _check_hardware_limits()
+    ├── _validate_health_status()  # NEW: Post-creation check
+    └── _sync_database_state()
+```
+
+#### Dependencies
+- `SystemConfig` (hardware limits) ✅ Task 1
+- `DockerClient` (SDK integration) ✅ Task 2
+- `Container` model (database) ✅ Task 3
+- `Database` session management ✅ Task 3
+
+#### Deliverables
+1. `backend/services/container_manager.py` - Full CRUD + lifecycle
+2. Comprehensive unit tests (mock-based)
+3. Health validation helper function
+4. Error handling with structured responses
+5. Verification script: `scripts/verify_sprint2_task4.sh`
+
+#### What's Deferred
+- Full update operations (recreate workflow) → Task 6
+- Port conflict detection → Task 5 (API layer)
+- Advanced volume validation → Future sprint
+- Network validation → Sprint 4
+
+---
+
 ## NOTES
 
 ### Sprint Alignment
-- Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FIX-001)
+- Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
 - Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
 - Sprint 4: Networks and volumes (REF-001, DEBT-002)
 - Sprint 5: System administration and polish (FEAT-002, FEAT-006, FEAT-008, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
@@ -372,18 +471,41 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 ### Prioritization Criteria
 1. **Security** issues take precedence (SEC-*)
 2. **Fixes** for broken functionality (FIX-*)
-3. **Features** that enhance core user experience (FEAT-001 to FEAT-004)
+3. **Features** that enhance core user experience (FEAT-001 to FEAT-004, FEAT-011)
 4. **Refactors** that reduce future maintenance burden (REF-*)
 5. **Debt** items to improve code quality (DEBT-*)
 6. **Nice-to-have** features for advanced users (FEAT-005, FEAT-010)
 
-### Decision Log
-- **2025-01-27:** Added FEAT-008 (auto-prune scheduling), FEAT-009 (export deleted), REF-003 (normalize tags) per Sprint 2 Task 3 strategic decisions
-- **2025-01-27:** Retention period default changed from 90 days to 30 days per PM decision
-- **2025-01-27:** Container limit override documented as persistent setting with stability warnings
+---
+
+## DECISION LOG
+
+### Sprint 2 Task 4 Strategic Decisions (2025-01-27)
+✅ **Approved by Product Owner**
+
+| Decision | Recommendation | Rationale |
+|----------|---------------|-----------|
+| Auto-start containers | Default True (configurable) | Matches Docker CLI behavior, reduces user steps |
+| Pull-if-missing images | Default True (configurable) | Seamless UX, aligns with Docker defaults |
+| Hardware limit enforcement | Always on (non-negotiable) | System stability, prevents overload |
+| **Post-creation health check** | **10-20 second validation** | **Catches startup failures, educational value** |
+| Update scope Phase 1 | Labels only | Non-destructive, immediate value |
+| Update scope Phase 2 | Full recreate workflow | Deferred to Task 6 (UI complexity) |
+| Validation tier | Critical + High priority | Fail fast, clear errors |
+| Port conflict detection | Deferred to Task 5 | Better handled at API layer |
+| Volume validation | Basic syntax only | Full validation deferred |
+| Error handling | Retry + graceful degradation | Handles transient failures |
+
+### Sprint 2 Task 3 Strategic Decisions (2025-01-27)
+- Added FEAT-008 (auto-prune scheduling)
+- Added FEAT-009 (soft delete with retention)
+- Added REF-003 (normalize tags when needed)
+- Retention period default: 30 days (changed from 90)
+- Container limit override: Persistent setting with stability warnings
 
 ---
 
 ## VERSION HISTORY
+- **v1.2** (2025-01-27): Sprint 2 Task 4 strategic decisions + FEAT-011 health validation
+- **v1.1** (2025-01-27): Sprint 2 Task 3 strategic decision items (FEAT-008, FEAT-009, REF-003)
 - **v1.0** (2025-01-27): Initial creation after Sprint 1 completion
-- **v1.1** (2025-01-27): Added Sprint 2 Task 3 strategic decision items (FEAT-008, FEAT-009, REF-003)
