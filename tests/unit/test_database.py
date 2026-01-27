@@ -56,7 +56,13 @@ class TestDatabaseInitialization:
     
     def test_init_db_creates_tables(self, temp_db):
         """Test that init_db creates all required tables"""
-        init_db()
+        # Force reload of database module to pick up new DATABASE_PATH
+        import importlib
+        import backend.models.database
+        importlib.reload(backend.models.database)
+        from backend.models.database import init_db as reloaded_init_db
+        
+        reloaded_init_db()
         
         # Create engine to inspect
         engine = create_engine(f"sqlite:///{temp_db}")

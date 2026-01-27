@@ -64,6 +64,7 @@ from backend.models.user import User
 from backend.models.session import Session
 from backend.models.environment import Environment
 from backend.models.host_config import HostConfig
+from backend.models.container import Container
 
 # Try to import optional models (may not exist yet)
 try:

@@ -50,6 +50,8 @@ coverage.xml
 *.log
 .pytest_cache/
 .hypothesis/
+scripts/*.log
+scripts/__pycache__/
 
 # ============================================
 # Virtual Environments

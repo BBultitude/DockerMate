@@ -36,8 +36,11 @@ class TestHostConfigModel:
     
     def test_create_host_config(self, db_session):
         """Test creating a HostConfig instance"""
+        # Clear any existing config first
+        db_session.query(HostConfig).delete()
+        db_session.commit()
+        
         config = HostConfig(
-            id=1,
             profile_name='MEDIUM_SERVER',
             cpu_cores=8,
             ram_gb=32.0,
