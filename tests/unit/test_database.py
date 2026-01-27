@@ -145,7 +145,7 @@ class TestSessionModel:
         retrieved = db_session.query(SessionModel).first()
         assert retrieved.ip_address is None
         assert retrieved.user_agent is None
-        assert retrieved.last_accessed is not None
+        assert retrieved.last_accessed is None  # Not set until first use
         assert retrieved.created_at is not None
     
     def test_session_with_metadata(self, db_session):
