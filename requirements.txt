@@ -1,20 +1,21 @@
 # DockerMate - Python Dependencies
-# Sprint 1: Foundation & Authentication
+
+# Core Framework
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
 
 # Database
-SQLAlchemy==2.0.25
-# ORM and database toolkit
+SQLAlchemy==2.0.23
 
-# Security
+# Security & Authentication
 bcrypt==4.1.2
-# Password hashing
 
-cryptography==46.0.3
-# SSL/TLS certificate generation
+# Docker Integration
+docker==7.0.0
 
-# Testing (for verification scripts)
-pytest==7.4.4
+# System Information
+psutil==5.9.6
+
+# Development & Testing
+pytest==7.4.3
 pytest-cov==4.1.0
-
-# Hardware detection (CPU,RAM)
-psutil>=5.9.0
