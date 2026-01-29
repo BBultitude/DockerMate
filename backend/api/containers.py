@@ -506,10 +506,10 @@ def list_containers():
         # List containers via service
         with ContainerManager() as manager:
             containers = manager.list_containers(
-                environment=environment,
-                state=state,
-                include_all=include_all
-            )
+            environment=environment,
+            state=state,
+            all=include_all
+        )
         
         # Build response
         response_data = {

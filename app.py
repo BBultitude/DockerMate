@@ -48,6 +48,9 @@ app.config['SSL_MODE'] = os.getenv('DOCKERMATE_SSL_MODE', 'self-signed')
 from backend.api.auth import auth_bp
 app.register_blueprint(auth_bp)
 
+from backend.api.system import system_bp
+app.register_blueprint(system_bp)
+
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info
 
