@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  dockermate:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: dockermate-dev
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+      # Mount source code for live development
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - ./app_dev.py:/app/app_dev.py
+      
+      # Persist database
+      - ./data:/app/data
+      
+      # Persist SSL certificates
+      - ./certs:/app/certs
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - DATABASE_PATH=/app/data/dockermate.db
+      - DOCKERMATE_SSL_MODE=disabled  # HTTP for development
+      - PYTHONUNBUFFERED=1  # See logs immediately
+    restart: unless-stopped
+    networks:
+      - dockermate-net
+
+networks:
+  dockermate-net:
+    driver: bridge

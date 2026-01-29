@@ -64,17 +64,45 @@ def get_hardware_profile():
         - Used throughout UI for hardware-aware validation
         - DockerMate feature (no Docker CLI equivalent)
     """
-    db = SessionLocal()
+    db = None
     try:
+        # Get database session
+        db = SessionLocal()
+        
         # Get or create hardware config from database
         config = HostConfig.get_or_create(db)
+        
+        # If config exists but profile is UNKNOWN, it hasn't been detected yet
+        if config.profile_name == 'UNKNOWN' or config.cpu_cores == 0:
+            logger.warning("Hardware profile not detected yet - returning defaults")
+            # Try to detect hardware now
+            try:
+                from backend.utils.hardware_detector import update_host_config
+                config = update_host_config(db, config)
+                db.commit()
+                db.refresh(config)
+            except Exception as detect_error:
+                logger.error(f"Hardware detection failed: {detect_error}")
+                # Return basic defaults if detection fails
+                hardware_data = {
+                    "profile_name": "UNKNOWN",
+                    "max_containers": 50,
+                    "cpu_count": 0,
+                    "total_memory_gb": 0.0,
+                    "total_memory_bytes": 0,
+                    "description": "Hardware profile not yet detected"
+                }
+                return jsonify({
+                    "success": True,
+                    "data": hardware_data,
+                    "warning": "Hardware profile not yet detected"
+                }), 200
         
         # Build response with hardware info
         hardware_data = {
             "profile_name": config.profile_name,
             "max_containers": config.max_containers,
-            "max_networks": config.max_networks,
-            "cpu_count": config.cpu_cores,  # Note: field is cpu_cores in model
+            "cpu_count": config.cpu_cores,
             "total_memory_gb": round(config.ram_gb, 2),
             "total_memory_bytes": int(config.ram_gb * (1024**3)),
             "description": f"Hardware profile: {config.profile_name}"
@@ -89,11 +117,12 @@ def get_hardware_profile():
         logger.exception(f"Failed to get hardware profile: {e}")
         return jsonify({
             "success": False,
-            "error": "Failed to retrieve hardware information",
+            "error": f"Failed to retrieve hardware information: {str(e)}",
             "error_type": "ServerError"
         }), 500
     finally:
-        db.close()
+        if db:
+            db.close()
 
 
 @system_bp.route('/health', methods=['GET'])

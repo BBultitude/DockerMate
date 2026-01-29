@@ -40,8 +40,13 @@ app.config['TESTING'] = True  # Disable HTTPS redirect
 from backend.api.auth import auth_bp
 app.register_blueprint(auth_bp)
 
+# Import and register system blueprint (Sprint 2 Task 6)
 from backend.api.system import system_bp
 app.register_blueprint(system_bp)
+
+# Import and register containers blueprint (Sprint 2 Task 5)
+from backend.api.containers import containers_bp
+app.register_blueprint(containers_bp)
 
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info, is_authenticated

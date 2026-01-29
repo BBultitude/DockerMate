@@ -1,48 +1,46 @@
 # Git
-.git/
+.git
 .gitignore
+.gitattributes
 
 # Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+__pycache__
+*.py[cod]
+*$py.class
 *.so
-*.egg
-*.egg-info/
-venv/
+.Python
 env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
 
-# Testing
-tests/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Documentation
-docs/
-*.md
-!README.md
-
-# Development
-.vscode/
-.idea/
+# IDEs
+.vscode
+.idea
 *.swp
+*.swo
+*~
 
-# Data directories (mount volumes instead)
-data/
-stacks/
-exports/
+# OS
+.DS_Store
+Thumbs.db
 
-# CI/CD
-.github/
-.gitlab-ci.yml
+# DockerMate specific
+data/*.db
+data/*.db-*
+certs/*
 
-# Logs
-*.log
-logs/
+# Documentation (not needed in container)
+*.md
+docs/
 
-# Environment
-.env
-.env.*
+# Tests (not needed in production image)
+tests/
+scripts/verify_*.sh
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
