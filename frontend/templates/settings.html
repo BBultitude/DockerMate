@@ -4,43 +4,8 @@
 
 {% block content %}
 <div class="min-h-screen bg-slate-900">
-    <!-- Navigation Bar -->
-    <nav class="bg-slate-800 border-b border-slate-700">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <h1 class="text-xl font-bold text-blue-400">🐳 DockerMate</h1>
-                    <div class="hidden md:flex ml-10 space-x-4">
-                        <a href="/dashboard" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-700">
-                            Dashboard
-                        </a>
-                        <a href="/containers" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-700">
-                            Containers
-                        </a>
-                        <a href="/images" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-700">
-                            Images
-                        </a>
-                        <a href="/networks" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-700">
-                            Networks
-                        </a>
-                        <a href="/settings" class="text-white px-3 py-2 rounded-md text-sm font-medium bg-slate-700">
-                            Settings
-                        </a>
-                    </div>
-                </div>
-                
-                <div class="flex items-center space-x-4">
-                    <span class="text-slate-400 text-sm">admin</span>
-                    <button 
-                        onclick="logout()"
-                        class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-700"
-                    >
-                        Logout
-                    </button>
-                </div>
-            </div>
-        </div>
-    </nav>
+    <!-- Shared Navigation Bar -->
+    {% include 'components/navbar.html' %}
     
     <!-- Main Content -->
     <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="settingsPage()">
@@ -55,151 +20,92 @@
                 Password changed successfully!
             </div>
             
-            <!-- Error Messages -->
-            <div x-show="passwordErrors.length > 0" x-transition class="mb-4 space-y-2">
-                <template x-for="error in passwordErrors" :key="error">
-                    <div class="p-3 rounded bg-red-900/50 text-red-200 text-sm" x-text="error"></div>
-                </template>
-            </div>
+            <!-- Error Message -->
+            <div x-show="passwordError" x-transition class="mb-4 p-3 rounded bg-red-900/50 text-red-200 text-sm" x-text="passwordError"></div>
             
-            <form @submit.prevent="changePassword" class="space-y-4">
+            <form @submit.prevent="changePassword()" class="space-y-4">
                 <div>
-                    <label for="current_password" class="block text-sm font-medium text-slate-300 mb-1">
+                    <label for="current_password" class="block text-sm font-medium text-slate-300 mb-2">
                         Current Password
                     </label>
                     <input 
                         type="password" 
                         id="current_password" 
-                        x-model="currentPassword"
+                        x-model="passwordForm.current_password"
                         required
                         class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        :disabled="passwordLoading"
-                    >
+                    />
                 </div>
                 
                 <div>
-                    <label for="new_password" class="block text-sm font-medium text-slate-300 mb-1">
+                    <label for="new_password" class="block text-sm font-medium text-slate-300 mb-2">
                         New Password
                     </label>
                     <input 
                         type="password" 
                         id="new_password" 
-                        x-model="newPassword"
+                        x-model="passwordForm.new_password"
                         required
                         minlength="12"
                         class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        :disabled="passwordLoading"
-                    >
-                    <p class="text-xs text-slate-400 mt-1">Minimum 12 characters, uppercase, lowercase, and digit required</p>
+                    />
+                    <p class="text-slate-500 text-xs mt-1">Minimum 12 characters</p>
                 </div>
                 
                 <div>
-                    <label for="confirm_password" class="block text-sm font-medium text-slate-300 mb-1">
+                    <label for="confirm_password" class="block text-sm font-medium text-slate-300 mb-2">
                         Confirm New Password
                     </label>
                     <input 
                         type="password" 
                         id="confirm_password" 
-                        x-model="confirmPassword"
+                        x-model="passwordForm.confirm_password"
                         required
-                        minlength="12"
                         class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        :disabled="passwordLoading"
-                    >
+                    />
                 </div>
                 
                 <button 
                     type="submit"
                     :disabled="passwordLoading"
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition font-medium"
                 >
                     <span x-show="!passwordLoading">Change Password</span>
-                    <span x-show="passwordLoading">Changing...</span>
+                    <span x-show="passwordLoading">Changing Password...</span>
                 </button>
             </form>
         </div>
         
-        <!-- SSL Certificate Section -->
-        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6">
-            <h3 class="text-xl font-semibold text-white mb-4">🔒 SSL Certificate</h3>
-            
-            <div class="space-y-4">
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div>
-                        <p class="text-sm font-medium text-slate-300">Certificate Type</p>
-                        <p class="text-lg text-white">Self-Signed</p>
-                    </div>
-                    <div class="text-green-400">✓ Active</div>
-                </div>
-                
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div>
-                        <p class="text-sm font-medium text-slate-300">Expires</p>
-                        <p class="text-lg text-white">2+ years</p>
-                    </div>
-                    <div class="text-slate-400 text-sm">825 days</div>
-                </div>
-                
-                <p class="text-sm text-slate-400">
-                    ℹ️ SSL certificate management coming in future update. 
-                    Your self-signed certificate is valid for ~2 years.
-                </p>
-            </div>
-        </div>
-        
-        <!-- Environment Configuration Section -->
+        <!-- System Information Section -->
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
-            <h3 class="text-xl font-semibold text-white mb-4">🏷️ Environment Configuration</h3>
+            <h3 class="text-xl font-semibold text-white mb-4">ℹ️ System Information</h3>
             
-            <div class="space-y-3">
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-2xl">🔴</span>
-                        <div>
-                            <p class="font-medium text-white">PRD - Production</p>
-                            <p class="text-sm text-slate-400">Critical production services</p>
-                        </div>
-                    </div>
-                    <div class="text-xs text-slate-400">Requires confirmation</div>
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-slate-400">DockerMate Version:</span>
+                    <span class="text-white font-mono">v0.1.0-alpha (Sprint 1)</span>
                 </div>
-                
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-2xl">🟡</span>
-                        <div>
-                            <p class="font-medium text-white">UAT - User Acceptance Testing</p>
-                            <p class="text-sm text-slate-400">Pre-production testing</p>
-                        </div>
-                    </div>
-                    <div class="text-xs text-slate-400">Moderate safety</div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Python Version:</span>
+                    <span class="text-white font-mono">3.11+</span>
                 </div>
-                
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-2xl">🟢</span>
-                        <div>
-                            <p class="font-medium text-white">DEV - Development</p>
-                            <p class="text-sm text-slate-400">Development and testing</p>
-                        </div>
-                    </div>
-                    <div class="text-xs text-slate-400">Fast iteration</div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Flask Version:</span>
+                    <span class="text-white font-mono">3.0</span>
                 </div>
-                
-                <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-2xl">🔵</span>
-                        <div>
-                            <p class="font-medium text-white">SANDBOX - Experimental</p>
-                            <p class="text-sm text-slate-400">Testing and experiments</p>
-                        </div>
-                    </div>
-                    <div class="text-xs text-slate-400">No restrictions</div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Database:</span>
+                    <span class="text-white font-mono">SQLite 3.40</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Authentication:</span>
+                    <span class="text-green-400 font-semibold">✓ Enabled (bcrypt + sessions)</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">HTTPS/TLS:</span>
+                    <span class="text-green-400 font-semibold">✓ Enabled (Self-signed)</span>
                 </div>
             </div>
-            
-            <p class="text-sm text-slate-400 mt-4">
-                ℹ️ Environments help organize containers by purpose and apply appropriate safety features.
-            </p>
         </div>
     </main>
 </div>
@@ -207,22 +113,47 @@
 
 {% block extra_scripts %}
 <script>
+/**
+ * Settings Page Alpine.js Component
+ * 
+ * Handles password change functionality with validation and error handling.
+ * Uses Alpine.js reactive patterns instead of inline onclick handlers.
+ */
 function settingsPage() {
     return {
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
+        // Password change form state
+        passwordForm: {
+            current_password: '',
+            new_password: '',
+            confirm_password: ''
+        },
         passwordLoading: false,
         passwordSuccess: false,
-        passwordErrors: [],
+        passwordError: null,
         
+        /**
+         * Handle password change form submission
+         * 
+         * Validation:
+         * 1. Check new password matches confirmation
+         * 2. Check minimum length (12 characters)
+         * 3. Send to API
+         * 4. Handle success/error responses
+         */
         async changePassword() {
-            this.passwordErrors = [];
+            // Reset state
             this.passwordSuccess = false;
+            this.passwordError = null;
             
-            // Validate passwords match
-            if (this.newPassword !== this.confirmPassword) {
-                this.passwordErrors = ['New passwords do not match'];
+            // Validate new password matches confirmation
+            if (this.passwordForm.new_password !== this.passwordForm.confirm_password) {
+                this.passwordError = 'New password and confirmation do not match';
+                return;
+            }
+            
+            // Validate minimum length
+            if (this.passwordForm.new_password.length < 12) {
+                this.passwordError = 'New password must be at least 12 characters';
                 return;
             }
             
@@ -235,57 +166,38 @@ function settingsPage() {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        current_password: this.currentPassword,
-                        new_password: this.newPassword
+                        current_password: this.passwordForm.current_password,
+                        new_password: this.passwordForm.new_password
                     })
                 });
                 
                 const data = await response.json();
                 
-                if (data.success) {
+                if (response.ok) {
+                    // Success - show message and reset form
                     this.passwordSuccess = true;
-                    this.currentPassword = '';
-                    this.newPassword = '';
-                    this.confirmPassword = '';
+                    this.passwordForm = {
+                        current_password: '',
+                        new_password: '',
+                        confirm_password: ''
+                    };
                     
-                    // Hide success message after 5 seconds
+                    // Auto-hide success message after 5 seconds
                     setTimeout(() => {
                         this.passwordSuccess = false;
                     }, 5000);
                 } else {
-                    this.passwordErrors = data.errors || ['Password change failed'];
+                    // API returned error
+                    this.passwordError = data.message || 'Password change failed';
                 }
             } catch (error) {
-                this.passwordErrors = ['Password change failed. Please try again.'];
+                console.error('Password change error:', error);
+                this.passwordError = 'Network error. Please check your connection and try again.';
             } finally {
                 this.passwordLoading = false;
             }
         }
-    }
-}
-
-async function logout() {
-    if (!confirm('Are you sure you want to log out?')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            window.location.href = data.redirect;
-        }
-    } catch (error) {
-        console.error('Logout failed:', error);
-        alert('Logout failed. Please try again.');
-    }
+    };
 }
 </script>
 {% endblock %}

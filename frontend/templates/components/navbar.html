@@ -1,0 +1,119 @@
+{# 
+    Shared Navigation Bar Component
+    
+    This component provides consistent navigation across all DockerMate pages.
+    Uses Alpine.js for reactive logout functionality, replacing inline onclick handlers.
+    
+    Features:
+    - Active link highlighting based on current route
+    - Centralized logout logic with error handling
+    - Responsive design with Tailwind CSS
+    - Single source of truth for navigation structure
+#}
+<div x-data="navbar()" class="bg-gray-800 text-white shadow-lg">
+    <nav class="container mx-auto px-4 py-3">
+        <div class="flex justify-between items-center">
+            {# Brand/Logo #}
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">🐳</span>
+                <span class="text-xl font-bold">DockerMate</span>
+            </div>
+            
+            {# Navigation Links #}
+            <div class="flex items-center space-x-6">
+                <a href="/dashboard" 
+                   class="px-3 py-2 rounded transition-colors {{ 'bg-blue-600 text-white' if request.path == '/dashboard' else 'hover:bg-gray-700' }}">
+                    Dashboard
+                </a>
+                <a href="/containers" 
+                   class="px-3 py-2 rounded transition-colors {{ 'bg-blue-600 text-white' if request.path == '/containers' else 'hover:bg-gray-700' }}">
+                    Containers
+                </a>
+                <a href="/images" 
+                   class="px-3 py-2 rounded transition-colors {{ 'bg-blue-600 text-white' if request.path == '/images' else 'hover:bg-gray-700' }}">
+                    Images
+                </a>
+                <a href="/networks" 
+                   class="px-3 py-2 rounded transition-colors {{ 'bg-blue-600 text-white' if request.path == '/networks' else 'hover:bg-gray-700' }}">
+                    Networks
+                </a>
+                <a href="/settings" 
+                   class="px-3 py-2 rounded transition-colors {{ 'bg-blue-600 text-white' if request.path == '/settings' else 'hover:bg-gray-700' }}">
+                    Settings
+                </a>
+                
+                {# Logout Button #}
+                <button @click="handleLogout()" 
+                        :disabled="loading"
+                        class="bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed px-4 py-2 rounded transition-colors font-medium">
+                    <span x-show="!loading">Logout</span>
+                    <span x-show="loading">Logging out...</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+</div>
+
+<script>
+/**
+ * Navbar Alpine.js Component
+ * 
+ * Provides centralized logout functionality with error handling.
+ * Replaces inline onclick handlers with declarative Alpine.js patterns.
+ * 
+ * State:
+ * - loading: Prevents double-clicks during logout
+ * 
+ * Methods:
+ * - handleLogout(): Sends POST to /logout, redirects on success
+ * 
+ * Docker CLI Equivalent: N/A (application-level functionality)
+ */
+function navbar() {
+    return {
+        loading: false,
+        
+        /**
+         * Handle user logout
+         * 
+         * Process:
+         * 1. Set loading state to prevent double-clicks
+         * 2. POST to /logout endpoint
+         * 3. On success: Redirect to /login
+         * 4. On failure: Show error alert and reset loading state
+         * 5. On network error: Show network error alert
+         */
+        async handleLogout() {
+            // Prevent double-clicks
+            if (this.loading) return;
+            
+            this.loading = true;
+            
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    // Successful logout - redirect to login page
+                    window.location.href = '/login';
+                } else {
+                    // Server returned error status
+                    const data = await response.json().catch(() => ({}));
+                    const errorMessage = data.message || 'Logout failed. Please try again.';
+                    alert(errorMessage);
+                    this.loading = false;
+                }
+            } catch (error) {
+                // Network error or other exception
+                console.error('Logout error:', error);
+                alert('Network error during logout. Please check your connection and try again.');
+                this.loading = false;
+            }
+        }
+    };
+}
+</script>
