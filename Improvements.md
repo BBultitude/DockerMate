@@ -391,6 +391,92 @@ health_status = {
 
 ---
 
+### DEBT-006: Standardize Frontend JavaScript to Alpine.js
+**Priority:** High  
+**Effort:** 2-3 hours  
+**Sprint:** 2 (Task 6 - Container UI)  
+**Dependencies:** Sprint 1 templates created  
+**Description:**
+Current templates inconsistently mix Alpine.js (loaded in base.html) with plain JavaScript patterns (`onclick` handlers). This violates KISS principle and wastes bandwidth.
+
+**Files to Update:**
+- `frontend/templates/dashboard.html` - Convert `onclick="logout()"` to Alpine pattern
+- `frontend/templates/containers.html` - Convert to Alpine pattern
+- `frontend/templates/images.html` - Convert to Alpine pattern
+- `frontend/templates/networks.html` - Convert to Alpine pattern
+- `frontend/templates/settings.html` - Convert to Alpine pattern
+
+**Pattern Migration:**
+
+Before:
+```html
+<button onclick="logout()">Logout</button>
+<script>
+function logout() {
+    fetch('/logout', { method: 'POST' })...
+}
+</script>
+```
+
+After:
+```html
+<div x-data="auth()">
+    <button @click="handleLogout()">Logout</button>
+</div>
+<script>
+function auth() {
+    return {
+        handleLogout() {
+            fetch('/logout', { method: 'POST' })...
+        }
+    }
+}
+</script>
+```
+
+**Benefits:**
+- Single JavaScript pattern across all templates
+- Better state management for complex UIs
+- Consistent with Alpine.js already loaded in base.html
+- Reactive updates for container lists
+
+**Success Criteria:**
+- Zero `onclick`, `onchange`, `onsubmit` inline handlers
+- All interactivity uses Alpine.js directives
+- Shared navbar component created
+- All templates follow standardized structure
+
+---
+
+### DEBT-007: Create Shared Navigation Component
+**Priority:** High  
+**Effort:** 1 hour  
+**Sprint:** 2 (Task 6 - Container UI)  
+**Dependencies:** DEBT-006 (Alpine.js standardization)  
+**Description:**
+Current templates duplicate navigation bar code (50+ lines per template). Extract to shared component for maintainability.
+
+**Implementation:**
+1. Create `frontend/templates/components/navbar.html`
+2. Update all templates to use `{% include 'components/navbar.html' %}`
+3. Centralize logout logic in navbar component
+4. Use `request.path` for active link highlighting
+
+**Benefits:**
+- Single source of truth for navigation
+- Easier to add/remove menu items
+- Consistent styling across all pages
+- Reduced code duplication (300+ lines → 60 lines)
+
+**Files Modified:**
+- `frontend/templates/dashboard.html`
+- `frontend/templates/containers.html`
+- `frontend/templates/images.html`
+- `frontend/templates/networks.html`
+- `frontend/templates/settings.html`
+
+---
+
 ## SPRINT 2 TASK 4: CONTAINER CRUD OPERATIONS
 
 ### Implementation Scope (Approved 2025-01-27)
@@ -506,6 +592,7 @@ src/services/container_manager.py
 ---
 
 ## VERSION HISTORY
+- **v1.3** (2025-01-29): DEBT-006: Standardize Frontend JavaScript to Alpine.js & DEBT-007: Create Shared Navigation Component
 - **v1.2** (2025-01-27): Sprint 2 Task 4 strategic decisions + FEAT-011 health validation
 - **v1.1** (2025-01-27): Sprint 2 Task 3 strategic decision items (FEAT-008, FEAT-009, REF-003)
 - **v1.0** (2025-01-27): Initial creation after Sprint 1 completion

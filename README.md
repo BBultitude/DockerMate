@@ -227,6 +227,37 @@ DockerMate runs with HTTPS by default:
 - Let's Encrypt support available (requires public domain)
 - HTTP automatically redirects to HTTPS
 
+### API Security Model
+
+**Important: Home Lab Security Design**
+
+DockerMate uses a **perimeter security model** optimized for trusted home lab networks:
+
+- ✅ **UI routes protected**: All HTML pages require authentication (`@require_auth()`)
+- ✅ **HTTPS everywhere**: TLS 1.2+ encryption for all traffic
+- ⚠️ **API routes unprotected**: REST APIs trust same-origin requests (no session validation)
+
+**Why This Architecture?**
+- Single-user home lab context (no multi-user threats)
+- Browser same-origin policy prevents external API access
+- Reduces testing complexity and improves Raspberry Pi performance
+- Relies on network-level security (firewall, VLAN isolation)
+
+**Critical Security Requirements:**
+- ⚠️ **NEVER expose DockerMate to public internet** (no port forwarding)
+- ⚠️ **REQUIRED**: Isolated VLAN with firewall rules blocking external access
+- ⚠️ **REQUIRED**: VPN for remote access (WireGuard/OpenVPN recommended)
+- ✅ HTTPS prevents network sniffing on local network
+- ✅ SameSite=Strict cookies prevent CSRF attacks
+
+**This Design is NOT Suitable For:**
+- ❌ Multi-user environments
+- ❌ Untrusted network deployments
+- ❌ Public-facing access
+- ❌ Enterprise production systems
+
+**For enterprise security needs**, use Portainer Business Edition or fork DockerMate to implement API-level authentication.
+
 ### Reporting Security Issues
 
 If you discover a security vulnerability, please email: security@dockermate.project
