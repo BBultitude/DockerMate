@@ -114,9 +114,14 @@
                 <!-- Ports -->
                 <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
                     <label class="text-slate-400 text-sm">Port Mappings</label>
-                    <div class="mt-1 bg-slate-900 rounded p-3">
-                        <template x-for="port in detailsModal.container?.ports" :key="port">
-                            <div class="text-white font-mono text-sm" x-text="port"></div>
+                    <div class="mt-1 bg-slate-900 rounded p-3 space-y-1">
+                        <template x-for="port in detailsModal.container?.ports" :key="port.host">
+                            <div class="text-white font-mono text-sm">
+                                <span class="text-blue-400" x-text="port.host"></span>
+                                <span class="text-slate-500"> → </span>
+                                <span x-text="port.container"></span>
+                                <span class="text-slate-400" x-text="`/${port.protocol || 'tcp'}`"></span>
+                            </div>
                         </template>
                     </div>
                 </div>
@@ -682,6 +687,9 @@ function containersComponent() {
             type: 'info'
         },
         
+        // Health check polling state (Task 7 Fix - Issue 4)
+        healthCheckPolling: {}, // { containerName: { intervalId, attempts, startTime } }
+        
         // Delete modal state
         deleteModal: {
             show: false,
@@ -752,10 +760,17 @@ function containersComponent() {
             
             try {
                 const response = await fetch('/api/containers');
+                
+                // TASK 7 FIX: Check HTTP status first
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
-                    this.containers = data.data;
+                    // TASK 7 FIX: Force reactivity with spread
+                    this.containers = [...(data.data || [])];
                     this.runningCount = this.containers.filter(c => c.state === 'running').length;
                     this.applyFilters();
                     this.lastUpdated = new Date().toLocaleTimeString();
@@ -820,6 +835,13 @@ function containersComponent() {
                 const response = await fetch(`/api/containers/${containerId}/${action}`, {
                     method: 'POST'
                 });
+                
+                // TASK 7 FIX: Check HTTP status
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || `Failed to ${action} container`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
@@ -831,7 +853,78 @@ function containersComponent() {
             } catch (error) {
                 this.showToast(`Failed to ${action} container: ${error.message}`, 'error');
             } finally {
-                this.actionLoading[containerId] = false;
+                // TASK 7 FIX: Delete property instead of setting false
+                delete this.actionLoading[containerId];
+            }
+        },
+        
+        /**
+         * Start health check polling for a container (Task 7 Fix - Issue 4)
+         */
+        startHealthCheckPolling(containerName) {
+            if (this.healthCheckPolling[containerName]) return;
+            
+            const maxAttempts = 10;
+            let attempts = 0;
+            const startTime = Date.now();
+            
+            const checkHealth = async () => {
+                attempts++;
+                try {
+                    const response = await fetch(`/api/containers/${containerName}/health`);
+                    if (!response.ok) {
+                        this.stopHealthCheckPolling(containerName);
+                        return;
+                    }
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        const health = data.data;
+                        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                        
+                        if (health.healthy && health.running) {
+                            this.showToast(`✅ Container "${containerName}" is healthy (${elapsed}s)`, 'success');
+                            this.stopHealthCheckPolling(containerName);
+                            await this.loadContainers();
+                            return;
+                        }
+                        
+                        if (!health.running || (health.exit_code && health.exit_code !== 0)) {
+                            const errorMsg = health.error || `Exited with code ${health.exit_code}`;
+                            this.showToast(`❌ Container "${containerName}" crashed: ${errorMsg}`, 'error');
+                            this.stopHealthCheckPolling(containerName);
+                            await this.loadContainers();
+                            return;
+                        }
+                        
+                        if (attempts >= maxAttempts) {
+                            this.showToast(`⚠️ Container "${containerName}" health check timeout`, 'warning');
+                            this.stopHealthCheckPolling(containerName);
+                            await this.loadContainers();
+                        }
+                    }
+                } catch (error) {
+                    if (attempts >= maxAttempts) this.stopHealthCheckPolling(containerName);
+                }
+            };
+            
+            checkHealth();
+            const intervalId = setInterval(checkHealth, 2000);
+            this.healthCheckPolling[containerName] = { intervalId, attempts, startTime };
+            this.showToast(`🔍 Monitoring "${containerName}" health...`, 'info');
+        },
+        
+        stopHealthCheckPolling(containerName) {
+            const polling = this.healthCheckPolling[containerName];
+            if (polling) {
+                clearInterval(polling.intervalId);
+                delete this.healthCheckPolling[containerName];
+            }
+        },
+        
+        stopAllHealthCheckPolling() {
+            for (const name in this.healthCheckPolling) {
+                this.stopHealthCheckPolling(name);
             }
         },
         
@@ -1161,12 +1254,28 @@ function containersComponent() {
                     body: JSON.stringify(requestData)
                 });
                 
+                // TASK 7 FIX: Check HTTP status BEFORE parsing
+                if (!response.ok) {
+                    const data = await response.json();
+                    this.createModal.errorMessage = data.error || 'Failed to create container';
+                    this.createModal.loading = false;
+                    return;  // STOP processing
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
-                    this.showToast(`Container "${requestData.name}" created successfully`, 'success');
+                    const containerName = this.createModal.formData.name;
+                    this.showToast(`Container "${containerName}" created successfully`, 'success');
                     this.closeCreateModal();
                     await this.loadContainers();
+                    
+                    // TASK 7 FIX: Start health check polling if auto-start enabled
+                    if (this.createModal.formData.auto_start) {
+                        setTimeout(() => {
+                            this.startHealthCheckPolling(containerName);
+                        }, 2000);
+                    }
                 } else {
                     // Handle API validation errors
                     if (data.error_type === 'validation_error') {
@@ -1277,6 +1386,8 @@ function containersComponent() {
             if (this.pollInterval) {
                 clearInterval(this.pollInterval);
             }
+            // TASK 7 FIX: Stop all health check polling
+            this.stopAllHealthCheckPolling();
         }
     }
 }

@@ -648,6 +648,98 @@ def get_container(container_id: str):
         }), 500
 
 
+@containers_bp.route('/<name_or_id>/health', methods=['GET'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def get_container_health(name_or_id: str):
+    """
+    Get container health status (non-blocking, async polling).
+    
+    TASK 7 FIX: New endpoint for frontend health monitoring.
+    Replaces blocking health check in create_container().
+    
+    GET /api/containers/<id>/health
+    
+    Path Parameters:
+        name_or_id: Container ID or name
+    
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "healthy": true,
+            "running": true,
+            "status": "running",
+            "exit_code": null,
+            "error": null,
+            "health": "healthy",
+            "uptime_seconds": 45
+        }
+    }
+    
+    Error Responses:
+    - 404: Container not found
+    - 500: Docker operation failed
+    
+    CLI Equivalent:
+        docker inspect <container> | jq '.State.Health'
+    
+    Educational Notes:
+        - Non-blocking: Returns immediately with current state
+        - Frontend polls this every 2 seconds for health monitoring
+        - Teaches difference between "started" vs "healthy"
+        - Shows how containers can crash after starting
+        - Demonstrates proper async monitoring patterns
+    
+    Health Status Meanings:
+        - healthy=true, running=true: Container started and running normally
+        - healthy=false, running=false: Container crashed (check exit_code/error)
+        - healthy=true, health="starting": Health check configured but not ready
+        - healthy=false, health="unhealthy": Health check failed
+    """
+    logger.info(f"Health check requested for container: {name_or_id}")
+    
+    try:
+        with ContainerManager() as manager:
+            health = manager.get_container_health(name_or_id)
+        
+        return jsonify({
+            "success": True,
+            "data": health
+        }), 200
+    
+    except ContainerNotFoundError as e:
+        logger.warning(f"Container not found for health check: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+    
+    except ContainerOperationError as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+    
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon",
+            "error_type": "DockerConnectionError"
+        }), 500
+    
+    except Exception as e:
+        logger.exception(f"Unexpected error during health check: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
 @containers_bp.route('/<container_id>', methods=['PATCH'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
 def update_container(container_id: str):

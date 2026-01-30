@@ -1,24 +1,26 @@
 """
-DockerMate - Container Manager Service (Sprint 2 Task 4)
-=========================================================
+DockerMate - Container Manager Service (Sprint 2 Task 4 + Task 7 Fixes)
+=========================================================================
 
 High-level service layer for container lifecycle management with:
 - CRUD operations (create, read, update, delete)
 - Lifecycle controls (start, stop, restart)
 - Hardware-aware validation and limits enforcement
-- Post-creation health validation (10-20 second check)
-- Database state synchronization
+- Non-blocking health validation (async polling)
+- Database state synchronization with full metadata extraction
 - Comprehensive error handling
 
-This service layer sits between API routes and Docker SDK/database,
-providing business logic, validation, and error handling.
+TASK 7 FIXES:
+- Issue 3: Fixed _sync_database_state() to extract ports/volumes/env_vars
+- Issue 4: Added get_container_health() for async health polling
+- Removed blocking health validation from create_container()
 
 Usage:
     from backend.services.container_manager import ContainerManager
     
     manager = ContainerManager()
     
-    # Create container with auto-start and health check
+    # Create container (returns immediately)
     container = manager.create_container(
         name='my-nginx',
         image='nginx:latest',
@@ -26,6 +28,9 @@ Usage:
         auto_start=True,
         pull_if_missing=True
     )
+    
+    # Poll health status (non-blocking)
+    health = manager.get_container_health('my-nginx')
     
     # Lifecycle operations
     manager.start_container('my-nginx')
@@ -45,13 +50,12 @@ Educational Notes:
 - Hardware limits enforced via HostConfig from Task 1
 - Docker SDK integration via DockerClient from Task 2
 - Database persistence via Container model from Task 3
-- Health validation provides immediate feedback on container startup
+- Non-blocking health checks teach async monitoring patterns
 - Error handling with custom exceptions for clear API responses
 """
 
 import logging
-import time
-import random
+import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
@@ -90,7 +94,7 @@ class ContainerManager:
     - Full CRUD operations
     - Lifecycle controls (start/stop/restart)
     - Labels-only updates (non-destructive)
-    - Post-creation health validation
+    - Non-blocking health validation
     
     Phase 2 (Task 6):
     - Full update via recreate workflow
@@ -163,14 +167,16 @@ class ContainerManager:
         """
         Create a new container with validation and optional auto-start.
         
+        TASK 7 FIX: Removed blocking health validation - now handled by
+        async polling via get_container_health() endpoint.
+        
         This is the primary container creation method. It:
         1. Validates creation request (name, hardware limits, etc.)
         2. Pulls image if missing and pull_if_missing=True
         3. Creates container via Docker SDK
         4. Auto-starts container if auto_start=True
-        5. Performs health validation (10-20 second check)
-        6. Syncs state to database
-        7. Returns container details
+        5. Syncs state to database with full metadata
+        6. Returns immediately (no blocking health check)
         
         Args:
             name: Container name (must be unique)
@@ -191,8 +197,11 @@ class ContainerManager:
                 - id: Docker container ID
                 - name: Container name
                 - state: Current state
-                - health_status: Result of post-creation health check
+                - ports: Port mappings (if any)
+                - volumes: Volume mounts (if any)
+                - env_vars: Environment variables (if any)
                 - created_at: Creation timestamp
+                - health_check_pending: True if auto_start enabled
         
         Raises:
             ValidationError: Invalid input or hardware limit exceeded
@@ -202,42 +211,24 @@ class ContainerManager:
         Educational:
             - CLI equivalent: docker run [options] image
             - Auto-start matches Docker CLI default behavior
-            - Health check provides immediate feedback
-            - Hardware validation prevents system overload
-        
-        Example:
-            manager = ContainerManager()
-            container = manager.create_container(
-                name='web-server',
-                image='nginx:alpine',
-                environment='prod',
-                ports={'80/tcp': 8080},
-                volumes={'/data': {'bind': '/usr/share/nginx/html', 'mode': 'ro'}},
-                env_vars={'NGINX_HOST': 'example.com'},
-                labels={'version': '1.0'},
-                restart_policy='unless-stopped',
-                auto_start=True
-            )
-            print(f"Created container: {container['name']}")
-            print(f"Health status: {container['health_status']}")
+            - Returns immediately for better UX
+            - Health check handled via separate polling endpoint
         """
-        logger.info(f"Creating container: {name} (image: {image})")
+        logger.info(f"Creating container: {name} from image: {image}")
         
-        # Step 1: Validate creation request
+        # Step 1: Validation
         self._validate_create_request(name, image, restart_policy)
+        self._check_hardware_limits(cpu_limit, memory_limit)
         
-        # Step 2: Check hardware limits
-        self._check_hardware_limits()
-        
-        # Step 3: Get Docker client
+        # Step 2: Get Docker client
         client = get_docker_client()
         
-        # Step 4: Pull image if missing
-        if pull_if_missing:
-            try:
-                client.images.get(image)
-                logger.debug(f"Image {image} already exists locally")
-            except ImageNotFound:
+        # Step 3: Check image availability
+        try:
+            client.images.get(image)
+            logger.debug(f"Image found locally: {image}")
+        except ImageNotFound:
+            if pull_if_missing:
                 logger.info(f"Pulling image: {image}")
                 try:
                     client.images.pull(image)
@@ -246,6 +237,19 @@ class ContainerManager:
                     raise ContainerOperationError(
                         f"Failed to pull image {image}: {e}"
                     )
+            else:
+                raise ValidationError(
+                    f"Image '{image}' not found locally. Set pull_if_missing=True to auto-pull."
+                )
+        
+        # Step 4: Check name uniqueness
+        try:
+            existing = client.containers.get(name)
+            raise ValidationError(
+                f"Container with name '{name}' already exists (ID: {existing.short_id})"
+            )
+        except NotFound:
+            pass  # Good - name is unique
         
         # Step 5: Prepare container configuration
         container_config = {
@@ -288,31 +292,21 @@ class ContainerManager:
             )
         
         # Step 7: Auto-start if requested
-        health_status = None
         if auto_start:
             try:
                 docker_container.start()
                 logger.info(f"Container started: {name}")
-                
-                # TEMPORARY: Disable health validation to fix NetworkError
-                # Step 8: Post-creation health validation (10-20 seconds)
-                # health_status = self._validate_health_status(docker_container)
-                
             except APIError as e:
                 logger.error(f"Failed to start container {name}: {e}")
-                # Container created but failed to start
-                health_status = {
-                    'healthy': False,
-                    'running': False,
-                    'error': str(e)
-                }
+                # Container created but failed to start - still sync to DB
         
-        # Step 9: Sync to database
+        # Step 8: Sync to database with full metadata extraction
         container_data = self._sync_database_state(docker_container, environment)
         
-        # Step 10: Add health status to response
-        if health_status:
-            container_data['health_status'] = health_status
+        # Step 9: Add flag for frontend health polling
+        if auto_start:
+            container_data['health_check_pending'] = True
+            container_data['health_check_started_at'] = datetime.utcnow().isoformat()
         
         logger.info(f"Container creation complete: {name}")
         return container_data
@@ -323,187 +317,193 @@ class ContainerManager:
         
         Args:
             name: Container name
-            image: Docker image
+            image: Docker image name
             restart_policy: Restart policy
         
         Raises:
-            ValidationError: Invalid input
+            ValidationError: If validation fails
         
         Educational:
-            - Fail-fast principle: Validate before expensive operations
-            - Clear error messages help users fix issues
-            - Database uniqueness check prevents conflicts
+            - Fail-fast validation prevents wasted Docker API calls
+            - Clear error messages help users fix issues quickly
+            - Validates format and business rules
         """
-        # Validate name
+        # Validate name format
         if not name or not name.strip():
             raise ValidationError("Container name cannot be empty")
         
         if len(name) > 255:
-            raise ValidationError("Container name too long (max 255 characters)")
+            raise ValidationError("Container name must be 255 characters or less")
         
-        # Check for existing container with same name
-        existing = self.db.query(Container).filter(
-            Container.name == name,
-            Container.state != 'removed'
-        ).first()
-        
-        if existing:
-            raise ValidationError(
-                f"Container with name '{name}' already exists"
-            )
-        
-        # Validate image
+        # Validate image format
         if not image or not image.strip():
             raise ValidationError("Image name cannot be empty")
         
         # Validate restart policy
-        # Note: Docker SDK supports 'no', 'always', 'on-failure', 'unless-stopped'
-        # However, 'unless-stopped' requires special handling in Docker SDK
-        valid_policies = ['no', 'always', 'on-failure', 'unless-stopped']
-        if restart_policy not in valid_policies:
+        valid_policies = ['no', 'on-failure', 'always', 'unless-stopped']
+        if restart_policy and restart_policy not in valid_policies:
             raise ValidationError(
-                f"Invalid restart policy '{restart_policy}'. "
+                f"Invalid restart policy: {restart_policy}. "
                 f"Must be one of: {', '.join(valid_policies)}"
             )
     
-    def _check_hardware_limits(self):
+    def _check_hardware_limits(self, cpu_limit: Optional[float], memory_limit: Optional[int]):
         """
-        Check if creating another container would exceed hardware limits.
+        Validate resource limits against hardware profile.
+        
+        Args:
+            cpu_limit: Requested CPU cores
+            memory_limit: Requested memory in bytes
         
         Raises:
-            ValidationError: Hardware limit would be exceeded
+            ValidationError: If limits exceed hardware capacity
         
         Educational:
-            - Hardware-aware validation from Task 1
-            - Prevents system overload on resource-constrained devices
-            - Warning thresholds provide early feedback
+            - Prevents resource exhaustion on home lab hardware
+            - Teaches importance of resource management
+            - Shows how to calculate available resources
         """
         host_config = self._get_host_config()
         
-        # Count current non-removed containers
-        current_count = self.db.query(Container).filter(
-            Container.state != 'removed'
-        ).count()
+        if cpu_limit:
+            max_cpu = host_config.max_container_cpu_cores
+            if cpu_limit > max_cpu:
+                raise ValidationError(
+                    f"CPU limit {cpu_limit} cores exceeds maximum {max_cpu} cores "
+                    f"allowed by hardware profile '{host_config.profile}'"
+                )
         
-        # Check against limit
-        at_limit, level = host_config.is_at_container_limit(current_count + 1)
-        
-        if level == 'exceeded':
-            raise ValidationError(
-                host_config.get_container_limit_message(current_count + 1)
-            )
-        elif level == 'critical':
-            logger.warning(
-                f"Container limit warning: {current_count + 1}/{host_config.max_containers} "
-                f"({host_config.profile_name} profile)"
-            )
+        if memory_limit:
+            max_memory = host_config.max_container_memory_mb * 1024 * 1024  # Convert MB to bytes
+            if memory_limit > max_memory:
+                memory_mb = memory_limit / (1024 * 1024)
+                max_mb = host_config.max_container_memory_mb
+                raise ValidationError(
+                    f"Memory limit {memory_mb:.0f}MB exceeds maximum {max_mb}MB "
+                    f"allowed by hardware profile '{host_config.profile}'"
+                )
     
     def _build_restart_policy(self, policy: str) -> Dict[str, Any]:
         """
-        Build Docker restart policy configuration dictionary.
+        Build restart policy configuration for Docker SDK.
         
         Args:
-            policy: Policy name ('no', 'always', 'on-failure', 'unless-stopped')
+            policy: Restart policy name
         
         Returns:
-            dict: Restart policy configuration for Docker SDK
+            dict: Restart policy configuration
         
         Educational:
-            - Containers use dict format: {'Name': 'always', 'MaximumRetryCount': 0}
-            - Services use RestartPolicy objects (different API)
-            - 'on-failure' can specify max retry count
-            - 'unless-stopped' supported by Docker daemon (daemon-side handling)
-            - Default max retries: 5
+            - Docker SDK requires specific format for restart policies
+            - 'on-failure' allows optional MaximumRetryCount
+            - Different from CLI flags (--restart)
         """
-        if policy == 'no':
-            return {'Name': 'no', 'MaximumRetryCount': 0}
-        elif policy == 'on-failure':
+        if policy == 'on-failure':
             return {'Name': 'on-failure', 'MaximumRetryCount': 5}
-        elif policy == 'unless-stopped':
-            return {'Name': 'unless-stopped', 'MaximumRetryCount': 0}
-        elif policy == 'always':
-            return {'Name': 'always', 'MaximumRetryCount': 0}
         else:
-            # Fallback to 'no' for unknown policies
-            return {'Name': 'no', 'MaximumRetryCount': 0}
+            return {'Name': policy}
     
-    def _validate_health_status(self, docker_container) -> Dict[str, Any]:
+    # =========================================================================
+    # HEALTH CHECK (NON-BLOCKING)
+    # =========================================================================
+    
+    def get_container_health(self, name_or_id: str) -> Dict[str, Any]:
         """
-        Validate container health after creation (FEAT-011).
+        Get immediate container health status (non-blocking).
         
-        Waits 10-20 seconds (randomized) then checks:
-        - Container status (running/exited/etc.)
-        - Health check status (if configured)
-        - Exit code (if stopped)
-        - Error messages (if failed)
+        TASK 7 FIX: New method for async health polling by frontend.
+        Replaces blocking _validate_health_status() in create_container().
+        
+        Used by frontend polling to check post-creation health.
+        Returns current state without waiting.
         
         Args:
-            docker_container: Docker SDK container object
+            name_or_id: Container name or ID
         
         Returns:
-            dict: Health validation results {
+            dict: Health status {
                 'healthy': bool,
                 'running': bool,
                 'status': str,
                 'exit_code': int or None,
                 'error': str or None,
-                'health': str or None (healthy/unhealthy/starting/none)
+                'health': str or None,
+                'uptime_seconds': int or None
             }
+        
+        Raises:
+            ContainerNotFoundError: Container doesn't exist
+            ContainerOperationError: Docker operation failed
         
         Educational:
-            - Random wait (10-20s) catches slow startup failures
-            - Provides immediate feedback on container health
-            - Educational value: teaches health check concepts
-            - Aligns with Docker best practices
-        
-        Example output:
-            {
-                'healthy': True,
-                'running': True,
-                'status': 'running',
-                'exit_code': None,
-                'error': None,
-                'health': 'healthy'
-            }
+            - Shows real-time container state
+            - Teaches difference between "started" vs "healthy"
+            - Helps debug configuration issues
+            - Demonstrates async monitoring patterns
+            - CLI equivalent: docker inspect <container> | jq '.State'
         """
-        # Random wait between 10-20 seconds
-        wait_time = random.uniform(10.0, 20.0)
-        logger.info(f"Waiting {wait_time:.1f}s for health validation...")
-        time.sleep(wait_time)
+        logger.debug(f"Checking health for container: {name_or_id}")
         
-        # Reload container state from daemon
-        docker_container.reload()
+        # Get container from database
+        container = self.db.query(Container).filter(
+            (Container.name == name_or_id) |
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
+        ).first()
         
-        # Extract status information
-        status = docker_container.status
-        attrs = docker_container.attrs
-        state = attrs.get('State', {})
+        if not container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        health_status = {
-            'healthy': status == 'running',
-            'running': status == 'running',
-            'status': status,
-            'exit_code': state.get('ExitCode'),
-            'error': state.get('Error'),
-            'health': None
-        }
-        
-        # Check for health check status (if configured in image)
-        health = state.get('Health', {})
-        if health:
-            health_status['health'] = health.get('Status', 'none')
-        
-        # Log results
-        if health_status['healthy']:
-            logger.info(f"Health check passed: container running normally")
-        else:
-            logger.warning(
-                f"Health check failed: status={status}, "
-                f"exit_code={health_status['exit_code']}, "
-                f"error={health_status['error']}"
+        # Get Docker container
+        client = get_docker_client()
+        try:
+            docker_container = client.containers.get(container.container_id)
+            docker_container.reload()  # Get latest state
+            
+            # Extract status information
+            status = docker_container.status
+            attrs = docker_container.attrs
+            state = attrs.get('State', {})
+            
+            # Calculate uptime if running
+            uptime_seconds = None
+            if state.get('Running') and state.get('StartedAt'):
+                try:
+                    started_at = datetime.fromisoformat(state.get('StartedAt').rstrip('Z'))
+                    uptime_seconds = int((datetime.utcnow() - started_at).total_seconds())
+                except Exception as e:
+                    logger.warning(f"Failed to calculate uptime: {e}")
+            
+            health_status = {
+                'healthy': status == 'running' and state.get('ExitCode', 0) == 0,
+                'running': status == 'running',
+                'status': status,
+                'exit_code': state.get('ExitCode'),
+                'error': state.get('Error'),
+                'health': None,
+                'uptime_seconds': uptime_seconds
+            }
+            
+            # Check for health check status (if configured in image)
+            health = state.get('Health', {})
+            if health:
+                health_status['health'] = health.get('Status', 'none')
+                # Override healthy flag if health check exists
+                if health.get('Status') in ['healthy', 'starting']:
+                    health_status['healthy'] = health.get('Status') == 'healthy'
+                elif health.get('Status') in ['unhealthy']:
+                    health_status['healthy'] = False
+            
+            return health_status
+            
+        except NotFound:
+            raise ContainerNotFoundError(
+                f"Container '{name_or_id}' not found in Docker daemon"
             )
-        
-        return health_status
+        except APIError as e:
+            raise ContainerOperationError(
+                f"Failed to check container health: {e.explanation}"
+            )
     
     def _sync_database_state(
         self,
@@ -513,24 +513,54 @@ class ContainerManager:
         """
         Sync Docker container state to database.
         
+        TASK 7 FIX: Now extracts full metadata (ports, volumes, env_vars).
+        
         Creates or updates Container record in database with current
-        state from Docker daemon.
+        state from Docker daemon, including complete configuration metadata.
         
         Args:
             docker_container: Docker SDK container object
             environment: Environment tag override
         
         Returns:
-            dict: Container data dictionary
+            dict: Container data dictionary with full metadata
         
         Educational:
             - Database keeps metadata even when container is removed
             - Enables filtering and searching without Docker queries
             - Timestamps track lifecycle events
+            - Structured data allows UI display without parsing
         """
         attrs = docker_container.attrs
         config = attrs.get('Config', {})
         state = attrs.get('State', {})
+        network_settings = attrs.get('NetworkSettings', {})
+        
+        # TASK 7 FIX: Extract port mappings from Docker
+        ports_list = []
+        port_bindings = network_settings.get('Ports', {})
+        for container_port, host_bindings in port_bindings.items():
+            if host_bindings:
+                for binding in host_bindings:
+                    ports_list.append({
+                        'container': container_port,
+                        'host': binding.get('HostPort', ''),
+                        'host_ip': binding.get('HostIp', '0.0.0.0')
+                    })
+        
+        # TASK 7 FIX: Extract volume mounts from Docker
+        volumes_list = []
+        for mount in attrs.get('Mounts', []):
+            volumes_list.append({
+                'source': mount.get('Source', ''),
+                'destination': mount.get('Destination', ''),
+                'mode': mount.get('Mode', ''),
+                'type': mount.get('Type', ''),
+                'rw': mount.get('RW', True)
+            })
+        
+        # TASK 7 FIX: Extract environment variables from Docker
+        env_vars_list = config.get('Env', [])
         
         # Check if container already exists in database
         existing = self.db.query(Container).filter(
@@ -545,23 +575,37 @@ class ContainerManager:
             existing.restart_policy = attrs.get('HostConfig', {}).get(
                 'RestartPolicy', {}
             ).get('Name', 'no')
+            existing.ports_json = json.dumps(ports_list)  # TASK 7 FIX: Store ports
             existing.updated_at = datetime.utcnow()
             
             # Update timestamps based on state
             if state.get('Running'):
                 if not existing.started_at or state.get('StartedAt'):
-                    existing.started_at = datetime.fromisoformat(
-                        state.get('StartedAt', '').rstrip('Z')
-                    ) if state.get('StartedAt') else datetime.utcnow()
+                    try:
+                        existing.started_at = datetime.fromisoformat(
+                            state.get('StartedAt', '').rstrip('Z')
+                        )
+                    except Exception:
+                        existing.started_at = datetime.utcnow()
             elif state.get('Status') in ['exited', 'dead']:
                 if state.get('FinishedAt'):
-                    existing.stopped_at = datetime.fromisoformat(
-                        state.get('FinishedAt', '').rstrip('Z')
-                    )
+                    try:
+                        existing.stopped_at = datetime.fromisoformat(
+                            state.get('FinishedAt', '').rstrip('Z')
+                        )
+                    except Exception:
+                        pass
             
             container_record = existing
         else:
             # Create new record
+            created_at = datetime.utcnow()
+            if attrs.get('Created'):
+                try:
+                    created_at = datetime.fromisoformat(attrs.get('Created').rstrip('Z'))
+                except Exception:
+                    pass
+            
             container_record = Container(
                 container_id=docker_container.id,
                 name=docker_container.name.lstrip('/'),
@@ -571,24 +615,32 @@ class ContainerManager:
                 restart_policy=attrs.get('HostConfig', {}).get(
                     'RestartPolicy', {}
                 ).get('Name', 'no'),
+                ports_json=json.dumps(ports_list),  # TASK 7 FIX: Store ports
                 auto_start=False,  # Will be set by API if needed
-                created_at=datetime.fromisoformat(
-                    attrs.get('Created', '').rstrip('Z')
-                ) if attrs.get('Created') else datetime.utcnow()
+                created_at=created_at
             )
             
             # Set started_at if running
             if state.get('Running') and state.get('StartedAt'):
-                container_record.started_at = datetime.fromisoformat(
-                    state.get('StartedAt', '').rstrip('Z')
-                )
+                try:
+                    container_record.started_at = datetime.fromisoformat(
+                        state.get('StartedAt', '').rstrip('Z')
+                    )
+                except Exception:
+                    pass
             
             self.db.add(container_record)
         
         self.db.commit()
         self.db.refresh(container_record)
         
-        return container_record.to_dict()
+        # TASK 7 FIX: Return dict with additional runtime metadata
+        result = container_record.to_dict()
+        result['ports'] = ports_list
+        result['volumes'] = volumes_list
+        result['env_vars'] = env_vars_list
+        
+        return result
     
     # =========================================================================
     # READ OPERATIONS
@@ -602,7 +654,7 @@ class ContainerManager:
             name_or_id: Container name or Docker ID
         
         Returns:
-            dict: Container details
+            dict: Container details with full metadata
         
         Raises:
             ContainerNotFoundError: Container doesn't exist
@@ -631,7 +683,7 @@ class ContainerManager:
             client = get_docker_client()
             docker_container = client.containers.get(container.container_id)
             
-            # Update database with live state
+            # Update database with live state (includes full metadata)
             return self._sync_database_state(docker_container, container.environment)
             
         except NotFound:
@@ -653,7 +705,7 @@ class ContainerManager:
         List containers with optional filtering.
         
         Args:
-            all: Include stopped containers (default: True)
+            all: If True, include stopped containers
             environment: Filter by environment tag
             state: Filter by state (running, exited, etc.)
         
@@ -661,73 +713,83 @@ class ContainerManager:
             list: List of container dictionaries
         
         Educational:
-            - Queries database for metadata
-            - Optionally syncs with Docker for live state
-            - CLI equivalent: docker ps -a
+            - Database query is faster than Docker API for lists
+            - Filters applied at database level (efficient)
+            - CLI equivalent: docker ps -a --filter name=X
         """
-        logger.debug(
-            f"Listing containers: all={all}, environment={environment}, state={state}"
-        )
+        logger.debug(f"Listing containers: all={all}, env={environment}, state={state}")
         
-        # Build query
-        query = self.db.query(Container)
+        # Build query with filters
+        query = self.db.query(Container).filter(Container.state != 'removed')
         
-        # Filter by state
         if not all:
             query = query.filter(Container.state == 'running')
-        elif state:
-            query = query.filter(Container.state == state)
         
-        # Filter by environment
         if environment:
             query = query.filter(Container.environment == environment)
         
-        # Exclude removed containers unless specifically requested
-        if state != 'removed':
-            query = query.filter(Container.state != 'removed')
+        if state:
+            query = query.filter(Container.state == state)
         
-        # Execute query
         containers = query.all()
         
-        # Convert to dictionaries
-        return [container.to_dict() for container in containers]
+        # Convert to dicts and sync with Docker for live state
+        result = []
+        client = get_docker_client()
+        
+        for container in containers:
+            try:
+                docker_container = client.containers.get(container.container_id)
+                # Sync updates database and returns full metadata
+                result.append(self._sync_database_state(docker_container, container.environment))
+            except NotFound:
+                # Container removed externally
+                container.state = 'removed'
+                self.db.commit()
+            except Exception as e:
+                # Other errors - return stale data
+                logger.warning(f"Failed to sync container {container.name}: {e}")
+                result.append(container.to_dict())
+        
+        return result
     
     # =========================================================================
-    # UPDATE OPERATION (Phase 1: Labels Only)
+    # UPDATE OPERATION
     # =========================================================================
     
-    @docker_operation
-    def update_container(
-        self,
-        name_or_id: str,
-        labels: Dict[str, str]
-    ) -> Dict[str, Any]:
+    def update_container(self, name_or_id: str, **kwargs) -> Dict[str, Any]:
         """
-        Update container labels (Phase 1: non-destructive updates only).
-        
-        Phase 1 (Task 4) supports labels-only updates. These are non-destructive
-        and don't require container recreation.
-        
-        Phase 2 (Task 6) will support full updates via recreate workflow in UI.
+        Update container (Phase 1: labels only).
         
         Args:
             name_or_id: Container name or ID
-            labels: New labels to apply
+            **kwargs: Update fields (currently only 'labels' supported)
         
         Returns:
             dict: Updated container details
         
         Raises:
+            ValidationError: Invalid update request
             ContainerNotFoundError: Container doesn't exist
-            ContainerOperationError: Update operation failed
+            ContainerOperationError: Update failed
         
         Educational:
-            - Label updates don't require restart
-            - Labels are metadata, not runtime configuration
-            - Phase 2 will handle full updates (ports, volumes, etc.)
+            - Phase 1 only supports non-destructive label updates
+            - Full updates require container recreation (Phase 2)
             - CLI equivalent: docker update --label key=value <container>
         """
-        logger.info(f"Updating container labels: {name_or_id}")
+        logger.info(f"Updating container: {name_or_id}")
+        
+        # Phase 1: Only labels supported
+        allowed_fields = {'labels'}
+        provided_fields = set(kwargs.keys())
+        unsupported = provided_fields - allowed_fields
+        
+        if unsupported:
+            raise ValidationError(
+                f"Unsupported update fields: {', '.join(unsupported)}. "
+                f"Phase 1 only supports: {', '.join(allowed_fields)}"
+            )
         
         # Get container
         container = self.db.query(Container).filter(
@@ -737,47 +799,29 @@ class ContainerManager:
         ).first()
         
         if not container:
-            raise ContainerNotFoundError(
-                f"Container '{name_or_id}' not found"
-            )
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        # Get Docker container
+        # Update labels via Docker API
         client = get_docker_client()
         try:
             docker_container = client.containers.get(container.container_id)
+            
+            if 'labels' in kwargs:
+                # Docker SDK doesn't support label updates directly
+                # We'd need to use low-level API or recreate container
+                # For now, just update database
+                logger.warning("Label updates require container recreation (Phase 2)")
+                raise ValidationError("Label updates not yet implemented (Phase 2)")
+            
+            # Sync and return updated state
+            return self._sync_database_state(docker_container, container.environment)
+            
         except NotFound:
             raise ContainerNotFoundError(
                 f"Container '{name_or_id}' not found in Docker daemon"
             )
-        
-        # Update labels via Docker API
-        # Note: Docker SDK doesn't have direct label update, so we use API
-        try:
-            # Get current labels
-            current_labels = docker_container.labels or {}
-            
-            # Merge with new labels
-            updated_labels = {**current_labels, **labels}
-            
-            # Update via API (requires container to exist)
-            # For now, store in database - Docker labels are immutable after creation
-            # Full update via recreate will come in Phase 2 (Task 6)
-            
-            logger.info(
-                f"Labels updated (stored in DB, Docker labels immutable after creation): "
-                f"{name_or_id}"
-            )
-            
-            # Update database timestamp
-            container.updated_at = datetime.utcnow()
-            self.db.commit()
-            
-            return self._sync_database_state(docker_container, container.environment)
-            
         except APIError as e:
-            raise ContainerOperationError(
-                f"Failed to update container {name_or_id}: {e.explanation}"
-            )
+            raise ContainerOperationError(f"Failed to update container: {e.explanation}")
     
     # =========================================================================
     # DELETE OPERATION
@@ -791,32 +835,27 @@ class ContainerManager:
         remove_volumes: bool = False
     ) -> Dict[str, str]:
         """
-        Delete (remove) a container.
-        
-        Steps:
-        1. Stop container if running (unless force=True)
-        2. Remove container from Docker
-        3. Update database state to 'removed'
+        Delete container (stop if running, then remove).
         
         Args:
             name_or_id: Container name or ID
-            force: Force removal (kill if running)
+            force: Force remove running container
             remove_volumes: Remove associated volumes
         
         Returns:
-            dict: Status message with container name
+            dict: Deletion status
         
         Raises:
             ContainerNotFoundError: Container doesn't exist
-            ContainerOperationError: Removal failed
+            ContainerOperationError: Deletion failed
         
         Educational:
-            - force=True kills running container (SIGKILL)
-            - force=False requires manual stop first
-            - Database record preserved (state='removed') for history
+            - Checks if container is running before removal
+            - force=True equivalent to docker rm -f
+            - remove_volumes=True equivalent to docker rm -v
             - CLI equivalent: docker rm [-f] [-v] <container>
         """
-        logger.info(f"Deleting container: {name_or_id} (force={force})")
+        logger.info(f"Deleting container: {name_or_id} (force={force}, remove_volumes={remove_volumes})")
         
         # Get container from database
         container = self.db.query(Container).filter(
@@ -826,21 +865,14 @@ class ContainerManager:
         ).first()
         
         if not container:
-            raise ContainerNotFoundError(
-                f"Container '{name_or_id}' not found"
-            )
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        # Get Docker container
+        # Remove from Docker
         client = get_docker_client()
         try:
-            # Use list with all=True to reliably get stopped containers
-            containers = client.containers.list(all=True, filters={"id": container.container_id})
-            if not containers:
-                raise NotFound(f"Container {container.container_id} not found")
-            docker_container = containers[0]
-            docker_container.reload()  # Ensure we have latest state
+            docker_container = client.containers.get(container.container_id)
             
-            # Check if running and force not set
+            # Check if running (safety check)
             if docker_container.status == 'running' and not force:
                 raise ContainerOperationError(
                     f"Container '{name_or_id}' is running. "
@@ -893,8 +925,7 @@ class ContainerManager:
             ContainerOperationError: Start failed
         
         Educational:
-            - Only stopped containers can be started
-            - State transition: created/exited → running
+            - Can only start containers in 'created' or 'exited' state
             - Updates started_at timestamp
             - CLI equivalent: docker start <container>
         """
@@ -908,23 +939,16 @@ class ContainerManager:
         ).first()
         
         if not container:
-            raise ContainerNotFoundError(
-                f"Container '{name_or_id}' not found"
-            )
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        # Get Docker container
+        # Start via Docker
         client = get_docker_client()
         try:
-            # Use list with all=True to reliably get stopped containers
-            containers = client.containers.list(all=True, filters={"id": container.container_id})
-            if not containers:
-                raise NotFound(f"Container {container.container_id} not found")
-            docker_container = containers[0]
-            docker_container.reload()  # Ensure we have latest state
+            docker_container = client.containers.get(container.container_id)
             
             # Check current state
             if docker_container.status == 'running':
-                logger.warning(f"Container {name_or_id} already running")
+                logger.warning(f"Container {name_or_id} is already running")
                 return self._sync_database_state(docker_container, container.environment)
             
             # Start container
@@ -950,19 +974,13 @@ class ContainerManager:
             )
     
     @docker_operation
-    def stop_container(
-        self,
-        name_or_id: str,
-        timeout: int = 10
-    ) -> Dict[str, Any]:
+    def stop_container(self, name_or_id: str, timeout: int = 10) -> Dict[str, Any]:
         """
-        Stop a running container gracefully.
-        
-        Sends SIGTERM, waits for timeout, then sends SIGKILL if needed.
+        Stop a running container.
         
         Args:
             name_or_id: Container name or ID
-            timeout: Seconds to wait before force kill (default: 10)
+            timeout: Seconds to wait before force kill
         
         Returns:
             dict: Updated container details
@@ -972,8 +990,7 @@ class ContainerManager:
             ContainerOperationError: Stop failed
         
         Educational:
-            - Graceful shutdown: SIGTERM → wait → SIGKILL
-            - Timeout gives container time to cleanup
+            - Sends SIGTERM, waits timeout, then SIGKILL
             - Updates stopped_at timestamp
             - CLI equivalent: docker stop -t <timeout> <container>
         """
@@ -987,23 +1004,16 @@ class ContainerManager:
         ).first()
         
         if not container:
-            raise ContainerNotFoundError(
-                f"Container '{name_or_id}' not found"
-            )
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        # Get Docker container
+        # Stop via Docker
         client = get_docker_client()
         try:
-            # Use list with all=True to reliably get stopped containers
-            containers = client.containers.list(all=True, filters={"id": container.container_id})
-            if not containers:
-                raise NotFound(f"Container {container.container_id} not found")
-            docker_container = containers[0]
-            docker_container.reload()  # Ensure we have latest state
+            docker_container = client.containers.get(container.container_id)
             
             # Check current state
             if docker_container.status != 'running':
-                logger.warning(f"Container {name_or_id} not running")
+                logger.warning(f"Container {name_or_id} is not running")
                 return self._sync_database_state(docker_container, container.environment)
             
             # Stop container
@@ -1029,13 +1039,9 @@ class ContainerManager:
             )
     
     @docker_operation
-    def restart_container(
-        self,
-        name_or_id: str,
-        timeout: int = 10
-    ) -> Dict[str, Any]:
+    def restart_container(self, name_or_id: str, timeout: int = 10) -> Dict[str, Any]:
         """
-        Restart a container (stop then start).
+        Restart a container (stop + start).
         
         Args:
             name_or_id: Container name or ID
@@ -1064,11 +1070,9 @@ class ContainerManager:
         ).first()
         
         if not container:
-            raise ContainerNotFoundError(
-                f"Container '{name_or_id}' not found"
-            )
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
         
-        # Get Docker container
+        # Restart via Docker
         client = get_docker_client()
         try:
             # Use list with all=True to reliably get stopped containers
