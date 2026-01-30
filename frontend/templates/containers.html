@@ -108,11 +108,11 @@
                             <label class="text-slate-400 text-sm">Status</label>
                             <div class="mt-1">
                                 <span :class="{
-                                    'bg-green-600': detailsModal.container?.status === 'running',
-                                    'bg-red-600': detailsModal.container?.status === 'stopped' || detailsModal.container?.status === 'exited',
-                                    'bg-yellow-600': detailsModal.container?.status === 'paused',
-                                    'bg-blue-600': detailsModal.container?.status === 'created'
-                                }" class="px-3 py-1 rounded text-white text-sm font-medium" x-text="detailsModal.container?.status"></span>
+                                    'bg-green-600': detailsModal.container?.state === 'running',
+                                    'bg-red-600': detailsModal.container?.state === 'stopped' || detailsModal.container?.state === 'exited',
+                                    'bg-yellow-600': detailsModal.container?.state === 'paused',
+                                    'bg-blue-600': detailsModal.container?.state === 'created'
+                                }" class="px-3 py-1 rounded text-white text-sm font-medium" x-text="detailsModal.container?.state"></span>
                             </div>
                         </div>
                         <div>
@@ -136,7 +136,7 @@
                         </div>
                         <div class="flex justify-between">
                             <span class="text-slate-400">Image:</span>
-                            <span class="text-white font-mono text-sm" x-text="detailsModal.container?.image"></span>
+                            <span class="text-white font-mono text-sm" x-text="detailsModal.container?.image_name"></span>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-slate-400">Created:</span>
@@ -237,8 +237,7 @@
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Statuses</option>
                         <option value="running">Running</option>
-                        <option value="stopped">Stopped</option>
-                        <option value="exited">Exited</option>
+                        <option value="exited">Stopped</option>
                         <option value="paused">Paused</option>
                         <option value="created">Created</option>
                     </select>
@@ -342,11 +341,11 @@
                                 
                                 <!-- Status Badge -->
                                 <span :class="{
-                                    'bg-green-600': container.status === 'running',
-                                    'bg-red-600': container.status === 'stopped' || container.status === 'exited',
-                                    'bg-yellow-600': container.status === 'paused',
-                                    'bg-blue-600': container.status === 'created'
-                                }" class="px-2 py-1 rounded text-white text-xs font-medium uppercase" x-text="container.status"></span>
+                                    'bg-green-600': container.state === 'running',
+                                    'bg-red-600': container.state === 'stopped' || container.state === 'exited',
+                                    'bg-yellow-600': container.state === 'paused',
+                                    'bg-blue-600': container.state === 'created'
+                                }" class="px-2 py-1 rounded text-white text-xs font-medium uppercase" x-text="container.state"></span>
                                 
                                 <!-- Environment Tag -->
                                 <span x-show="container.environment" 
@@ -363,7 +362,7 @@
                             <div class="space-y-1 text-sm">
                                 <p class="text-slate-400">
                                     <span class="font-medium">Image:</span> 
-                                    <span class="font-mono text-slate-300" x-text="container.image"></span>
+                                    <span class="font-mono text-slate-300" x-text="container.image_name"></span>
                                 </p>
                                 <p class="text-slate-400">
                                     <span class="font-medium">ID:</span> 
@@ -379,33 +378,33 @@
                         <!-- Action Buttons -->
                         <div class="flex flex-wrap gap-2 lg:ml-4">
                             <!-- Start Button -->
-                            <button x-show="container.status !== 'running'"
-                                    @click="performAction(container.id, 'start')"
-                                    :disabled="actionLoading[container.id]"
+                            <button x-show="container.state !== 'running'"
+                                    @click="performAction(container.name, 'start')"
+                                    :disabled="actionLoading[container.name]"
                                     title="Start container (docker start)"
                                     class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.id]">▶ Start</span>
-                                <span x-show="actionLoading[container.id]">⏳</span>
+                                <span x-show="!actionLoading[container.name]">▶ Start</span>
+                                <span x-show="actionLoading[container.name]">⏳</span>
                             </button>
                             
                             <!-- Stop Button -->
-                            <button x-show="container.status === 'running'"
-                                    @click="performAction(container.id, 'stop')"
-                                    :disabled="actionLoading[container.id]"
+                            <button x-show="container.state === 'running'"
+                                    @click="performAction(container.name, 'stop')"
+                                    :disabled="actionLoading[container.name]"
                                     title="Stop container (docker stop)"
                                     class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.id]">⏸ Stop</span>
-                                <span x-show="actionLoading[container.id]">⏳</span>
+                                <span x-show="!actionLoading[container.name]">⏸ Stop</span>
+                                <span x-show="actionLoading[container.name]">⏳</span>
                             </button>
                             
                             <!-- Restart Button -->
-                            <button x-show="container.status === 'running'"
-                                    @click="performAction(container.id, 'restart')"
-                                    :disabled="actionLoading[container.id]"
+                            <button x-show="container.state === 'running'"
+                                    @click="performAction(container.name, 'restart')"
+                                    :disabled="actionLoading[container.name]"
                                     title="Restart container (docker restart)"
                                     class="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.id]">🔄 Restart</span>
-                                <span x-show="actionLoading[container.id]">⏳</span>
+                                <span x-show="!actionLoading[container.name]">🔄 Restart</span>
+                                <span x-show="actionLoading[container.name]">⏳</span>
                             </button>
                             
                             <!-- Details Button -->
@@ -415,12 +414,12 @@
                             </button>
                             
                             <!-- Delete Button -->
-                            <button @click="showDeleteConfirmation(container.id, container.name)"
-                                    :disabled="actionLoading[container.id]"
+                            <button @click="showDeleteConfirmation(container.name, container.name)"
+                                    :disabled="actionLoading[container.name]"
                                     title="Delete container (docker rm)"
                                     class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.id]">🗑 Delete</span>
-                                <span x-show="actionLoading[container.id]">⏳</span>
+                                <span x-show="!actionLoading[container.name]">🗑 Delete</span>
+                                <span x-show="actionLoading[container.name]">⏳</span>
                             </button>
                         </div>
                     </div>
@@ -546,6 +545,14 @@ function containersPage() {
                 
                 const data = await response.json();
                 this.containers = data.data || [];
+
+                // Initialize actionLoading for each container
+                this.containers.forEach(c => {
+                    if (this.actionLoading[c.name] === undefined) {
+                        this.actionLoading[c.name] = false;
+                    }
+                });
+
                 this.applyFilters();
                 this.updateRunningCount();
                 this.lastUpdated = new Date().toLocaleTimeString();
@@ -562,7 +569,7 @@ function containersPage() {
          * Update count of running containers
          */
         updateRunningCount() {
-            this.runningCount = this.containers.filter(c => c.status === 'running').length;
+            this.runningCount = this.containers.filter(c => c.state === 'running').length;
         },
         
         /**
@@ -576,14 +583,14 @@ function containersPage() {
                 const search = this.filters.search.toLowerCase();
                 filtered = filtered.filter(c => 
                     c.name.toLowerCase().includes(search) ||
-                    c.image.toLowerCase().includes(search) ||
+                    (c.image_name && c.image_name.toLowerCase().includes(search)) ||
                     (c.container_id && c.container_id.toLowerCase().includes(search))
                 );
             }
             
             // Status filter
             if (this.filters.status !== 'all') {
-                filtered = filtered.filter(c => c.status === this.filters.status);
+                filtered = filtered.filter(c => c.state === this.filters.status);
             }
             
             // Environment filter
@@ -624,11 +631,11 @@ function containersPage() {
          * - Stop: docker stop <name>
          * - Restart: docker restart <name>
          */
-        async performAction(containerId, action) {
-            this.actionLoading[containerId] = true;
-            
-            try {
-                const response = await fetch(`/api/containers/${containerId}/${action}`, {
+async performAction(containerNameOrId, action) {
+    this.actionLoading[containerNameOrId] = true;
+    
+    try {
+        const response = await fetch(`/api/containers/${containerNameOrId}/${action}`, {
                     method: 'POST'
                 });
                 
@@ -646,15 +653,14 @@ function containersPage() {
             } catch (error) {
                 this.showToast(`Failed to ${action} container: ${error.message}`, 'error');
             } finally {
-                this.actionLoading[containerId] = false;
+                this.actionLoading[containerNameOrId] = false;
             }
         },
         
         /**
          * Show delete confirmation modal
          */
-        showDeleteConfirmation(containerId, containerName) {
-            this.deleteModal.containerId = containerId;
+        showDeleteConfirmation(containerName, containerName2) {
             this.deleteModal.containerName = containerName;
             this.deleteModal.show = true;
         },
@@ -667,7 +673,7 @@ function containersPage() {
             this.deleteModal.loading = true;
             
             try {
-                const response = await fetch(`/api/containers/${this.deleteModal.containerId}`, {
+                const response = await fetch(`/api/containers/${this.deleteModal.containerName}?force=true`, {
                     method: 'DELETE'
                 });
                 
@@ -734,7 +740,7 @@ function containersPage() {
             }
             
             // Add image
-            cmd += ` \\\n  ${container.image}`;
+            cmd += ` \\\n  ${container.image_name}`;
             
             return cmd;
         },

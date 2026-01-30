@@ -620,7 +620,8 @@ class ContainerManager:
         # Try database first (faster)
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -734,7 +735,8 @@ class ContainerManager:
         # Get container
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -822,7 +824,8 @@ class ContainerManager:
         # Get container from database
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -833,7 +836,12 @@ class ContainerManager:
         # Get Docker container
         client = get_docker_client()
         try:
-            docker_container = client.containers.get(container.container_id)
+            # Use list with all=True to reliably get stopped containers
+            containers = client.containers.list(all=True, filters={"id": container.container_id})
+            if not containers:
+                raise NotFound(f"Container {container.container_id} not found")
+            docker_container = containers[0]
+            docker_container.reload()  # Ensure we have latest state
             
             # Check if running and force not set
             if docker_container.status == 'running' and not force:
@@ -898,7 +906,8 @@ class ContainerManager:
         # Get container
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -909,7 +918,12 @@ class ContainerManager:
         # Get Docker container
         client = get_docker_client()
         try:
-            docker_container = client.containers.get(container.container_id)
+            # Use list with all=True to reliably get stopped containers
+            containers = client.containers.list(all=True, filters={"id": container.container_id})
+            if not containers:
+                raise NotFound(f"Container {container.container_id} not found")
+            docker_container = containers[0]
+            docker_container.reload()  # Ensure we have latest state
             
             # Check current state
             if docker_container.status == 'running':
@@ -971,7 +985,8 @@ class ContainerManager:
         # Get container
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -982,7 +997,12 @@ class ContainerManager:
         # Get Docker container
         client = get_docker_client()
         try:
-            docker_container = client.containers.get(container.container_id)
+            # Use list with all=True to reliably get stopped containers
+            containers = client.containers.list(all=True, filters={"id": container.container_id})
+            if not containers:
+                raise NotFound(f"Container {container.container_id} not found")
+            docker_container = containers[0]
+            docker_container.reload()  # Ensure we have latest state
             
             # Check current state
             if docker_container.status != 'running':
@@ -1042,7 +1062,8 @@ class ContainerManager:
         # Get container
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
-            (Container.container_id == name_or_id)
+            (Container.container_id == name_or_id),
+            Container.state != 'removed'
         ).first()
         
         if not container:
@@ -1053,7 +1074,12 @@ class ContainerManager:
         # Get Docker container
         client = get_docker_client()
         try:
-            docker_container = client.containers.get(container.container_id)
+            # Use list with all=True to reliably get stopped containers
+            containers = client.containers.list(all=True, filters={"id": container.container_id})
+            if not containers:
+                raise NotFound(f"Container {container.container_id} not found")
+            docker_container = containers[0]
+            docker_container.reload()  # Ensure we have latest state
             
             # Restart container
             docker_container.restart(timeout=timeout)
