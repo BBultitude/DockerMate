@@ -1,191 +1,457 @@
 {% extends "base.html" %}
 
-{% block title %}Containers - DockerMate{% endblock %}
-
 {% block content %}
-<div class="min-h-screen bg-slate-900" x-data="containersPage()" x-init="init()">
-    <!-- Shared Navigation Bar -->
+<div class="min-h-screen bg-slate-900" x-data="containersComponent()">
     {% include 'components/navbar.html' %}
     
-    <!-- Toast Notification System -->
+    <!-- Toast Notification -->
     <div x-show="toast.show" 
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0 transform translate-y-2"
-         x-transition:enter-end="opacity-100 transform translate-y-0"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100 transform translate-y-0"
-         x-transition:leave-end="opacity-0 transform translate-y-2"
+         x-transition
          class="fixed top-4 right-4 z-50 max-w-md">
         <div :class="{
             'bg-green-600': toast.type === 'success',
             'bg-red-600': toast.type === 'error',
             'bg-blue-600': toast.type === 'info',
             'bg-yellow-600': toast.type === 'warning'
-        }" class="rounded-lg shadow-lg p-4 text-white">
-            <div class="flex items-start">
-                <div class="flex-shrink-0">
-                    <span x-show="toast.type === 'success'" class="text-2xl">✓</span>
-                    <span x-show="toast.type === 'error'" class="text-2xl">✗</span>
-                    <span x-show="toast.type === 'info'" class="text-2xl">ℹ</span>
-                    <span x-show="toast.type === 'warning'" class="text-2xl">⚠</span>
-                </div>
-                <div class="ml-3 flex-1">
-                    <p class="font-medium" x-text="toast.message"></p>
-                </div>
-                <button @click="toast.show = false" class="ml-4 flex-shrink-0 hover:text-gray-200">
-                    <span class="text-xl">&times;</span>
-                </button>
+         }" class="text-white px-6 py-4 rounded-lg shadow-lg flex items-start space-x-3">
+            <span class="text-2xl">
+                <span x-show="toast.type === 'success'">✅</span>
+                <span x-show="toast.type === 'error'">❌</span>
+                <span x-show="toast.type === 'info'">ℹ️</span>
+                <span x-show="toast.type === 'warning'">⚠️</span>
+            </span>
+            <div class="flex-1">
+                <p class="font-medium" x-text="toast.message"></p>
             </div>
+            <button @click="toast.show = false" class="text-white hover:text-gray-200">
+                ✕
+            </button>
         </div>
     </div>
     
     <!-- Delete Confirmation Modal -->
     <div x-show="deleteModal.show" 
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 z-50 overflow-y-auto"
-         @click.self="deleteModal.show = false">
-        <div class="flex items-center justify-center min-h-screen px-4">
-            <div class="fixed inset-0 bg-black opacity-75"></div>
-            <div class="relative bg-slate-800 rounded-lg max-w-md w-full p-6 shadow-xl border border-slate-700"
-                 @click.stop>
-                <div class="text-center">
-                    <div class="text-red-500 text-5xl mb-4">⚠</div>
-                    <h3 class="text-xl font-bold text-white mb-2">Delete Container</h3>
-                    <p class="text-slate-300 mb-4">
-                        Are you sure you want to delete 
-                        <span class="font-mono text-blue-400" x-text="deleteModal.containerName"></span>?
-                    </p>
-                    <p class="text-slate-400 text-sm mb-6">
-                        This action cannot be undone. The container will be stopped and removed.
-                    </p>
-                    <div class="flex justify-center space-x-4">
-                        <button @click="deleteModal.show = false"
-                                class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
-                            Cancel
-                        </button>
-                        <button @click="confirmDelete()"
-                                :disabled="deleteModal.loading"
-                                class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition font-medium">
-                            <span x-show="!deleteModal.loading">Delete Container</span>
-                            <span x-show="deleteModal.loading">Deleting...</span>
-                        </button>
-                    </div>
-                </div>
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="closeDeleteModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Confirm Delete</h3>
+            <p class="text-slate-300 mb-6">
+                Are you sure you want to delete container 
+                <strong class="text-white" x-text="deleteModal.containerName"></strong>?
+                <span x-show="deleteModal.isRunning" class="text-yellow-400 block mt-2">
+                    ⚠️ Container is currently running and will be force-removed.
+                </span>
+            </p>
+            <div class="flex justify-end space-x-3">
+                <button @click="closeDeleteModal()" 
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="confirmDelete()" 
+                        :disabled="deleteModal.loading"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition">
+                    <span x-show="!deleteModal.loading">Delete</span>
+                    <span x-show="deleteModal.loading">Deleting...</span>
+                </button>
             </div>
         </div>
     </div>
     
     <!-- Container Details Modal -->
     <div x-show="detailsModal.show" 
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 z-50 overflow-y-auto"
-         @click.self="detailsModal.show = false">
-        <div class="flex items-center justify-center min-h-screen px-4">
-            <div class="fixed inset-0 bg-black opacity-75"></div>
-            <div class="relative bg-slate-800 rounded-lg max-w-3xl w-full p-6 shadow-xl border border-slate-700 max-h-[90vh] overflow-y-auto"
-                 @click.stop>
-                <div class="flex justify-between items-start mb-4">
-                    <h3 class="text-xl font-bold text-white" x-text="detailsModal.container?.name || 'Container Details'"></h3>
-                    <button @click="detailsModal.show = false" class="text-slate-400 hover:text-white text-2xl">
-                        &times;
-                    </button>
-                </div>
-                
-                <div x-show="detailsModal.container" class="space-y-4">
-                    <!-- Status and Environment -->
-                    <div class="grid grid-cols-2 gap-4">
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="closeDetailsModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-slate-700 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-xl font-bold text-white">Container Details</h3>
+                <button @click="closeDetailsModal()" class="text-slate-400 hover:text-white text-2xl">
+                    ✕
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- Basic Information -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-slate-400 text-sm">Name</label>
+                        <div class="text-white font-medium" x-text="detailsModal.container?.name"></div>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 text-sm">Status</label>
                         <div>
-                            <label class="text-slate-400 text-sm">Status</label>
-                            <div class="mt-1">
-                                <span :class="{
-                                    'bg-green-600': detailsModal.container?.state === 'running',
-                                    'bg-red-600': detailsModal.container?.state === 'stopped' || detailsModal.container?.state === 'exited',
-                                    'bg-yellow-600': detailsModal.container?.state === 'paused',
-                                    'bg-blue-600': detailsModal.container?.state === 'created'
-                                }" class="px-3 py-1 rounded text-white text-sm font-medium" x-text="detailsModal.container?.state"></span>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-slate-400 text-sm">Environment</label>
-                            <div class="mt-1">
-                                <span :class="{
-                                    'bg-red-600': detailsModal.container?.environment === 'PRD',
-                                    'bg-yellow-600': detailsModal.container?.environment === 'UAT',
-                                    'bg-green-600': detailsModal.container?.environment === 'DEV',
-                                    'bg-blue-600': detailsModal.container?.environment === 'SANDBOX'
-                                }" class="px-3 py-1 rounded text-white text-sm font-medium" x-text="detailsModal.container?.environment || 'None'"></span>
-                            </div>
+                            <span :class="{
+                                'bg-green-900 text-green-300': detailsModal.container?.state === 'running',
+                                'bg-red-900 text-red-300': detailsModal.container?.state === 'exited',
+                                'bg-yellow-900 text-yellow-300': detailsModal.container?.state === 'paused',
+                                'bg-gray-700 text-gray-300': !['running', 'exited', 'paused'].includes(detailsModal.container?.state)
+                            }" class="px-2 py-1 rounded text-sm font-medium" x-text="detailsModal.container?.state"></span>
                         </div>
                     </div>
-                    
-                    <!-- Basic Info -->
-                    <div class="bg-slate-900 rounded p-4 space-y-2">
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Container ID:</span>
-                            <span class="text-white font-mono text-sm" x-text="detailsModal.container?.container_id?.substring(0, 12)"></span>
+                    <div>
+                        <label class="text-slate-400 text-sm">Image</label>
+                        <div class="text-white font-mono text-sm" x-text="detailsModal.container?.image_name"></div>
+                    </div>
+                    <div>
+                        <label class="text-slate-400 text-sm">Environment</label>
+                        <div>
+                            <span :class="{
+                                'bg-green-900 text-green-300': detailsModal.container?.environment === 'DEV',
+                                'bg-yellow-900 text-yellow-300': detailsModal.container?.environment === 'STG',
+                                'bg-red-900 text-red-300': detailsModal.container?.environment === 'PROD'
+                            }" class="px-2 py-1 rounded text-sm font-medium" x-text="detailsModal.container?.environment"></span>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-slate-400">Image:</span>
-                            <span class="text-white font-mono text-sm" x-text="detailsModal.container?.image_name"></span>
-                        </div>
+                    </div>
+                    <div class="col-span-2">
                         <div class="flex justify-between">
                             <span class="text-slate-400">Created:</span>
                             <span class="text-white text-sm" x-text="formatDate(detailsModal.container?.created_at)"></span>
                         </div>
                     </div>
-                    
-                    <!-- Ports -->
-                    <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
-                        <label class="text-slate-400 text-sm">Port Mappings</label>
-                        <div class="mt-1 bg-slate-900 rounded p-3">
-                            <template x-for="port in detailsModal.container?.ports" :key="port">
-                                <div class="text-white font-mono text-sm" x-text="port"></div>
-                            </template>
-                        </div>
-                    </div>
-                    
-                    <!-- Environment Variables -->
-                    <div x-show="detailsModal.container?.env_vars && detailsModal.container.env_vars.length > 0">
-                        <label class="text-slate-400 text-sm">Environment Variables</label>
-                        <div class="mt-1 bg-slate-900 rounded p-3 max-h-40 overflow-y-auto">
-                            <template x-for="env in detailsModal.container?.env_vars" :key="env">
-                                <div class="text-white font-mono text-sm" x-text="env"></div>
-                            </template>
-                        </div>
-                    </div>
-                    
-                    <!-- Volumes -->
-                    <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
-                        <label class="text-slate-400 text-sm">Volume Mounts</label>
-                        <div class="mt-1 bg-slate-900 rounded p-3">
-                            <template x-for="volume in detailsModal.container?.volumes" :key="volume">
-                                <div class="text-white font-mono text-sm" x-text="volume"></div>
-                            </template>
-                        </div>
-                    </div>
-                    
-                    <!-- CLI Command Equivalent -->
-                    <div>
-                        <label class="text-slate-400 text-sm">Docker CLI Equivalent</label>
-                        <div class="mt-1 bg-slate-900 rounded p-3 overflow-x-auto">
-                            <pre class="text-green-400 font-mono text-xs whitespace-pre-wrap" x-text="generateDockerCommand(detailsModal.container)"></pre>
-                        </div>
-                        <p class="text-slate-500 text-xs mt-1">
-                            💡 Educational: This is the equivalent CLI command to recreate this container
-                        </p>
+                </div>
+                
+                <!-- Ports -->
+                <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
+                    <label class="text-slate-400 text-sm">Port Mappings</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3">
+                        <template x-for="port in detailsModal.container?.ports" :key="port">
+                            <div class="text-white font-mono text-sm" x-text="port"></div>
+                        </template>
                     </div>
                 </div>
+                
+                <!-- Environment Variables -->
+                <div x-show="detailsModal.container?.env_vars && detailsModal.container.env_vars.length > 0">
+                    <label class="text-slate-400 text-sm">Environment Variables</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3 max-h-40 overflow-y-auto">
+                        <template x-for="env in detailsModal.container?.env_vars" :key="env">
+                            <div class="text-white font-mono text-sm" x-text="env"></div>
+                        </template>
+                    </div>
+                </div>
+                
+                <!-- Volumes -->
+                <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
+                    <label class="text-slate-400 text-sm">Volume Mounts</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3">
+                        <template x-for="volume in detailsModal.container?.volumes" :key="volume">
+                            <div class="text-white font-mono text-sm" x-text="volume"></div>
+                        </template>
+                    </div>
+                </div>
+                
+                <!-- CLI Command Equivalent -->
+                <div>
+                    <label class="text-slate-400 text-sm">Docker CLI Equivalent</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3 overflow-x-auto">
+                        <pre class="text-green-400 font-mono text-xs whitespace-pre-wrap" x-text="generateDockerCommand(detailsModal.container)"></pre>
+                    </div>
+                    <p class="text-slate-500 text-xs mt-1">
+                        💡 Educational: This is the equivalent CLI command to recreate this container
+                    </p>
+                </div>
             </div>
+        </div>
+    </div>
+    
+    <!-- Create Container Modal - MINIMAL SCROLL FIX -->
+    <div x-show="createModal.show" 
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
+         @click.self="closeCreateModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-4xl w-full border border-slate-700 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h3 class="text-2xl font-bold text-white">Create Container</h3>
+                    <p class="text-slate-400 text-sm mt-1">Configure and deploy a new Docker container</p>
+                </div>
+                <button @click="closeCreateModal()" class="text-slate-400 hover:text-white text-2xl">
+                    ✕
+                </button>
+            </div>
+            
+            <!-- Error Banner -->
+            <div x-show="createModal.errorMessage" class="mb-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">
+                <p class="font-medium">Error:</p>
+                <p x-text="createModal.errorMessage"></p>
+            </div>
+            
+            <form @submit.prevent="submitCreateForm()" class="space-y-6">
+                <!-- Basic Information Section -->
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                    <h4 class="text-lg font-semibold text-white mb-4">Basic Information</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Container Name -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Container Name <span class="text-red-400">*</span>
+                            </label>
+                            <input type="text" 
+                                   x-model="createModal.formData.name"
+                                   required
+                                   pattern="[a-zA-Z0-9_-]+"
+                                   placeholder="my-container"
+                                   class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   :class="{'border-red-500': createModal.errors.name}">
+                            <p class="text-xs text-slate-500 mt-1">Alphanumeric characters, hyphens, and underscores only</p>
+                            <p x-show="createModal.errors.name" class="text-xs text-red-400 mt-1" x-text="createModal.errors.name"></p>
+                        </div>
+                        
+                        <!-- Image Name -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Image Name <span class="text-red-400">*</span>
+                            </label>
+                            <input type="text" 
+                                   x-model="createModal.formData.image"
+                                   required
+                                   placeholder="nginx:latest"
+                                   class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   :class="{'border-red-500': createModal.errors.image}">
+                            <p class="text-xs text-slate-500 mt-1">Docker image with optional tag (e.g., nginx:alpine)</p>
+                            <p x-show="createModal.errors.image" class="text-xs text-red-400 mt-1" x-text="createModal.errors.image"></p>
+                        </div>
+                        
+                        <!-- Environment Tag -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Environment <span class="text-red-400">*</span>
+                            </label>
+                            <select x-model="createModal.formData.environment"
+                                    required
+                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="DEV">Development (DEV)</option>
+                                <option value="STG">Staging (STG)</option>
+                                <option value="PROD">Production (PROD)</option>
+                            </select>
+                            <p class="text-xs text-slate-500 mt-1">Environment classification for organization</p>
+                        </div>
+                        
+                        <!-- Restart Policy -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Restart Policy
+                            </label>
+                            <select x-model="createModal.formData.restart_policy"
+                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="no">No restart</option>
+                                <option value="on-failure">On failure only</option>
+                                <option value="always">Always restart</option>
+                                <option value="unless-stopped">Unless stopped manually</option>
+                            </select>
+                            <p class="text-xs text-slate-500 mt-1">How Docker should handle container restarts</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Port Mappings Section -->
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h4 class="text-lg font-semibold text-white">Port Mappings</h4>
+                            <p class="text-xs text-slate-400 mt-1">Expose container ports to the host</p>
+                        </div>
+                        <button type="button" 
+                                @click="addPort()"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">
+                            + Add Port
+                        </button>
+                    </div>
+                    
+                    <div x-show="createModal.formData.ports.length === 0" class="text-slate-500 text-sm italic">
+                        No port mappings configured. Click "Add Port" to expose ports.
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <template x-for="(port, index) in createModal.formData.ports" :key="index">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" 
+                                       x-model="port.container"
+                                       placeholder="80/tcp"
+                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <span class="text-slate-400">→</span>
+                                <input type="number" 
+                                       x-model="port.host"
+                                       min="1"
+                                       max="65535"
+                                       placeholder="8080"
+                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <button type="button" 
+                                        @click="removePort(index)"
+                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                    Remove
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">💡 Format: container_port/protocol → host_port (e.g., 80/tcp → 8080)</p>
+                </div>
+                
+                <!-- Volume Mounts Section -->
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h4 class="text-lg font-semibold text-white">Volume Mounts</h4>
+                            <p class="text-xs text-slate-400 mt-1">Persist data or mount host directories</p>
+                        </div>
+                        <button type="button" 
+                                @click="addVolume()"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">
+                            + Add Volume
+                        </button>
+                    </div>
+                    
+                    <div x-show="createModal.formData.volumes.length === 0" class="text-slate-500 text-sm italic">
+                        No volume mounts configured. Click "Add Volume" to mount volumes.
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <template x-for="(volume, index) in createModal.formData.volumes" :key="index">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" 
+                                       x-model="volume.host"
+                                       placeholder="/host/path"
+                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <span class="text-slate-400">→</span>
+                                <input type="text" 
+                                       x-model="volume.container"
+                                       placeholder="/container/path"
+                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <select x-model="volume.mode"
+                                        class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <option value="rw">Read-Write</option>
+                                    <option value="ro">Read-Only</option>
+                                </select>
+                                <button type="button" 
+                                        @click="removeVolume(index)"
+                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                    Remove
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">💡 Format: /host/path → /container/path with mode (rw = read-write, ro = read-only)</p>
+                </div>
+                
+                <!-- Environment Variables Section -->
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h4 class="text-lg font-semibold text-white">Environment Variables</h4>
+                            <p class="text-xs text-slate-400 mt-1">Pass configuration to the container</p>
+                        </div>
+                        <button type="button" 
+                                @click="addEnvVar()"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">
+                            + Add Variable
+                        </button>
+                    </div>
+                    
+                    <div x-show="createModal.formData.env_vars.length === 0" class="text-slate-500 text-sm italic">
+                        No environment variables configured. Click "Add Variable" to add variables.
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <template x-for="(envVar, index) in createModal.formData.env_vars" :key="index">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" 
+                                       x-model="envVar.key"
+                                       placeholder="VARIABLE_NAME"
+                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <span class="text-slate-400">=</span>
+                                <input type="text" 
+                                       x-model="envVar.value"
+                                       placeholder="value"
+                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <button type="button" 
+                                        @click="removeEnvVar(index)"
+                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                    Remove
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">💡 Format: KEY=value (e.g., DATABASE_URL=postgresql://...)</p>
+                </div>
+                
+                <!-- Advanced Options Section -->
+                <div class="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                    <h4 class="text-lg font-semibold text-white mb-4">Advanced Options</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- CPU Limit -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                CPU Limit (cores)
+                            </label>
+                            <input type="number" 
+                                   x-model="createModal.formData.cpu_limit"
+                                   step="0.1"
+                                   min="0.1"
+                                   placeholder="1.0"
+                                   class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-slate-500 mt-1">Leave empty for unlimited (e.g., 1.5 = 1.5 CPU cores)</p>
+                        </div>
+                        
+                        <!-- Memory Limit -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Memory Limit (MB)
+                            </label>
+                            <input type="number" 
+                                   x-model="createModal.formData.memory_limit"
+                                   min="4"
+                                   placeholder="512"
+                                   class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-slate-500 mt-1">Leave empty for unlimited (minimum 4 MB)</p>
+                        </div>
+                        
+                        <!-- Auto-start Checkbox -->
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" 
+                                   x-model="createModal.formData.auto_start"
+                                   id="auto-start"
+                                   class="w-4 h-4 bg-slate-800 border-slate-600 rounded focus:ring-2 focus:ring-blue-500">
+                            <label for="auto-start" class="text-sm text-slate-300">
+                                Auto-start container after creation
+                            </label>
+                        </div>
+                        
+                        <!-- Pull-if-missing Checkbox -->
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" 
+                                   x-model="createModal.formData.pull_if_missing"
+                                   id="pull-missing"
+                                   class="w-4 h-4 bg-slate-800 border-slate-600 rounded focus:ring-2 focus:ring-blue-500">
+                            <label for="pull-missing" class="text-sm text-slate-300">
+                                Pull image if not found locally
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+                    <button type="button" 
+                            @click="closeCreateModal()"
+                            :disabled="createModal.loading"
+                            class="px-6 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-md transition">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            :disabled="createModal.loading"
+                            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition font-medium">
+                        <span x-show="!createModal.loading">Create Container</span>
+                        <span x-show="createModal.loading">Creating...</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
     
@@ -207,10 +473,11 @@
                     <div class="text-xs text-slate-500" x-text="hardwareProfile.profile_name || 'Loading...'"></div>
                 </div>
                 
-                <!-- Create Button (Disabled - Coming in Task 7) -->
-                <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition opacity-50 cursor-not-allowed" 
-                        disabled
-                        title="Coming in Task 7: Container Create Form">
+                <!-- Create Button -->
+                <button @click="openCreateModal()"
+                        :disabled="runningCount >= (hardwareProfile.max_containers || 999)"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        :title="runningCount >= (hardwareProfile.max_containers || 999) ? 'Hardware limit reached' : 'Create new container'">
                     <span class="mr-2">+</span> Create Container
                 </button>
             </div>
@@ -223,10 +490,10 @@
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Search</label>
                     <input type="text" 
-                           x-model="filters.search"
+                           x-model="filters.search" 
                            @input="applyFilters()"
-                           placeholder="Container name..."
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                           placeholder="Search by name or image..."
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <!-- Status Filter -->
@@ -234,12 +501,11 @@
                     <label class="block text-sm text-slate-400 mb-1">Status</label>
                     <select x-model="filters.status" 
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Statuses</option>
                         <option value="running">Running</option>
                         <option value="exited">Stopped</option>
                         <option value="paused">Paused</option>
-                        <option value="created">Created</option>
                     </select>
                 </div>
                 
@@ -248,180 +514,120 @@
                     <label class="block text-sm text-slate-400 mb-1">Environment</label>
                     <select x-model="filters.environment" 
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Environments</option>
-                        <option value="PRD">Production</option>
-                        <option value="UAT">UAT</option>
                         <option value="DEV">Development</option>
-                        <option value="SANDBOX">Sandbox</option>
-                        <option value="none">No Environment</option>
+                        <option value="STG">Staging</option>
+                        <option value="PROD">Production</option>
                     </select>
                 </div>
                 
-                <!-- Refresh Button -->
+                <!-- Sync Button -->
                 <div class="flex items-end">
-                    <button @click="loadContainers()" 
-                            :disabled="loading"
-                            class="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-md transition">
-                        <span x-show="!loading">🔄 Refresh</span>
-                        <span x-show="loading">⏳ Loading...</span>
+                    <button @click="syncWithDocker()" 
+                            :disabled="syncLoading"
+                            class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white rounded transition">
+                        <span x-show="!syncLoading">🔄 Sync with Docker</span>
+                        <span x-show="syncLoading">⏳ Syncing...</span>
                     </button>
-                </div>
-            </div>
-            
-            <!-- Active Filters Display -->
-            <div x-show="hasActiveFilters()" class="mt-3 pt-3 border-t border-slate-700">
-                <div class="flex items-center space-x-2 text-sm">
-                    <span class="text-slate-400">Active filters:</span>
-                    <button @click="clearFilters()" class="text-blue-400 hover:text-blue-300">Clear all</button>
                 </div>
             </div>
         </div>
         
         <!-- Loading State -->
-        <div x-show="loading && containers.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
-            <div class="text-6xl mb-4">⏳</div>
-            <h3 class="text-xl font-semibold text-white mb-2">Loading Containers</h3>
-            <p class="text-slate-400">Fetching container data from Docker daemon...</p>
-        </div>
-        
-        <!-- Error State -->
-        <div x-show="error && !loading" class="bg-red-900 bg-opacity-20 border border-red-600 rounded-lg p-6 mb-6">
-            <div class="flex items-start">
-                <div class="text-red-500 text-3xl mr-4">⚠</div>
-                <div class="flex-1">
-                    <h3 class="text-lg font-semibold text-red-400 mb-2">Error Loading Containers</h3>
-                    <p class="text-red-300 mb-4" x-text="error"></p>
-                    <button @click="loadContainers()" 
-                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition">
-                        Try Again
-                    </button>
-                </div>
-            </div>
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-slate-400 mt-4">Loading containers...</p>
         </div>
         
         <!-- Empty State -->
-        <div x-show="!loading && !error && filteredContainers.length === 0 && containers.length === 0" 
-             class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
-            <div class="text-6xl mb-4">📦</div>
-            <h3 class="text-2xl font-semibold text-white mb-2">No Containers Yet</h3>
-            <p class="text-slate-400 mb-6">
-                You haven't created any containers yet. Get started by creating your first container.
-            </p>
-            <button class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition opacity-50 cursor-not-allowed" 
-                    disabled
-                    title="Coming in Task 7">
-                + Create Your First Container
-            </button>
+        <div x-show="!loading && filteredContainers.length === 0 && containers.length === 0" 
+             class="text-center py-12 bg-slate-800 rounded-lg border border-slate-700">
+            <p class="text-slate-400 text-lg">No containers found</p>
+            <p class="text-slate-500 mt-2">Click "Create Container" to get started</p>
         </div>
         
         <!-- No Results from Filters -->
-        <div x-show="!loading && !error && filteredContainers.length === 0 && containers.length > 0" 
-             class="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
-            <div class="text-4xl mb-4">🔍</div>
-            <h3 class="text-xl font-semibold text-white mb-2">No Matching Containers</h3>
-            <p class="text-slate-400 mb-4">
-                No containers match your current filters. Try adjusting your search criteria.
-            </p>
-            <button @click="clearFilters()" 
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition">
-                Clear Filters
-            </button>
+        <div x-show="!loading && filteredContainers.length === 0 && containers.length > 0" 
+             class="text-center py-12 bg-slate-800 rounded-lg border border-slate-700">
+            <p class="text-slate-400 text-lg">No containers match your filters</p>
+            <p class="text-slate-500 mt-2">Try adjusting your search or filter criteria</p>
         </div>
         
-        <!-- Container List -->
-        <div x-show="!loading && !error && filteredContainers.length > 0" class="space-y-4">
-            <template x-for="container in filteredContainers" :key="container.id">
+        <!-- Containers Grid -->
+        <div x-show="!loading && filteredContainers.length > 0" class="space-y-4">
+            <template x-for="container in filteredContainers" :key="container.name">
                 <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 transition">
-                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                    <div class="flex justify-between items-start mb-4">
                         <!-- Container Info -->
                         <div class="flex-1">
-                            <div class="flex items-center space-x-3 mb-2">
+                            <div class="flex items-center space-x-3">
                                 <h3 class="text-xl font-semibold text-white" x-text="container.name"></h3>
-                                
-                                <!-- Status Badge -->
                                 <span :class="{
-                                    'bg-green-600': container.state === 'running',
-                                    'bg-red-600': container.state === 'stopped' || container.state === 'exited',
-                                    'bg-yellow-600': container.state === 'paused',
-                                    'bg-blue-600': container.state === 'created'
-                                }" class="px-2 py-1 rounded text-white text-xs font-medium uppercase" x-text="container.state"></span>
-                                
-                                <!-- Environment Tag -->
-                                <span x-show="container.environment" 
-                                      :class="{
-                                          'bg-red-600': container.environment === 'PRD',
-                                          'bg-yellow-600': container.environment === 'UAT',
-                                          'bg-green-600': container.environment === 'DEV',
-                                          'bg-blue-600': container.environment === 'SANDBOX'
-                                      }"
-                                      class="px-2 py-1 rounded text-white text-xs font-medium"
-                                      x-text="container.environment"></span>
+                                    'bg-green-900 text-green-300': container.state === 'running',
+                                    'bg-red-900 text-red-300': container.state === 'exited',
+                                    'bg-yellow-900 text-yellow-300': container.state === 'paused',
+                                    'bg-gray-700 text-gray-300': !['running', 'exited', 'paused'].includes(container.state)
+                                }" class="px-2 py-1 rounded text-xs font-medium uppercase" x-text="container.state"></span>
+                                <span :class="{
+                                    'bg-green-900 text-green-300': container.environment === 'DEV',
+                                    'bg-yellow-900 text-yellow-300': container.environment === 'STG',
+                                    'bg-red-900 text-red-300': container.environment === 'PROD'
+                                }" class="px-2 py-1 rounded text-xs font-medium" x-text="container.environment"></span>
                             </div>
-                            
-                            <div class="space-y-1 text-sm">
-                                <p class="text-slate-400">
-                                    <span class="font-medium">Image:</span> 
-                                    <span class="font-mono text-slate-300" x-text="container.image_name"></span>
-                                </p>
-                                <p class="text-slate-400">
-                                    <span class="font-medium">ID:</span> 
-                                    <span class="font-mono text-slate-300" x-text="container.container_id ? container.container_id.substring(0, 12) : 'N/A'"></span>
-                                </p>
-                                <p x-show="container.ports && container.ports.length > 0" class="text-slate-400">
-                                    <span class="font-medium">Ports:</span> 
-                                    <span class="font-mono text-slate-300" x-text="container.ports ? container.ports.join(', ') : 'None'"></span>
-                                </p>
-                            </div>
+                            <p class="text-slate-400 mt-1 font-mono text-sm" x-text="container.image_name"></p>
+                            <p class="text-slate-500 text-xs mt-1">
+                                Created: <span x-text="formatDate(container.created_at)"></span>
+                            </p>
                         </div>
+                    </div>
+                    
+                    <!-- Container Actions -->
+                    <div class="flex flex-wrap gap-2">
+                        <!-- Start Button -->
+                        <button x-show="container.state !== 'running'"
+                                @click="performAction(container.name, 'start')"
+                                :disabled="actionLoading[container.name]"
+                                title="Start container (docker start)"
+                                class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">▶ Start</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
                         
-                        <!-- Action Buttons -->
-                        <div class="flex flex-wrap gap-2 lg:ml-4">
-                            <!-- Start Button -->
-                            <button x-show="container.state !== 'running'"
-                                    @click="performAction(container.name, 'start')"
-                                    :disabled="actionLoading[container.name]"
-                                    title="Start container (docker start)"
-                                    class="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.name]">▶ Start</span>
-                                <span x-show="actionLoading[container.name]">⏳</span>
-                            </button>
-                            
-                            <!-- Stop Button -->
-                            <button x-show="container.state === 'running'"
-                                    @click="performAction(container.name, 'stop')"
-                                    :disabled="actionLoading[container.name]"
-                                    title="Stop container (docker stop)"
-                                    class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.name]">⏸ Stop</span>
-                                <span x-show="actionLoading[container.name]">⏳</span>
-                            </button>
-                            
-                            <!-- Restart Button -->
-                            <button x-show="container.state === 'running'"
-                                    @click="performAction(container.name, 'restart')"
-                                    :disabled="actionLoading[container.name]"
-                                    title="Restart container (docker restart)"
-                                    class="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.name]">🔄 Restart</span>
-                                <span x-show="actionLoading[container.name]">⏳</span>
-                            </button>
-                            
-                            <!-- Details Button -->
-                            <button @click="showDetails(container)"
-                                    class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition text-sm font-medium">
-                                ℹ Details
-                            </button>
-                            
-                            <!-- Delete Button -->
-                            <button @click="showDeleteConfirmation(container.name, container.name)"
-                                    :disabled="actionLoading[container.name]"
-                                    title="Delete container (docker rm)"
-                                    class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                                <span x-show="!actionLoading[container.name]">🗑 Delete</span>
-                                <span x-show="actionLoading[container.name]">⏳</span>
-                            </button>
-                        </div>
+                        <!-- Stop Button -->
+                        <button x-show="container.state === 'running'"
+                                @click="performAction(container.name, 'stop')"
+                                :disabled="actionLoading[container.name]"
+                                title="Stop container (docker stop)"
+                                class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">⏸ Stop</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+                        
+                        <!-- Restart Button -->
+                        <button x-show="container.state === 'running'"
+                                @click="performAction(container.name, 'restart')"
+                                :disabled="actionLoading[container.name]"
+                                title="Restart container (docker restart)"
+                                class="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">🔄 Restart</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+                        
+                        <!-- Details Button -->
+                        <button @click="showDetails(container)"
+                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition text-sm font-medium">
+                            ℹ Details
+                        </button>
+                        
+                        <!-- Delete Button -->
+                        <button @click="showDeleteConfirmation(container.name, container.name)"
+                                :disabled="actionLoading[container.name]"
+                                title="Delete container (docker rm)"
+                                class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">🗑 Delete</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
                     </div>
                 </div>
             </template>
@@ -443,67 +649,78 @@
  * Manages container list display, filtering, and actions (start/stop/restart/delete).
  * Implements hardware-aware container management with educational CLI equivalents.
  * 
- * Features:
- * - Real-time container status updates (10-second polling)
- * - Multi-criteria filtering (status, environment, search)
- * - Action buttons with confirmation modals
- * - Toast notifications for user feedback
- * - Hardware limit tracking
- * - Educational Docker CLI command equivalents
+ * Task 7 Addition: Container creation modal with comprehensive form validation.
  * 
- * Docker CLI Equivalents:
- * - List containers: docker ps -a
- * - Start: docker start <name>
- * - Stop: docker stop <name>
- * - Restart: docker restart <name>
- * - Delete: docker rm -f <name>
+ * Educational Notes:
+ * - Container operations map to Docker CLI commands (shown in tooltips and details)
+ * - Hardware limits enforced to prevent system overload
+ * - Real-time sync with Docker daemon state
  */
-function containersPage() {
+function containersComponent() {
     return {
-        // State
+        // State management
         containers: [],
         filteredContainers: [],
-        loading: true,
-        error: null,
-        actionLoading: {},
+        loading: false,
+        syncLoading: false,
         lastUpdated: 'Never',
         pollInterval: null,
-        
-        // Hardware Profile
         hardwareProfile: {},
         runningCount: 0,
+        actionLoading: {},
         
-        // Filters
+        // Filter state
         filters: {
             search: '',
             status: 'all',
             environment: 'all'
         },
         
-        // Toast Notification
+        // Toast notification state
         toast: {
             show: false,
             message: '',
-            type: 'info' // success, error, info, warning
+            type: 'info'
         },
         
-        // Delete Modal
+        // Delete modal state
         deleteModal: {
             show: false,
             containerId: null,
             containerName: '',
+            isRunning: false,
             loading: false
         },
         
-        // Details Modal
+        // Details modal state
         detailsModal: {
             show: false,
             container: null
         },
         
+        // Create modal state (Task 7)
+        createModal: {
+            show: false,
+            loading: false,
+            errors: {},
+            errorMessage: '',
+            formData: {
+                name: '',
+                image: '',
+                environment: 'DEV',
+                ports: [],
+                volumes: [],
+                env_vars: [],
+                restart_policy: 'unless-stopped',
+                cpu_limit: null,
+                memory_limit: null,
+                auto_start: true,
+                pull_if_missing: true
+            }
+        },
+        
         /**
          * Initialize component
-         * Loads containers and hardware profile, sets up auto-refresh
          */
         async init() {
             await this.loadHardwareProfile();
@@ -512,15 +729,15 @@ function containersPage() {
         },
         
         /**
-         * Load hardware profile to display limits
-         * CLI equivalent: N/A (custom DockerMate feature)
+         * Load hardware profile from API
          */
         async loadHardwareProfile() {
             try {
                 const response = await fetch('/api/system/hardware');
-                if (response.ok) {
-                    const data = await response.json();
-                    this.hardwareProfile = data.data || {};
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.hardwareProfile = data.data;
                 }
             } catch (error) {
                 console.error('Failed to load hardware profile:', error);
@@ -528,37 +745,25 @@ function containersPage() {
         },
         
         /**
-         * Load all containers from API
-         * CLI equivalent: docker ps -a
+         * Load containers from API
+         * Educational: Equivalent to `docker ps -a`
          */
         async loadContainers() {
             this.loading = true;
-            this.error = null;
             
             try {
                 const response = await fetch('/api/containers');
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Failed to load containers');
-                }
-                
                 const data = await response.json();
-                this.containers = data.data || [];
-
-                // Initialize actionLoading for each container
-                this.containers.forEach(c => {
-                    if (this.actionLoading[c.name] === undefined) {
-                        this.actionLoading[c.name] = false;
-                    }
-                });
-
-                this.applyFilters();
-                this.updateRunningCount();
-                this.lastUpdated = new Date().toLocaleTimeString();
                 
+                if (data.success) {
+                    this.containers = data.data;
+                    this.runningCount = this.containers.filter(c => c.state === 'running').length;
+                    this.applyFilters();
+                    this.lastUpdated = new Date().toLocaleTimeString();
+                } else {
+                    this.showToast('Failed to load containers: ' + data.message, 'error');
+                }
             } catch (error) {
-                this.error = error.message;
                 this.showToast('Failed to load containers: ' + error.message, 'error');
             } finally {
                 this.loading = false;
@@ -566,130 +771,120 @@ function containersPage() {
         },
         
         /**
-         * Update count of running containers
+         * Sync database with Docker daemon state
+         * Educational: Reconciles DockerMate database with actual Docker state
          */
-        updateRunningCount() {
-            this.runningCount = this.containers.filter(c => c.state === 'running').length;
+        async syncWithDocker() {
+            this.syncLoading = true;
+            
+            try {
+                const response = await fetch('/api/system/sync', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.showToast('Sync completed successfully', 'success');
+                    await this.loadContainers();
+                } else {
+                    this.showToast('Sync failed: ' + data.message, 'error');
+                }
+            } catch (error) {
+                this.showToast('Sync failed: ' + error.message, 'error');
+            } finally {
+                this.syncLoading = false;
+            }
         },
         
         /**
          * Apply filters to container list
          */
         applyFilters() {
-            let filtered = [...this.containers];
-            
-            // Search filter
-            if (this.filters.search.trim()) {
-                const search = this.filters.search.toLowerCase();
-                filtered = filtered.filter(c => 
-                    c.name.toLowerCase().includes(search) ||
-                    (c.image_name && c.image_name.toLowerCase().includes(search)) ||
-                    (c.container_id && c.container_id.toLowerCase().includes(search))
-                );
-            }
-            
-            // Status filter
-            if (this.filters.status !== 'all') {
-                filtered = filtered.filter(c => c.state === this.filters.status);
-            }
-            
-            // Environment filter
-            if (this.filters.environment !== 'all') {
-                if (this.filters.environment === 'none') {
-                    filtered = filtered.filter(c => !c.environment);
-                } else {
-                    filtered = filtered.filter(c => c.environment === this.filters.environment);
-                }
-            }
-            
-            this.filteredContainers = filtered;
-        },
-        
-        /**
-         * Check if any filters are active
-         */
-        hasActiveFilters() {
-            return this.filters.search.trim() !== '' || 
-                   this.filters.status !== 'all' || 
-                   this.filters.environment !== 'all';
-        },
-        
-        /**
-         * Clear all filters
-         */
-        clearFilters() {
-            this.filters.search = '';
-            this.filters.status = 'all';
-            this.filters.environment = 'all';
-            this.applyFilters();
+            this.filteredContainers = this.containers.filter(container => {
+                // Search filter
+                const searchMatch = this.filters.search === '' || 
+                    container.name.toLowerCase().includes(this.filters.search.toLowerCase()) ||
+                    container.image_name.toLowerCase().includes(this.filters.search.toLowerCase());
+                
+                // Status filter
+                const statusMatch = this.filters.status === 'all' || container.state === this.filters.status;
+                
+                // Environment filter
+                const envMatch = this.filters.environment === 'all' || container.environment === this.filters.environment;
+                
+                return searchMatch && statusMatch && envMatch;
+            });
         },
         
         /**
          * Perform container action (start/stop/restart)
-         * CLI equivalents:
-         * - Start: docker start <name>
-         * - Stop: docker stop <name>
-         * - Restart: docker restart <name>
+         * Educational: Maps to Docker CLI commands
          */
-async performAction(containerNameOrId, action) {
-    this.actionLoading[containerNameOrId] = true;
-    
-    try {
-        const response = await fetch(`/api/containers/${containerNameOrId}/${action}`, {
+        async performAction(containerId, action) {
+            this.actionLoading[containerId] = true;
+            
+            try {
+                const response = await fetch(`/api/containers/${containerId}/${action}`, {
                     method: 'POST'
                 });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `Failed to ${action} container`);
-                }
-                
                 const data = await response.json();
-                this.showToast(`Container ${action} successful`, 'success');
                 
-                // Reload containers to get updated status
-                await this.loadContainers();
-                
+                if (data.success) {
+                    this.showToast(`Container ${action} successful`, 'success');
+                    await this.loadContainers();
+                } else {
+                    this.showToast(`Failed to ${action} container: ${data.message}`, 'error');
+                }
             } catch (error) {
                 this.showToast(`Failed to ${action} container: ${error.message}`, 'error');
             } finally {
-                this.actionLoading[containerNameOrId] = false;
+                this.actionLoading[containerId] = false;
             }
         },
         
         /**
          * Show delete confirmation modal
          */
-        showDeleteConfirmation(containerName, containerName2) {
+        showDeleteConfirmation(containerId, containerName) {
+            const container = this.containers.find(c => c.name === containerId);
+            this.deleteModal.containerId = containerId;
             this.deleteModal.containerName = containerName;
+            this.deleteModal.isRunning = container && container.state === 'running';
             this.deleteModal.show = true;
         },
         
         /**
-         * Confirm and execute container deletion
-         * CLI equivalent: docker rm -f <name>
+         * Close delete modal
+         */
+        closeDeleteModal() {
+            this.deleteModal.show = false;
+            this.deleteModal.containerId = null;
+            this.deleteModal.containerName = '';
+            this.deleteModal.isRunning = false;
+        },
+        
+        /**
+         * Confirm and execute delete
+         * Educational: Equivalent to `docker rm -f <container>`
          */
         async confirmDelete() {
             this.deleteModal.loading = true;
             
             try {
-                const response = await fetch(`/api/containers/${this.deleteModal.containerName}?force=true`, {
+                const response = await fetch(`/api/containers/${this.deleteModal.containerId}?force=true`, {
                     method: 'DELETE'
                 });
+                const data = await response.json();
                 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Failed to delete container');
+                if (data.success) {
+                    this.showToast('Container deleted successfully', 'success');
+                    this.closeDeleteModal();
+                    await this.loadContainers();
+                } else {
+                    this.showToast('Failed to delete container: ' + data.message, 'error');
                 }
-                
-                this.showToast(`Container "${this.deleteModal.containerName}" deleted successfully`, 'success');
-                this.deleteModal.show = false;
-                
-                // Reload containers
-                await this.loadContainers();
-                
             } catch (error) {
-                this.showToast(`Failed to delete container: ${error.message}`, 'error');
+                this.showToast('Failed to delete container: ' + error.message, 'error');
             } finally {
                 this.deleteModal.loading = false;
             }
@@ -704,12 +899,314 @@ async performAction(containerNameOrId, action) {
         },
         
         /**
-         * Generate Docker CLI command equivalent for educational purposes
+         * Close details modal
+         */
+        closeDetailsModal() {
+            this.detailsModal.show = false;
+            this.detailsModal.container = null;
+        },
+        
+        /**
+         * Task 7: Open create container modal
+         */
+        openCreateModal() {
+            // Reset form data
+            this.createModal.formData = {
+                name: '',
+                image: '',
+                environment: 'DEV',
+                ports: [],
+                volumes: [],
+                env_vars: [],
+                restart_policy: 'unless-stopped',
+                cpu_limit: null,
+                memory_limit: null,
+                auto_start: true,
+                pull_if_missing: true
+            };
+            this.createModal.errors = {};
+            this.createModal.errorMessage = '';
+            this.createModal.show = true;
+        },
+        
+        /**
+         * Task 7: Close create modal
+         */
+        closeCreateModal() {
+            this.createModal.show = false;
+        },
+        
+        /**
+         * Task 7: Add port mapping entry
+         */
+        addPort() {
+            this.createModal.formData.ports.push({
+                container: '',
+                host: ''
+            });
+        },
+        
+        /**
+         * Task 7: Remove port mapping entry
+         */
+        removePort(index) {
+            this.createModal.formData.ports.splice(index, 1);
+        },
+        
+        /**
+         * Task 7: Add volume mount entry
+         */
+        addVolume() {
+            this.createModal.formData.volumes.push({
+                host: '',
+                container: '',
+                mode: 'rw'
+            });
+        },
+        
+        /**
+         * Task 7: Remove volume mount entry
+         */
+        removeVolume(index) {
+            this.createModal.formData.volumes.splice(index, 1);
+        },
+        
+        /**
+         * Task 7: Add environment variable entry
+         */
+        addEnvVar() {
+            this.createModal.formData.env_vars.push({
+                key: '',
+                value: ''
+            });
+        },
+        
+        /**
+         * Task 7: Remove environment variable entry
+         */
+        removeEnvVar(index) {
+            this.createModal.formData.env_vars.splice(index, 1);
+        },
+        
+        /**
+         * Task 7: Validate form client-side
+         */
+        validateForm() {
+            const errors = {};
+            const formData = this.createModal.formData;
+            
+            // Validate required fields
+            if (!formData.name || !formData.name.trim()) {
+                errors.name = 'Container name is required';
+            } else if (!/^[a-zA-Z0-9_-]+$/.test(formData.name)) {
+                errors.name = 'Name must contain only alphanumeric characters, hyphens, and underscores';
+            }
+            
+            if (!formData.image || !formData.image.trim()) {
+                errors.image = 'Image name is required';
+            }
+            
+            // Validate port mappings - only check if at least one field is filled
+            formData.ports.forEach((port, index) => {
+                const hasAnyValue = port.container || port.host;
+                if (hasAnyValue) {
+                    if (!port.container) {
+                        errors[`port_${index}`] = 'Container port is required';
+                    } else if (!port.container.includes('/')) {
+                        errors[`port_${index}`] = 'Container port must include protocol (e.g., 80/tcp)';
+                    }
+                    
+                    if (!port.host) {
+                        errors[`port_${index}`] = 'Host port is required';
+                    } else if (port.host < 1 || port.host > 65535) {
+                        errors[`port_${index}`] = 'Host port must be between 1 and 65535';
+                    }
+                }
+            });
+            
+            // Validate volumes - only check if at least one field is filled
+            formData.volumes.forEach((volume, index) => {
+                const hasAnyValue = volume.host || volume.container;
+                if (hasAnyValue) {
+                    if (!volume.host) {
+                        errors[`volume_${index}`] = 'Host path is required';
+                    }
+                    if (!volume.container) {
+                        errors[`volume_${index}`] = 'Container path is required';
+                    }
+                }
+            });
+            
+            // Validate environment variables - only check if at least one field is filled
+            formData.env_vars.forEach((envVar, index) => {
+                const hasAnyValue = envVar.key || envVar.value;
+                if (hasAnyValue) {
+                    if (!envVar.key) {
+                        errors[`env_${index}`] = 'Variable name is required';
+                    }
+                    if (!envVar.value) {
+                        errors[`env_${index}`] = 'Variable value is required';
+                    }
+                }
+            });
+            
+            // Validate resource limits
+            if (formData.cpu_limit !== null && formData.cpu_limit !== '' && formData.cpu_limit <= 0) {
+                errors.cpu_limit = 'CPU limit must be greater than 0';
+            }
+            
+            if (formData.memory_limit !== null && formData.memory_limit !== '' && formData.memory_limit < 4) {
+                errors.memory_limit = 'Memory limit must be at least 4 MB';
+            }
+            
+            this.createModal.errors = errors;
+            
+            // Build detailed error message for banner
+            if (Object.keys(errors).length > 0) {
+                const errorFields = [];
+                if (errors.name) errorFields.push('Container Name');
+                if (errors.image) errorFields.push('Image Name');
+                
+                // Check for port errors
+                const portErrors = Object.keys(errors).filter(k => k.startsWith('port_'));
+                if (portErrors.length > 0) errorFields.push('Port Mappings');
+                
+                // Check for volume errors
+                const volumeErrors = Object.keys(errors).filter(k => k.startsWith('volume_'));
+                if (volumeErrors.length > 0) errorFields.push('Volume Mounts');
+                
+                // Check for env var errors
+                const envErrors = Object.keys(errors).filter(k => k.startsWith('env_'));
+                if (envErrors.length > 0) errorFields.push('Environment Variables');
+                
+                if (errors.cpu_limit) errorFields.push('CPU Limit');
+                if (errors.memory_limit) errorFields.push('Memory Limit');
+                
+                this.createModal.errorMessage = `Please fix the following: ${errorFields.join(', ')}`;
+            }
+            
+            return Object.keys(errors).length === 0;
+        },
+        
+        /**
+         * Task 7: Submit create form
+         * Educational: Equivalent to `docker run` with all specified options
+         */
+        async submitCreateForm() {
+            // Reset previous errors
+            this.createModal.errorMessage = '';
+            this.createModal.errors = {};
+            
+            // Validate form
+            if (!this.validateForm()) {
+                this.createModal.errorMessage = 'Please fix the errors in the form';
+                return;
+            }
+            
+            this.createModal.loading = true;
+            
+            try {
+                // Transform form data to API format
+                const requestData = {
+                    name: this.createModal.formData.name.trim(),
+                    image: this.createModal.formData.image.trim(),
+                    environment: this.createModal.formData.environment,
+                    restart_policy: this.createModal.formData.restart_policy,
+                    auto_start: this.createModal.formData.auto_start,
+                    pull_if_missing: this.createModal.formData.pull_if_missing
+                };
+                
+                // Transform ports array to API format
+                if (this.createModal.formData.ports.length > 0) {
+                    requestData.ports = {};
+                    this.createModal.formData.ports.forEach(port => {
+                        if (port.container && port.host) {
+                            requestData.ports[port.container] = parseInt(port.host);
+                        }
+                    });
+                }
+                
+                // Transform volumes array to API format
+                if (this.createModal.formData.volumes.length > 0) {
+                    requestData.volumes = {};
+                    this.createModal.formData.volumes.forEach(volume => {
+                        if (volume.host && volume.container) {
+                            requestData.volumes[volume.host] = {
+                                bind: volume.container,
+                                mode: volume.mode
+                            };
+                        }
+                    });
+                }
+                
+                // Transform env vars array to API format
+                if (this.createModal.formData.env_vars.length > 0) {
+                    requestData.env_vars = {};
+                    this.createModal.formData.env_vars.forEach(envVar => {
+                        if (envVar.key && envVar.value) {
+                            requestData.env_vars[envVar.key] = envVar.value;
+                        }
+                    });
+                }
+                
+                // Add resource limits if specified
+                if (this.createModal.formData.cpu_limit) {
+                    requestData.cpu_limit = parseFloat(this.createModal.formData.cpu_limit);
+                }
+                
+                if (this.createModal.formData.memory_limit) {
+                    // Convert MB to bytes for API
+                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * 1024 * 1024;
+                }
+                
+                // Make API request
+                const response = await fetch('/api/containers', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.showToast(`Container "${requestData.name}" created successfully`, 'success');
+                    this.closeCreateModal();
+                    await this.loadContainers();
+                } else {
+                    // Handle API validation errors
+                    if (data.error_type === 'validation_error') {
+                        this.createModal.errorMessage = data.message;
+                    } else if (data.error_type === 'docker_error') {
+                        this.createModal.errorMessage = `Docker error: ${data.message}`;
+                    } else {
+                        this.createModal.errorMessage = data.message;
+                    }
+                }
+            } catch (error) {
+                this.createModal.errorMessage = `Failed to create container: ${error.message}`;
+            } finally {
+                this.createModal.loading = false;
+            }
+        },
+        
+        /**
+         * Generate Docker CLI command equivalent
+         * Educational: Shows how the container can be recreated via CLI
          */
         generateDockerCommand(container) {
             if (!container) return '';
             
-            let cmd = `docker run -d --name ${container.name}`;
+            let cmd = 'docker run -d';
+            
+            // Add name
+            cmd += ` \\\n  --name ${container.name}`;
+            
+            // Add restart policy
+            if (container.restart_policy) {
+                cmd += ` \\\n  --restart ${container.restart_policy}`;
+            }
             
             // Add ports
             if (container.ports && container.ports.length > 0) {
@@ -774,7 +1271,7 @@ async performAction(containerNameOrId, action) {
          */
         startPolling() {
             this.pollInterval = setInterval(() => {
-                if (!this.loading && !this.deleteModal.show && !this.detailsModal.show) {
+                if (!this.loading && !this.deleteModal.show && !this.detailsModal.show && !this.createModal.show) {
                     this.loadContainers();
                 }
             }, 10000); // 10 seconds
