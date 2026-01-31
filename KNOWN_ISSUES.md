@@ -1,8 +1,8 @@
 # DockerMate - Known Issues Tracker
 
 **Created:** January 31, 2026
-**Last Updated:** January 31, 2026
-**Current Sprint:** Sprint 2
+**Last Updated:** January 31, 2026 (Sprint 2 Task 7 completed)
+**Current Sprint:** Sprint 3 (Container UI)
 
 This document tracks all known issues identified during development. Issues are categorized by priority and can be checked off as they're resolved.
 
@@ -13,7 +13,7 @@ This document tracks all known issues identified during development. Issues are 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
 | Authentication/Security | 0 | 0 | 4 | 2 | 6 |
-| Frontend Issues | 0 | 0 | 3 | 1 | 4 |
+| Frontend Issues | 0 | 0 | 1 | 1 | 2 |
 | Backend API | 0 | 0 | 4 | 0 | 4 |
 | Database/Models | 0 | 0 | 4 | 0 | 4 |
 | Code Quality | 0 | 0 | 6 | 0 | 6 |
@@ -23,10 +23,10 @@ This document tracks all known issues identified during development. Issues are 
 | Performance | 0 | 0 | 2 | 2 | 4 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | Missing Features | 0 | 0 | 4 | 0 | 4 |
-| **TOTAL** | **0** | **0** | **34** | **11** | **45** |
+| **TOTAL** | **0** | **0** | **32** | **11** | **43** |
 
-**Recently Resolved:** 4 issues (UI buttons, port mappings, x-for keys)
-**Reclassified as Design:** 2 issues (API auth, login endpoint) - intentional per DESIGN-v2.md
+**Recently Resolved:** 6 issues (Sprint 2 Task 7: port validation, health check polling, login endpoint, restart policy, memory conversion docs)
+**Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
 
 ---
 
@@ -41,32 +41,34 @@ All previously identified authentication "issues" are intentional design decisio
 ## 🟡 MEDIUM PRIORITY ISSUES
 
 ### FRONTEND-001: Form Validation Not Translating Properly ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `frontend/templates/containers.html:1206-1246`
+**Status:** ✅ RESOLVED
+**Location:** `frontend/templates/containers.html:271-295, 1037-1040, 1213-1221`
+**Resolved:** January 31, 2026 (Sprint 2 Task 7)
 
 **Issue:**
 Port format in form uses separate fields but API expects dict format. Volume format has similar mismatch.
 
-**Impact:**
-Container creation may fail due to data format mismatch
-
-**Fix Required:**
-Validate that port.container includes protocol, ensure proper transformation to API format
+**Resolution:**
+- Added protocol dropdown (TCP/UDP) for better UX
+- Split port input into: container port (number) + protocol (dropdown) + host port
+- Fixed transformation: combines `port.container + "/" + port.protocol` → API format
+- Added error message displays for ports, volumes, env vars (not just red borders)
 
 ---
 
 ### FRONTEND-002: Health Check Polling May Start Before Container Exists ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `frontend/templates/containers.html:862-929`
+**Status:** ✅ RESOLVED
+**Location:** `frontend/templates/containers.html:886-964, 1326-1330`
+**Resolved:** January 31, 2026 (Sprint 2 Task 7)
 
 **Issue:**
 `startHealthCheckPolling()` called with 2-second delay which might be insufficient
 
-**Impact:**
-Health check polling could fail if container isn't ready
-
-**Fix Required:**
-Implement exponential backoff or longer initial delay
+**Resolution:**
+- Implemented exponential backoff: 3s, 5s, 8s, 12s, 15s, 20s... (max 10 attempts)
+- Changed from setInterval to setTimeout for variable delays
+- First check after 3 seconds (gives container time to start)
+- Removed wrapper setTimeout when starting polling
 
 ---
 

@@ -90,9 +90,22 @@ function loginPage() {
                         remember_me: this.rememberMe
                     })
                 });
-                
+
+                // Check HTTP status before parsing JSON
+                if (!response.ok) {
+                    // Try to parse error message from response
+                    try {
+                        const errorData = await response.json();
+                        this.errorMessage = errorData.error || `Server error (${response.status})`;
+                    } catch {
+                        this.errorMessage = `Server error (${response.status})`;
+                    }
+                    this.loading = false;
+                    return;
+                }
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     // Redirect to dashboard
                     window.location.href = data.redirect;
@@ -101,7 +114,7 @@ function loginPage() {
                     this.loading = false;
                 }
             } catch (error) {
-                this.errorMessage = 'Login failed. Please try again.';
+                this.errorMessage = 'Connection failed. Please check your network.';
                 this.loading = false;
             }
         }

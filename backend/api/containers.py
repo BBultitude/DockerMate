@@ -44,11 +44,13 @@ CLI Equivalents Shown:
 """
 
 import logging
+import docker
 from typing import Dict, Any, Optional, List
 from flask import Blueprint, request, jsonify
 
 from backend.auth.middleware import require_auth
 from backend.services.container_manager import ContainerManager
+from backend.utils.docker_client import get_docker_client
 from backend.utils.exceptions import (
     ContainerNotFoundError,
     ContainerOperationError,
@@ -1272,6 +1274,154 @@ def restart_container(container_id: str):
     
     except Exception as e:
         logger.exception(f"Unexpected error restarting container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/logs', methods=['GET'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def get_container_logs(container_id: str):
+    """
+    Get container logs with optional filtering.
+
+    GET /api/containers/<id>/logs?tail=100&timestamps=true&since=2025-01-31T00:00:00
+
+    Query Parameters:
+        tail: Number of lines from end (default: 100, max: 10000)
+        timestamps: Include timestamps (default: false)
+        since: Unix timestamp or ISO 8601 datetime
+        until: Unix timestamp or ISO 8601 datetime
+        stdout: Include stdout (default: true)
+        stderr: Include stderr (default: true)
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "logs": "2025-01-31 10:30:00 Container started\\n...",
+            "container_id": "abc123",
+            "container_name": "my-nginx",
+            "line_count": 100,
+            "truncated": false,
+            "cli_command": "docker logs -f --tail 100 my-nginx"
+        }
+    }
+
+    Error Responses:
+    - 400: Invalid parameters
+    - 404: Container not found
+    - 500: Docker error
+
+    CLI Equivalent:
+        docker logs my-nginx
+        docker logs --tail 100 my-nginx
+        docker logs --since 2025-01-31T00:00:00 my-nginx
+        docker logs -f my-nginx  # follow (not supported in this endpoint)
+
+    Educational Notes:
+        - Logs are from container stdout/stderr
+        - Logs persist even after container stops
+        - Use tail parameter to limit output for large logs
+        - Timestamps help with debugging and correlation
+    """
+    try:
+        # Parse query parameters
+        tail = request.args.get('tail', default='100', type=str)
+        timestamps = request.args.get('timestamps', default='false', type=str).lower() == 'true'
+        since = request.args.get('since', default=None, type=str)
+        until = request.args.get('until', default=None, type=str)
+        stdout = request.args.get('stdout', default='true', type=str).lower() == 'true'
+        stderr = request.args.get('stderr', default='true', type=str).lower() == 'true'
+
+        # Validate tail parameter
+        if tail == 'all':
+            tail_int = None
+        else:
+            try:
+                tail_int = int(tail)
+                if tail_int < 0:
+                    raise ValueError("Tail must be positive")
+                if tail_int > 10000:
+                    tail_int = 10000  # Cap at 10k lines
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid tail parameter. Use 'all' or a positive integer.",
+                    "error_type": "ValidationError"
+                }), 400
+
+        # Get Docker client
+        client = get_docker_client()
+
+        # Get container
+        try:
+            container = client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return jsonify({
+                "success": False,
+                "error": f"Container '{container_id}' not found",
+                "error_type": "NotFoundError"
+            }), 404
+
+        # Fetch logs
+        log_kwargs = {
+            'stdout': stdout,
+            'stderr': stderr,
+            'timestamps': timestamps
+        }
+
+        if tail_int is not None:
+            log_kwargs['tail'] = tail_int
+        if since:
+            log_kwargs['since'] = since
+        if until:
+            log_kwargs['until'] = until
+
+        logs = container.logs(**log_kwargs).decode('utf-8', errors='replace')
+
+        # Count lines
+        log_lines = logs.split('\n') if logs else []
+        line_count = len([line for line in log_lines if line.strip()])
+
+        # Build CLI command equivalent
+        cli_command = f"docker logs"
+        if timestamps:
+            cli_command += " --timestamps"
+        if tail_int:
+            cli_command += f" --tail {tail_int}"
+        elif tail == 'all':
+            cli_command += " --tail all"
+        if since:
+            cli_command += f" --since {since}"
+        if until:
+            cli_command += f" --until {until}"
+        cli_command += f" {container.name}"
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "logs": logs,
+                "container_id": container.id,
+                "container_name": container.name,
+                "line_count": line_count,
+                "truncated": tail_int is not None and line_count >= tail_int,
+                "cli_command": cli_command
+            }
+        }), 200
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching logs for {container_id}: {e}")
         return jsonify({
             "success": False,
             "error": "An unexpected error occurred",

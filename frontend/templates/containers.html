@@ -159,7 +159,115 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Logs Viewer Modal -->
+    <div x-show="logsModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
+         @click.self="closeLogsModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-6xl w-full border border-slate-700 max-h-[90vh] flex flex-col">
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h3 class="text-2xl font-bold text-white">Container Logs</h3>
+                    <p class="text-slate-400 text-sm mt-1">
+                        <span x-text="logsModal.containerName"></span>
+                        <span x-show="logsModal.containerId" class="text-slate-500 ml-2" x-text="`(${logsModal.containerId?.substring(0, 12)})`"></span>
+                    </p>
+                </div>
+                <button @click="closeLogsModal()" class="text-slate-400 hover:text-white text-2xl">✕</button>
+            </div>
+
+            <!-- Controls -->
+            <div class="bg-slate-900 rounded-lg p-4 mb-4 space-y-3">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <!-- Tail Lines -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Lines</label>
+                        <select x-model="logsModal.tail" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="100">Last 100</option>
+                            <option value="500">Last 500</option>
+                            <option value="1000">Last 1000</option>
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+
+                    <!-- Timestamps -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Timestamps</label>
+                        <select x-model="logsModal.timestamps" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="false">Hide</option>
+                            <option value="true">Show</option>
+                        </select>
+                    </div>
+
+                    <!-- Auto-refresh -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Auto-refresh</label>
+                        <select x-model="logsModal.autoRefresh" @change="toggleAutoRefresh()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="false">Off</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                        </select>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-end gap-2">
+                        <button @click="fetchLogs()" :disabled="logsModal.loading" class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded text-sm transition">
+                            <span x-show="!logsModal.loading">Refresh</span>
+                            <span x-show="logsModal.loading">...</span>
+                        </button>
+                        <button @click="downloadLogs()" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition" title="Download logs">
+                            ⬇
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                <div>
+                    <input type="text"
+                           x-model="logsModal.searchTerm"
+                           @input="filterLogs()"
+                           placeholder="🔍 Search logs..."
+                           class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm placeholder-slate-500">
+                </div>
+
+                <!-- Docker CLI Command -->
+                <div class="bg-slate-950 rounded p-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs text-slate-500">Docker CLI Equivalent:</span>
+                        <button @click="copyCliCommand()" class="text-xs text-blue-400 hover:text-blue-300">Copy</button>
+                    </div>
+                    <code class="text-xs text-green-400 font-mono" x-text="logsModal.cliCommand"></code>
+                </div>
+            </div>
+
+            <!-- Logs Display -->
+            <div class="flex-1 bg-slate-950 rounded-lg p-4 overflow-y-auto min-h-0 font-mono text-sm">
+                <div x-show="logsModal.loading" class="text-slate-500 text-center py-8">Loading logs...</div>
+                <div x-show="!logsModal.loading && logsModal.error" class="text-red-400 text-center py-8" x-text="logsModal.error"></div>
+                <div x-show="!logsModal.loading && !logsModal.error && !logsModal.filteredLogs" class="text-slate-500 text-center py-8">No logs available</div>
+                <pre x-show="!logsModal.loading && !logsModal.error && logsModal.filteredLogs"
+                     class="text-slate-300 whitespace-pre-wrap break-all overflow-x-auto"
+                     x-text="logsModal.filteredLogs"></pre>
+            </div>
+
+            <!-- Footer Stats -->
+            <div class="mt-4 text-xs text-slate-500 flex justify-between items-center">
+                <div>
+                    <span x-text="logsModal.lineCount"></span> lines
+                    <span x-show="logsModal.truncated" class="text-yellow-400 ml-2">(truncated)</span>
+                    <span x-show="logsModal.searchTerm" class="text-blue-400 ml-2">
+                        (filtered: <span x-text="logsModal.matchCount"></span> matches)
+                    </span>
+                </div>
+                <div x-show="logsModal.lastUpdated">
+                    Last updated: <span x-text="logsModal.lastUpdated"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Create Container Modal - MINIMAL SCROLL FIX -->
     <div x-show="createModal.show" 
          x-cloak
@@ -506,43 +614,72 @@
         
         <!-- Filters -->
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-6">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-lg font-semibold text-white">Filters</h3>
+                <div class="flex items-center gap-3">
+                    <span class="text-sm text-slate-400">
+                        Showing <span class="text-blue-400 font-semibold" x-text="filteredContainers.length"></span>
+                        of <span x-text="containers.length"></span> containers
+                    </span>
+                    <button @click="clearFilters()"
+                            x-show="filters.search || filters.status !== 'all' || filters.environment !== 'all' || filters.image !== 'all'"
+                            class="text-sm text-blue-400 hover:text-blue-300 underline">
+                        Clear all
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <!-- Search -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Search</label>
-                    <input type="text" 
-                           x-model="filters.search" 
+                    <input type="text"
+                           x-model="filters.search"
                            @input="applyFilters()"
-                           placeholder="Search by name or image..."
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                           placeholder="Name or image..."
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-                
+
                 <!-- Status Filter -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Status</label>
-                    <select x-model="filters.status" 
+                    <select x-model="filters.status"
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Statuses</option>
                         <option value="running">Running</option>
                         <option value="exited">Stopped</option>
                         <option value="paused">Paused</option>
+                        <option value="created">Created</option>
                     </select>
                 </div>
-                
+
                 <!-- Environment Filter -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Environment</label>
-                    <select x-model="filters.environment" 
+                    <select x-model="filters.environment"
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Environments</option>
                         <option value="DEV">Development</option>
                         <option value="STG">Staging</option>
                         <option value="PROD">Production</option>
                     </select>
                 </div>
-                
+
+                <!-- Image Filter -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Image</label>
+                    <select x-model="filters.image"
+                            @change="applyFilters()"
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="all">All Images</option>
+                        <template x-for="image in availableImages" :key="image">
+                            <option :value="image" x-text="image"></option>
+                        </template>
+                    </select>
+                </div>
+
                 <!-- Sync Button -->
                 <div class="flex items-end">
                     <button @click="syncWithDocker()" 
@@ -640,7 +777,14 @@
                                 class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition text-sm font-medium">
                             ℹ Details
                         </button>
-                        
+
+                        <!-- Logs Button -->
+                        <button @click="openLogsModal(container.container_id, container.name)"
+                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition text-sm font-medium"
+                                title="View container logs (docker logs)">
+                            📜 Logs
+                        </button>
+
                         <!-- Delete Button -->
                         <button @click="showDeleteConfirmation(container.name, container.name)"
                                 :disabled="actionLoading[container.name]"
@@ -694,8 +838,12 @@ function containersComponent() {
         filters: {
             search: '',
             status: 'all',
-            environment: 'all'
+            environment: 'all',
+            image: 'all'
         },
+
+        // Computed filter options (populated from containers)
+        availableImages: [],
         
         // Toast notification state
         toast: {
@@ -742,11 +890,33 @@ function containersComponent() {
                 pull_if_missing: true
             }
         },
-        
+
+        // Logs viewer modal state
+        logsModal: {
+            show: false,
+            loading: false,
+            error: null,
+            containerId: null,
+            containerName: '',
+            logs: '',
+            filteredLogs: '',
+            searchTerm: '',
+            tail: '100',
+            timestamps: 'false',
+            autoRefresh: 'false',
+            autoRefreshInterval: null,
+            lineCount: 0,
+            matchCount: 0,
+            truncated: false,
+            cliCommand: '',
+            lastUpdated: null
+        },
+
         /**
          * Initialize component
          */
         async init() {
+            this.loadFiltersFromURL();  // Load filters from URL first
             await this.loadHardwareProfile();
             await this.loadContainers();
             this.startPolling();
@@ -795,6 +965,7 @@ function containersComponent() {
                     });
 
                     this.runningCount = this.containers.filter(c => c.state === 'running').length;
+                    this.updateAvailableImages();  // Populate image filter dropdown
                     this.applyFilters();
                     this.lastUpdated = new Date().toLocaleTimeString();
                 } else {
@@ -832,19 +1003,87 @@ function containersComponent() {
          */
         applyFilters() {
             this.filteredContainers = this.containers.filter(container => {
-                // Search filter
-                const searchMatch = this.filters.search === '' || 
-                    container.name.toLowerCase().includes(this.filters.search.toLowerCase()) ||
-                    container.image_name.toLowerCase().includes(this.filters.search.toLowerCase());
-                
+                const searchLower = this.filters.search.toLowerCase().trim();
+
+                // Search filter - match whole words or word starts, not substrings within words
+                let searchMatch = this.filters.search === '';
+                if (!searchMatch && searchLower) {
+                    const nameText = (container.name || '').toLowerCase();
+                    const imageText = (container.image_name || '').toLowerCase();
+
+                    // Split text into words (by spaces, hyphens, colons, slashes)
+                    const nameWords = nameText.split(/[\s\-:\/]+/);
+                    const imageWords = imageText.split(/[\s\-:\/]+/);
+
+                    // Match if any word starts with the search term OR exact substring match in name
+                    searchMatch = nameWords.some(word => word.startsWith(searchLower)) ||
+                                  imageWords.some(word => word.startsWith(searchLower)) ||
+                                  nameText === searchLower ||  // Exact match
+                                  nameText.includes(' ' + searchLower); // Word in the middle
+                }
+
                 // Status filter
                 const statusMatch = this.filters.status === 'all' || container.state === this.filters.status;
-                
+
                 // Environment filter
                 const envMatch = this.filters.environment === 'all' || container.environment === this.filters.environment;
-                
-                return searchMatch && statusMatch && envMatch;
+
+                // Image filter
+                const imageMatch = this.filters.image === 'all' || container.image_name === this.filters.image;
+
+                return searchMatch && statusMatch && envMatch && imageMatch;
             });
+
+            // Update URL with current filters
+            this.updateURLParams();
+        },
+
+        /**
+         * Clear all filters
+         */
+        clearFilters() {
+            this.filters = {
+                search: '',
+                status: 'all',
+                environment: 'all',
+                image: 'all'
+            };
+            this.applyFilters();
+        },
+
+        /**
+         * Extract unique images from containers for filter dropdown
+         */
+        updateAvailableImages() {
+            const uniqueImages = [...new Set(this.containers.map(c => c.image_name))];
+            this.availableImages = uniqueImages.sort();
+        },
+
+        /**
+         * Update URL query parameters with current filters
+         */
+        updateURLParams() {
+            const params = new URLSearchParams();
+
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.status !== 'all') params.set('status', this.filters.status);
+            if (this.filters.environment !== 'all') params.set('env', this.filters.environment);
+            if (this.filters.image !== 'all') params.set('image', this.filters.image);
+
+            const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+            window.history.replaceState({}, '', newURL);
+        },
+
+        /**
+         * Load filters from URL query parameters
+         */
+        loadFiltersFromURL() {
+            const params = new URLSearchParams(window.location.search);
+
+            this.filters.search = params.get('search') || '';
+            this.filters.status = params.get('status') || 'all';
+            this.filters.environment = params.get('env') || 'all';
+            this.filters.image = params.get('image') || 'all';
         },
         
         /**
@@ -1397,7 +1636,143 @@ function containersComponent() {
             
             return cmd;
         },
-        
+
+        /**
+         * Open logs viewer modal
+         */
+        openLogsModal(containerId, containerName) {
+            this.logsModal.containerId = containerId;
+            this.logsModal.containerName = containerName;
+            this.logsModal.show = true;
+            this.logsModal.error = null;
+            this.logsModal.searchTerm = '';
+            this.fetchLogs();
+        },
+
+        /**
+         * Close logs viewer modal
+         */
+        closeLogsModal() {
+            this.logsModal.show = false;
+            if (this.logsModal.autoRefreshInterval) {
+                clearInterval(this.logsModal.autoRefreshInterval);
+                this.logsModal.autoRefreshInterval = null;
+            }
+        },
+
+        /**
+         * Fetch container logs from API
+         */
+        async fetchLogs() {
+            this.logsModal.loading = true;
+            this.logsModal.error = null;
+
+            try {
+                const params = new URLSearchParams({
+                    tail: this.logsModal.tail,
+                    timestamps: this.logsModal.timestamps
+                });
+
+                const response = await fetch(`/api/containers/${this.logsModal.containerId}/logs?${params}`);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.logsModal.logs = data.data.logs;
+                    this.logsModal.filteredLogs = data.data.logs;
+                    this.logsModal.lineCount = data.data.line_count;
+                    this.logsModal.truncated = data.data.truncated;
+                    this.logsModal.cliCommand = data.data.cli_command;
+                    this.logsModal.lastUpdated = new Date().toLocaleTimeString();
+                    this.filterLogs(); // Apply search filter if any
+                } else {
+                    this.logsModal.error = data.error || 'Failed to fetch logs';
+                }
+            } catch (error) {
+                this.logsModal.error = error.message;
+            } finally {
+                this.logsModal.loading = false;
+            }
+        },
+
+        /**
+         * Filter logs based on search term
+         */
+        filterLogs() {
+            if (!this.logsModal.searchTerm || !this.logsModal.logs) {
+                this.logsModal.filteredLogs = this.logsModal.logs;
+                this.logsModal.matchCount = 0;
+                return;
+            }
+
+            const searchLower = this.logsModal.searchTerm.toLowerCase();
+            const lines = this.logsModal.logs.split('\n');
+            const matchedLines = lines.filter(line => line.toLowerCase().includes(searchLower));
+
+            this.logsModal.filteredLogs = matchedLines.join('\n');
+            this.logsModal.matchCount = matchedLines.length;
+        },
+
+        /**
+         * Download logs to file
+         */
+        downloadLogs() {
+            const logs = this.logsModal.filteredLogs || this.logsModal.logs;
+            if (!logs) {
+                this.showToast('No logs to download', 'warning');
+                return;
+            }
+
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            a.download = `${this.logsModal.containerName}_${timestamp}.log`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            this.showToast('Logs downloaded successfully', 'success');
+        },
+
+        /**
+         * Toggle auto-refresh for logs
+         */
+        toggleAutoRefresh() {
+            // Clear existing interval
+            if (this.logsModal.autoRefreshInterval) {
+                clearInterval(this.logsModal.autoRefreshInterval);
+                this.logsModal.autoRefreshInterval = null;
+            }
+
+            // Set new interval if enabled
+            if (this.logsModal.autoRefresh !== 'false') {
+                const intervalSeconds = parseInt(this.logsModal.autoRefresh);
+                this.logsModal.autoRefreshInterval = setInterval(() => {
+                    this.fetchLogs();
+                }, intervalSeconds * 1000);
+            }
+        },
+
+        /**
+         * Copy CLI command to clipboard
+         */
+        async copyCliCommand() {
+            try {
+                await navigator.clipboard.writeText(this.logsModal.cliCommand);
+                this.showToast('CLI command copied to clipboard', 'success');
+            } catch (error) {
+                this.showToast('Failed to copy to clipboard', 'error');
+            }
+        },
+
         /**
          * Format date for display
          */
