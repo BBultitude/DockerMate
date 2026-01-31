@@ -539,14 +539,28 @@ class ContainerManager:
         # TASK 7 FIX: Extract port mappings from Docker
         ports_list = []
         port_bindings = network_settings.get('Ports', {})
+        seen_ports = set()  # Track to avoid IPv4/IPv6 duplicates
+
         for container_port, host_bindings in port_bindings.items():
             if host_bindings:
+                # Parse protocol from container_port (e.g., "80/tcp" -> port=80, protocol=tcp)
+                port_parts = container_port.split('/')
+                port_num = port_parts[0]
+                protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
+
                 for binding in host_bindings:
-                    ports_list.append({
-                        'container': container_port,
-                        'host': binding.get('HostPort', ''),
-                        'host_ip': binding.get('HostIp', '0.0.0.0')
-                    })
+                    host_port = binding.get('HostPort', '')
+                    # Create unique key to avoid duplicates (IPv4 and IPv6 both map to same port)
+                    port_key = f"{port_num}/{protocol}:{host_port}"
+
+                    if port_key not in seen_ports:
+                        seen_ports.add(port_key)
+                        ports_list.append({
+                            'container': port_num,  # Just the port number
+                            'host': host_port,
+                            'protocol': protocol,  # Protocol as separate field
+                            'host_ip': binding.get('HostIp', '0.0.0.0')
+                        })
         
         # TASK 7 FIX: Extract volume mounts from Docker
         volumes_list = []

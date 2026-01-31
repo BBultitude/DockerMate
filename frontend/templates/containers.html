@@ -115,7 +115,7 @@
                 <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
                     <label class="text-slate-400 text-sm">Port Mappings</label>
                     <div class="mt-1 bg-slate-900 rounded p-3 space-y-1">
-                        <template x-for="port in detailsModal.container?.ports" :key="port.host">
+                        <template x-for="(port, index) in detailsModal.container?.ports" :key="`port-${index}`">
                             <div class="text-white font-mono text-sm">
                                 <span class="text-blue-400" x-text="port.host"></span>
                                 <span class="text-slate-500"> → </span>
@@ -125,12 +125,12 @@
                         </template>
                     </div>
                 </div>
-                
+
                 <!-- Environment Variables -->
                 <div x-show="detailsModal.container?.env_vars && detailsModal.container.env_vars.length > 0">
                     <label class="text-slate-400 text-sm">Environment Variables</label>
                     <div class="mt-1 bg-slate-900 rounded p-3 max-h-40 overflow-y-auto">
-                        <template x-for="env in detailsModal.container?.env_vars" :key="env">
+                        <template x-for="(env, index) in detailsModal.container?.env_vars" :key="`env-${index}`">
                             <div class="text-white font-mono text-sm" x-text="env"></div>
                         </template>
                     </div>
@@ -140,7 +140,7 @@
                 <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
                     <label class="text-slate-400 text-sm">Volume Mounts</label>
                     <div class="mt-1 bg-slate-900 rounded p-3">
-                        <template x-for="volume in detailsModal.container?.volumes" :key="volume">
+                        <template x-for="(volume, index) in detailsModal.container?.volumes" :key="`volume-${index}`">
                             <div class="text-white font-mono text-sm" x-text="volume"></div>
                         </template>
                     </div>
@@ -757,20 +757,26 @@ function containersComponent() {
          */
         async loadContainers() {
             this.loading = true;
-            
+
             try {
                 const response = await fetch('/api/containers');
-                
+
                 // TASK 7 FIX: Check HTTP status first
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     // TASK 7 FIX: Force reactivity with spread
                     this.containers = [...(data.data || [])];
+
+                    // UI_ISSUES FIX: Initialize actionLoading to false for each container
+                    this.containers.forEach(container => {
+                        this.actionLoading[container.name] = false;
+                    });
+
                     this.runningCount = this.containers.filter(c => c.state === 'running').length;
                     this.applyFilters();
                     this.lastUpdated = new Date().toLocaleTimeString();
@@ -829,32 +835,34 @@ function containersComponent() {
          * Educational: Maps to Docker CLI commands
          */
         async performAction(containerId, action) {
+            // Set loading state
             this.actionLoading[containerId] = true;
-            
+
             try {
                 const response = await fetch(`/api/containers/${containerId}/${action}`, {
                     method: 'POST'
                 });
-                
+
                 // TASK 7 FIX: Check HTTP status
                 if (!response.ok) {
-                    const data = await response.json();
+                    const data = await response.json().catch(() => ({}));
                     throw new Error(data.error || `Failed to ${action} container`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     this.showToast(`Container ${action} successful`, 'success');
                     await this.loadContainers();
                 } else {
-                    this.showToast(`Failed to ${action} container: ${data.message}`, 'error');
+                    this.showToast(`Failed to ${action} container: ${data.message || 'Unknown error'}`, 'error');
                 }
             } catch (error) {
+                console.error(`performAction error (${action} ${containerId}):`, error);
                 this.showToast(`Failed to ${action} container: ${error.message}`, 'error');
             } finally {
-                // TASK 7 FIX: Delete property instead of setting false
-                delete this.actionLoading[containerId];
+                // Clear loading state - use Vue.delete equivalent for reactivity
+                this.actionLoading[containerId] = false;
             }
         },
         
