@@ -319,11 +319,11 @@ def create_container():
             "version": "1.0.0",
             "team": "backend"
         },
-        "restart_policy": "unless-stopped",   # Optional (no, on-failure, always, unless-stopped)
+        "restart_policy": "unless-stopped",   # Optional (default: unless-stopped) - no, on-failure, always, unless-stopped
         "auto_start": true,                   # Optional (default: true)
         "pull_if_missing": true,              # Optional (default: true)
         "cpu_limit": 1.5,                     # Optional (cores)
-        "memory_limit": 536870912             # Optional (bytes)
+        "memory_limit": 536870912             # Optional (bytes) - frontend converts MB→bytes before sending
     }
     
     Success Response (201):
@@ -395,7 +395,7 @@ def create_container():
                 volumes=data.get('volumes'),
                 env_vars=data.get('env_vars'),
                 labels=data.get('labels'),
-                restart_policy=data.get('restart_policy', 'no'),
+                restart_policy=data.get('restart_policy', 'unless-stopped'),  # Match frontend default
                 auto_start=data.get('auto_start', True),
                 pull_if_missing=data.get('pull_if_missing', True),
                 cpu_limit=data.get('cpu_limit'),

@@ -175,6 +175,7 @@ temp/
 # ============================================
 # Keep the verification scripts, but ignore their outputs if any
 verification_results.txt
+INSTRUCTIONS.md
 
 # ============================================
 # Documentation Build Artifacts

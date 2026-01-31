@@ -269,29 +269,40 @@
                     
                     <div class="space-y-2">
                         <template x-for="(port, index) in createModal.formData.ports" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="port.container"
-                                       placeholder="80/tcp"
-                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">→</span>
-                                <input type="number" 
-                                       x-model="port.host"
-                                       min="1"
-                                       max="65535"
-                                       placeholder="8080"
-                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <button type="button" 
-                                        @click="removePort(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="number"
+                                           x-model="port.container"
+                                           min="1"
+                                           max="65535"
+                                           placeholder="80"
+                                           :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                           class="w-24 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <select x-model="port.protocol"
+                                            :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                            class="w-20 px-2 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="tcp">TCP</option>
+                                        <option value="udp">UDP</option>
+                                    </select>
+                                    <span class="text-slate-400">→</span>
+                                    <input type="number"
+                                           x-model="port.host"
+                                           min="1"
+                                           max="65535"
+                                           placeholder="8080"
+                                           :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <button type="button"
+                                            @click="removePort(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['port_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['port_' + index]"></p>
                             </div>
                         </template>
                     </div>
-                    <p class="text-xs text-slate-500 mt-2">💡 Format: container_port/protocol → host_port (e.g., 80/tcp → 8080)</p>
+                    <p class="text-xs text-slate-500 mt-2">💡 Container port → Host port (e.g., 80/TCP → 8080)</p>
                 </div>
                 
                 <!-- Volume Mounts Section -->
@@ -314,28 +325,31 @@
                     
                     <div class="space-y-2">
                         <template x-for="(volume, index) in createModal.formData.volumes" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="volume.host"
-                                       placeholder="/host/path"
-                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">→</span>
-                                <input type="text" 
-                                       x-model="volume.container"
-                                       placeholder="/container/path"
-                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <select x-model="volume.mode"
-                                        class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                    <option value="rw">Read-Write</option>
-                                    <option value="ro">Read-Only</option>
-                                </select>
-                                <button type="button" 
-                                        @click="removeVolume(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="text"
+                                           x-model="volume.host"
+                                           placeholder="/host/path"
+                                           :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <span class="text-slate-400">→</span>
+                                    <input type="text"
+                                           x-model="volume.container"
+                                           placeholder="/container/path"
+                                           :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <select x-model="volume.mode"
+                                            class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="rw">Read-Write</option>
+                                        <option value="ro">Read-Only</option>
+                                    </select>
+                                    <button type="button"
+                                            @click="removeVolume(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['volume_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['volume_' + index]"></p>
                             </div>
                         </template>
                     </div>
@@ -362,23 +376,26 @@
                     
                     <div class="space-y-2">
                         <template x-for="(envVar, index) in createModal.formData.env_vars" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="envVar.key"
-                                       placeholder="VARIABLE_NAME"
-                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">=</span>
-                                <input type="text" 
-                                       x-model="envVar.value"
-                                       placeholder="value"
-                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <button type="button" 
-                                        @click="removeEnvVar(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="text"
+                                           x-model="envVar.key"
+                                           placeholder="VARIABLE_NAME"
+                                           :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <span class="text-slate-400">=</span>
+                                    <input type="text"
+                                           x-model="envVar.value"
+                                           placeholder="value"
+                                           :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <button type="button"
+                                            @click="removeEnvVar(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['env_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['env_' + index]"></p>
                             </div>
                         </template>
                     </div>
@@ -867,15 +884,22 @@ function containersComponent() {
         },
         
         /**
-         * Start health check polling for a container (Task 7 Fix - Issue 4)
+         * Start health check polling for a container with exponential backoff
+         * Polling schedule: 3s, 5s, 8s, 12s, 15s, 20s... (max 10 attempts)
          */
         startHealthCheckPolling(containerName) {
             if (this.healthCheckPolling[containerName]) return;
-            
+
             const maxAttempts = 10;
             let attempts = 0;
             const startTime = Date.now();
-            
+
+            // Exponential backoff delays (in milliseconds)
+            const getNextDelay = (attemptNum) => {
+                const delays = [3000, 5000, 8000, 12000, 15000, 20000, 25000, 30000, 35000, 40000];
+                return delays[attemptNum] || 40000;  // Cap at 40s
+            };
+
             const checkHealth = async () => {
                 attempts++;
                 try {
@@ -884,19 +908,19 @@ function containersComponent() {
                         this.stopHealthCheckPolling(containerName);
                         return;
                     }
-                    
+
                     const data = await response.json();
                     if (data.success) {
                         const health = data.data;
                         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                        
+
                         if (health.healthy && health.running) {
                             this.showToast(`✅ Container "${containerName}" is healthy (${elapsed}s)`, 'success');
                             this.stopHealthCheckPolling(containerName);
                             await this.loadContainers();
                             return;
                         }
-                        
+
                         if (!health.running || (health.exit_code && health.exit_code !== 0)) {
                             const errorMsg = health.error || `Exited with code ${health.exit_code}`;
                             this.showToast(`❌ Container "${containerName}" crashed: ${errorMsg}`, 'error');
@@ -904,28 +928,46 @@ function containersComponent() {
                             await this.loadContainers();
                             return;
                         }
-                        
+
                         if (attempts >= maxAttempts) {
                             this.showToast(`⚠️ Container "${containerName}" health check timeout`, 'warning');
                             this.stopHealthCheckPolling(containerName);
                             await this.loadContainers();
+                            return;
                         }
+
+                        // Schedule next check with exponential backoff
+                        const nextDelay = getNextDelay(attempts);
+                        const timeoutId = setTimeout(checkHealth, nextDelay);
+                        this.healthCheckPolling[containerName].timeoutId = timeoutId;
                     }
                 } catch (error) {
-                    if (attempts >= maxAttempts) this.stopHealthCheckPolling(containerName);
+                    if (attempts >= maxAttempts) {
+                        this.stopHealthCheckPolling(containerName);
+                    } else {
+                        // Retry with exponential backoff
+                        const nextDelay = getNextDelay(attempts);
+                        const timeoutId = setTimeout(checkHealth, nextDelay);
+                        this.healthCheckPolling[containerName].timeoutId = timeoutId;
+                    }
                 }
             };
-            
-            checkHealth();
-            const intervalId = setInterval(checkHealth, 2000);
-            this.healthCheckPolling[containerName] = { intervalId, attempts, startTime };
+
+            // Store polling state and start first check after initial delay
+            this.healthCheckPolling[containerName] = { attempts, startTime, timeoutId: null };
             this.showToast(`🔍 Monitoring "${containerName}" health...`, 'info');
+
+            // Start first check after 3 seconds
+            const timeoutId = setTimeout(checkHealth, 3000);
+            this.healthCheckPolling[containerName].timeoutId = timeoutId;
         },
         
         stopHealthCheckPolling(containerName) {
             const polling = this.healthCheckPolling[containerName];
             if (polling) {
-                clearInterval(polling.intervalId);
+                if (polling.timeoutId) {
+                    clearTimeout(polling.timeoutId);
+                }
                 delete this.healthCheckPolling[containerName];
             }
         },
@@ -1036,7 +1078,8 @@ function containersComponent() {
         addPort() {
             this.createModal.formData.ports.push({
                 container: '',
-                host: ''
+                host: '',
+                protocol: 'tcp'  // Default to TCP
             });
         },
         
@@ -1106,10 +1149,10 @@ function containersComponent() {
                 if (hasAnyValue) {
                     if (!port.container) {
                         errors[`port_${index}`] = 'Container port is required';
-                    } else if (!port.container.includes('/')) {
-                        errors[`port_${index}`] = 'Container port must include protocol (e.g., 80/tcp)';
+                    } else if (port.container < 1 || port.container > 65535) {
+                        errors[`port_${index}`] = 'Container port must be between 1 and 65535';
                     }
-                    
+
                     if (!port.host) {
                         errors[`port_${index}`] = 'Host port is required';
                     } else if (port.host < 1 || port.host > 65535) {
@@ -1215,7 +1258,9 @@ function containersComponent() {
                     requestData.ports = {};
                     this.createModal.formData.ports.forEach(port => {
                         if (port.container && port.host) {
-                            requestData.ports[port.container] = parseInt(port.host);
+                            // Combine port number with protocol (e.g., "80/tcp")
+                            const portKey = `${port.container}/${port.protocol || 'tcp'}`;
+                            requestData.ports[portKey] = parseInt(port.host);
                         }
                     });
                 }
@@ -1247,10 +1292,12 @@ function containersComponent() {
                 if (this.createModal.formData.cpu_limit) {
                     requestData.cpu_limit = parseFloat(this.createModal.formData.cpu_limit);
                 }
-                
+
                 if (this.createModal.formData.memory_limit) {
-                    // Convert MB to bytes for API
-                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * 1024 * 1024;
+                    // Convert MB to bytes for API (backend expects bytes per API spec)
+                    // User enters MB in form → API receives bytes → Docker receives bytes
+                    const MB_TO_BYTES = 1024 * 1024;
+                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * MB_TO_BYTES;
                 }
                 
                 // Make API request
@@ -1279,10 +1326,9 @@ function containersComponent() {
                     await this.loadContainers();
                     
                     // TASK 7 FIX: Start health check polling if auto-start enabled
+                    // Polling starts with 3s delay and uses exponential backoff
                     if (this.createModal.formData.auto_start) {
-                        setTimeout(() => {
-                            this.startHealthCheckPolling(containerName);
-                        }, 2000);
+                        this.startHealthCheckPolling(containerName);
                     }
                 } else {
                     // Handle API validation errors
