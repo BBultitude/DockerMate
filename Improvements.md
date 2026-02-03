@@ -229,10 +229,220 @@ nginx:1.28    -> sha256:68334eae...   ← different
 
 ---
 
+### FEAT-016: Expanded Subnet Size Picker (radio buttons + guided CIDR builder)
+**Priority:** Medium
+**Effort:** 3-4 hours
+**Sprint:** 4 (remaining tasks)
+**Status:** 🔴 OPEN — backlog
+**Description:**
+The current create-network wizard offers only two recommended sizes (small / large) via buttons.  Users who want a /24, a /28, or anything in between have no guided path — they must type raw CIDR in the manual input, which presumes networking knowledge.  This feature replaces the two-button recommendation with a full guided builder and demotes the raw CIDR input to an "Advanced" toggle.
+
+**Guided builder (default view):**
+1. **Prefix-length radio buttons** — show every common prefix from /24 down to /30, each labelled with its usable host count.  Which prefixes are shown is gated by the hardware profile: prefixes that exceed the profile's `network_size_limit` (e.g. /16 on a Pi) are hidden entirely.  Recommended prefixes for the detected profile get a "(recommended)" tag.
+
+   | Radio | Label |
+   |-------|-------|
+   | /24 | 254 hosts |
+   | /25 | 126 hosts |
+   | /26 | 62 hosts *(recommended for MEDIUM_SERVER)* |
+   | /27 | 30 hosts |
+   | /28 | 14 hosts |
+   | /29 | 6 hosts |
+   | /30 | 2 hosts |
+
+2. **Base-address input** — a single text field for the network address (e.g. `10.100.43.0`).  Basic client-side validation: four octets, each 0-255.  The backend combines the selected prefix with the submitted base to produce the full CIDR (`10.100.43.0/26`) and runs the existing `validate_subnet()` overlap + limit checks.
+
+**Advanced toggle (collapsed by default):**
+The existing free-form CIDR text input (`172.20.0.0/24`) moves behind an "Advanced — enter CIDR manually" expandable section.  When expanded it replaces the radio + base fields.  Selecting it hides the guided builder; toggling back restores it.  This keeps the default path zero-knowledge while still being fully available for users who are comfortable with CIDR notation.
+
+**Backend change:**
+No new endpoint needed.  The existing `POST /api/networks` body already accepts `subnet` as a string.  The frontend simply assembles `base + "/" + prefix` before sending.  `validate_subnet()` on the backend handles the rest.
+
+**Related bug:** NETWORK-001 — recommended sizes currently flag as oversized on creation.  Should be fixed before or alongside this feature so the radio buttons do not produce confusing warnings.
+
+---
+
+### FEAT-017: Adopt / Manage Non-DockerMate Networks
+**Priority:** Medium
+**Effort:** 4-5 hours
+**Sprint:** 4 or 5
+**Status:** 🔴 OPEN — backlog
+**Description:**
+Mirrors the pattern already established for containers (FEAT-012) and images: networks that exist on the Docker host but were not created through DockerMate are visible on the Networks page with an "unmanaged" state.  This feature lets users adopt them into DockerMate so they can be fully managed (purpose field, oversized tracking, delete-guard, topology inclusion) without leaving the UI.
+
+**Two actions on each unmanaged network card:**
+
+1. **Adopt** — reads the live Docker network config (driver, IPAM subnet/gateway/ip_range, connected containers) and writes a matching `networks` DB row with `managed = True`.  After adoption the network card gains the green "Managed" badge, the purpose field becomes editable, and the network participates in all DockerMate management features (oversized warnings, delete guards, topology view when implemented).  No change is made to the Docker network itself — adoption is metadata-only.
+
+2. **Release** (on already-adopted networks) — the inverse: removes the DB row so the network reverts to "unmanaged" state.  The Docker network is untouched; it continues to exist and function.  Useful if a network was adopted by mistake or if the user wants to hand it back to another tool.
+
+**Why this matters:**
+Home-lab environments accumulate networks from docker-compose runs, manual `docker network create` commands, and third-party tools.  Forcing users to manage some networks in DockerMate and others via CLI creates a split-brain situation.  Letting them pull everything into one UI — just like containers and images — keeps the workflow consistent.
+
+**Relationship to FEAT-012:**
+Same adopt/release pattern, different resource type.  If FEAT-012 lands first the UI component and backend helper can be shared or at least used as a reference implementation.
+
+**Out of scope:**
+- Changing the network's Docker config (driver, subnet) after adoption.  That would require Docker network recreation and is a separate, destructive operation.
+- Adopting the three Docker-default networks (bridge, host, none) — these are always shown as "Default" and excluded from adopt/release.
+
+---
+
+### FEAT-018: Detailed Network IP Allocation View
+**Priority:** Medium
+**Effort:** 3-4 hours
+**Sprint:** 4 (remaining tasks — directly extends Task 3 IP Auto-Assignment)
+**Status:** 🔴 OPEN — backlog
+**Description:**
+The current network detail panel (clicking "Details" on a network card) returns only the list of connected containers and their IPs.  It does not tell the user anything about the subnet itself: what the usable range is, how many addresses exist, which ones are taken, which are free.  Without this information a user has no way to know whether they can attach another container, what IP it will likely get, or whether the network is approaching capacity — all without leaving the UI and running `docker network inspect` or doing mental CIDR arithmetic.
+
+**What to show (all calculable from `subnet`, `gateway`, and the live container list Docker already returns):**
+
+| Section | Contents |
+|---------|----------|
+| **Subnet summary** | Network address, broadcast address, prefix length |
+| **Usable range** | First usable IP – last usable IP (e.g. 172.22.0.1 – 172.22.0.62 for a /26) |
+| **Gateway** | Already displayed; repeat here so it is grouped with the other IP info |
+| **IP utilisation bar** | Visual bar (same style as the capacity bar on the dashboard): green → yellow → red as the ratio of assigned to usable rises.  Percentage and `used / total` numbers beside it |
+| **Assigned IPs** | Table: container name → IP address, one row per attached container.  Already fetched from Docker's `Containers` map in `get_network()` — just needs to be rendered as a proper table instead of a plain list |
+| **Free IPs** | Count of addresses that are in the usable range but not the gateway and not assigned to any container.  Optionally list the first N free addresses so the user can see what's actually available |
+| **Reserved IPs** | Placeholder column / section that will be populated once Task 4 (IP Reservation) lands.  Shows "— reserved feature coming soon" until then so the layout does not shift when it arrives |
+
+**Backend change:**
+Extend the `get_network()` response in `network_manager.py` with an `ip_stats` object calculated from the subnet using Python's `ipaddress` module:
+
+```python
+import ipaddress
+
+network   = ipaddress.ip_network(subnet, strict=False)
+usable    = list(network.hosts())                 # excludes network + broadcast
+assigned  = {c['ipv4_address'] for c in containers if c['ipv4_address']}
+assigned.add(gateway)                             # gateway is always taken
+
+ip_stats = {
+    'network_address':  str(network.network_address),
+    'broadcast_address': str(network.broadcast_address),
+    'first_usable':     str(usable[0]),
+    'last_usable':      str(usable[-1]),
+    'total_usable':     len(usable),
+    'assigned_count':   len(assigned),
+    'free_count':       len(usable) - len(assigned),
+    'utilisation_pct':  round((len(assigned) / len(usable)) * 100, 1) if usable else 0,
+}
+```
+
+No new endpoint needed — this object is added to the existing `GET /api/networks/<id>` response alongside the `containers` list.  Networks without a subnet (host, none drivers) simply omit `ip_stats`.
+
+**Frontend change:**
+The existing "Details" toggle panel is expanded: when `ip_stats` is present in the response, render the utilisation bar and the IP breakdown table below the container list.  Same slate-on-slate card style used everywhere else.
+
+**Why this matters:**
+"Information is good; too much is better than none" — the entire point of DockerMate is to surface Docker internals so users do not have to reach for the CLI.  IP allocation is one of the most opaque parts of Docker networking and one of the most common sources of confusion (containers not talking to each other, port conflicts on the same subnet, running out of addresses silently).  Showing it clearly costs nothing to compute and removes a whole category of guesswork.
+
+**Related items:**
+- NETWORK-001 — fix the oversized false-positive first so the detail view does not open with a confusing warning on an empty network.
+- Task 4 (IP Reservation) — the "Reserved IPs" row in this view is the display surface for reservations once that feature lands.  Design the layout to accommodate it from day one.
+
+---
+
+### FEAT-019: Full Health Page + Dashboard Health Card Expansion
+**Priority:** Medium
+**Effort:** 5-7 hours
+**Sprint:** 5 (builds on Sprint 4 network foundation)
+**Status:** 🔴 OPEN — backlog
+**Description:**
+The health system today is two layers deep and both are thin.  The backend (`GET /api/system/health`) checks only two things — database ping and Docker daemon ping — and surfaces warnings as free-text strings about exited containers and capacity.  The dashboard health card renders those two dots and the warning list.  The `/health` detail page is a stub that says "coming soon."
+
+Neither layer knows anything about containers, images, or networks as health domains.  This feature expands both the backend checks and the two frontend surfaces so that the health system covers the full scope of what DockerMate manages.
+
+---
+
+**Backend — expand `/api/system/health` checks**
+
+Current `checks` object has two keys.  Add one per managed resource domain.  Each check returns `"ok"`, `"warning"`, or `"error"` so the dashboard card can colour-code dots without parsing free-text.
+
+| Check key | What it evaluates | ok | warning | error |
+|-----------|-------------------|----|---------|-------|
+| `database` | SELECT 1 connectivity | responds | — | exception |
+| `docker` | daemon ping | responds | — | exception |
+| `containers` | container-level health | all running or stopped-cleanly | ≥1 exited with non-zero exit code, or ≥1 unhealthy (has a health-check defined and it is failing) | — (no hard error possible here; worst case is warning) |
+| `images` | image hygiene | no dangling images, no images flagged `update_available` | dangling images present OR updates available | — |
+| `networks` | network hygiene | all user-created networks have ≥1 container or were created in last 24 h | ≥1 network oversized (using the existing oversized logic, after NETWORK-001 is fixed) | — |
+| `dockermate` | DockerMate-internal health | scheduler is alive, DB row counts are sane, migration version matches head | scheduler not running, or alembic version behind head | DB inaccessible (already covered by `database` check) |
+
+The `warnings` array stays — it is the place to put the human-readable detail strings.  Each warning should carry a `domain` tag (`containers`, `images`, `networks`, `dockermate`) so the health page can group them.  Example:
+
+```json
+{
+  "success": true,
+  "status": "warning",
+  "checks": {
+    "database":   "ok",
+    "docker":     "ok",
+    "containers": "warning",
+    "images":     "warning",
+    "networks":   "ok",
+    "dockermate": "ok"
+  },
+  "warnings": [
+    { "domain": "containers", "message": "2 container(s) exited with non-zero exit code" },
+    { "domain": "containers", "message": "1 container health-check failing: my-app" },
+    { "domain": "images",     "message": "3 dangling images present" },
+    { "domain": "images",     "message": "2 images have updates available" }
+  ]
+}
+```
+
+---
+
+**Dashboard health card — add dots for every check domain**
+
+Currently renders two dots (Docker, Database).  Add one dot per new check key.  The card is intentionally a *summary* — it should not scroll or grow tall.  Keep it compact:
+
+- One row of coloured dots, each labelled with a short name: Docker · DB · Containers · Images · Networks · DockerMate
+- Colour per dot driven by that check's value: green = ok, yellow = warning, red = error
+- Warning count badge stays where it is (bottom of card, links to `/health`)
+- No per-warning detail on the dashboard card — that belongs on the health page
+
+---
+
+**Health page (`/health`) — full detail view (replaces the stub)**
+
+This is the destination when the user clicks "View details →".  Layout mirrors the pattern used on Containers and Images pages: Alpine.js component, stats row at top, resource cards below.
+
+1. **Top stats row** (4 cards, same grid style as Networks page):
+   - Overall status (Healthy / Warning / Unhealthy) with colour
+   - Total warnings count
+   - Last-checked timestamp (from the API response or client-side)
+   - Uptime or "DockerMate running since" (nice-to-have; skip if not readily available)
+
+2. **Per-domain detail cards** — one card per check domain, ordered: Containers → Images → Networks → DockerMate → Infrastructure (Docker + DB).  Each card shows:
+   - Domain name as heading with a coloured status dot
+   - A short summary line (e.g. "12 running, 2 stopped, 1 exited")
+   - The warnings for that domain, rendered as a list with actionable links where possible:
+     - Exited containers → link directly to that container on the Containers page
+     - Dangling images → link to the Images page
+     - Oversized networks → link to that network on the Networks page
+     - Scheduler dead → link to Settings (or just show a "restart" button if feasible)
+
+3. **Auto-refresh** — same 10-second polling the dashboard uses.  The health page should always show current state without a manual refresh.
+
+---
+
+**Ordering note:**
+The backend checks should be added incrementally — `containers` and `images` first (data is already fetched elsewhere in the app), then `networks` and `dockermate`.  The dashboard card and health page can render whatever keys the API returns, so partial rollout works: if only `containers` is added this sprint, a third dot appears and the others come later.  The frontend should treat any missing check key as "not yet available" rather than erroring.
+
+**Related items:**
+- NETWORK-001 — fix the oversized false-positive before the `networks` health check can give meaningful results.
+- FEAT-018 — network IP detail view is a natural companion; users clicking through from a network warning on the health page should land on that detail.
+- Sprint 7 Task 5 (Integration Tests) — health checks are a good target for integration tests since they exercise every resource domain.
+
+---
+
 ### FEAT-010: WebSocket Live Updates
-**Priority:** Low  
-**Effort:** 6-8 hours  
-**Sprint:** 6+ (Future Enhancement)  
+**Priority:** Low
+**Effort:** 6-8 hours
+**Sprint:** 6+ (Future Enhancement)
 **Description:**
 - Replace sync-on-demand with WebSocket push updates
 - Real-time container status changes
@@ -657,8 +867,8 @@ src/services/container_manager.py
 ### Sprint Alignment
 - Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
 - Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
-- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013) — network CRUD + IPAM delivered; IP reservation, topology, docs remaining
-- Sprint 5: System administration, image housekeeping, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
+- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013, FEAT-016, FEAT-017, FEAT-018) — network CRUD + IPAM delivered; IP allocation detail view, expanded subnet picker, adopt/manage unmanaged networks, IP reservation, topology, docs remaining
+- Sprint 5: System administration, image housekeeping, health, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FEAT-019, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
 - Sprint 6+: Future enhancements (FEAT-005, FEAT-010, REF-003, DEBT-004)
 
 ### Prioritization Criteria
@@ -745,6 +955,7 @@ src/services/container_manager.py
 ---
 
 ## VERSION HISTORY
+- **v1.7** (2026-02-03): Backlog additions — FEAT-016 (expanded subnet picker), FEAT-017 (adopt unmanaged networks), FEAT-018 (IP allocation detail view), FEAT-019 (full health page + dashboard health expansion); NETWORK-001 bug confirmed and detailed
 - **v1.6** (2026-02-03): Sprint 4 in progress — network model, NetworkManager service, networks API + frontend, hardware-aware subnet sizing, oversized detection
 - **v1.5** (2026-02-03): Sprint 3 finish — update/rollback endpoints, FEAT-013 (retag), FEAT-014 (unused image prune), FEAT-015 (tag drift detection) added to backlog
 - **v1.4** (2026-02-03): Sprint 3 — image management, show-all containers, dashboard, scheduler, DB sync

@@ -22,13 +22,15 @@ This document tracks all known issues identified during development. Issues are 
 | Documentation | 0 | 0 | 1 | 3 | 4 |
 | Performance | 0 | 0 | 2 | 2 | 4 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
-| Missing Features | 0 | 0 | 3 | 0 | 3 |
-| **TOTAL** | **0** | **0** | **33** | **12** | **45** |
+| Missing Features | 0 | 0 | 4 | 0 | 4 |
+| Network | 0 | 0 | 1 | 0 | 1 |
+| **TOTAL** | **0** | **0** | **35** | **12** | **47** |
 
-**Recently Resolved (Sprint 3):** FEATURE-005 (show all Docker containers with managed/external distinction), FEATURE-006 (real-time dashboard stats), FEATURE-002 (container sync endpoint implemented — `POST /api/containers/sync` with automatic startup recovery)
+**Recently Resolved (Sprint 3-4):** FEATURE-005 (show all containers), FEATURE-006 (real-time dashboard), FEATURE-002 (container sync), FEATURE-001 (system health checks)
 **Previously Resolved:** 7 issues (Sprint 2 Task 7), PROJECT_STATUS.md created (Sprint 2 Task 8)
 **Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
-**Total Open Issues:** 45 (down from 47)
+**New (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized), FEATURE-007 (health page stub + dashboard health card incomplete)
+**Total Open Issues:** 47
 
 ---
 
@@ -624,6 +626,26 @@ Referenced in documentation but not in codebase
 
 **Note:**
 `seed_test_user.py` exists as test helper
+
+---
+
+### FEATURE-007: Health Page Is a Stub + Dashboard Health Card Only Covers Two Domains ⚠️ MEDIUM
+**Status:** 🔴 OPEN
+**Location:** `frontend/templates/health.html` (stub), `frontend/templates/dashboard.html` (health card), `backend/api/system.py` (health endpoint)
+**Reported:** February 3, 2026 (Sprint 4)
+
+**Issue — three gaps, all connected:**
+
+1. **Health page (`/health`)** is a placeholder.  It renders a single card that says "Coming soon" and directs users back to the dashboard health card.  There is no detail view, no per-resource breakdown, no actionable alerts.
+
+2. **Dashboard health card** shows only two status dots — Docker daemon and Database.  It has no visibility into containers (exited, health-check failures), images (dangling, updates available), or networks (oversized).  Warnings that do surface are free-text strings with no domain grouping.
+
+3. **`/api/system/health` backend** sets only two `checks` keys (`docker`, `database`).  The warnings array carries exited-container and capacity strings but nothing about images or networks, and the warnings have no `domain` tag for the frontend to group by.
+
+**Impact:**
+A user looking at the health card or clicking through to the health page cannot tell whether their images need pruning, whether any containers are silently failing health checks, or whether any networks are misconfigured — without leaving the UI entirely and running separate Docker CLI commands.
+
+**Full spec:** See FEAT-019 in Improvements.md.  Covers the expanded backend checks, the dashboard card dot expansion, and the full health-page detail layout.
 
 ---
 
