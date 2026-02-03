@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Health - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-slate-900">
+    {% include 'components/navbar.html' %}
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-3xl font-bold text-white">Health & Alerts</h2>
+        </div>
+
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+            <div class="text-6xl mb-4">💚</div>
+            <h3 class="text-2xl font-semibold text-white mb-2">Health Detail Page</h3>
+            <p class="text-slate-400 mb-4">Coming soon</p>
+            <p class="text-slate-500 text-sm max-w-md mx-auto">
+                This page will show detailed health checks, exited container logs,
+                capacity history, and actionable alerts.  In the meantime, the
+                Health card on the Dashboard surfaces any active warnings.
+            </p>
+        </div>
+    </main>
+</div>
+{% endblock %}

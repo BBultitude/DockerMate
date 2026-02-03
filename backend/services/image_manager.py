@@ -337,45 +337,54 @@ class ImageManager:
 
     def check_for_updates(self) -> List[Dict[str, Any]]:
         """
-        Check all images for available updates.
+        Check all local images against Docker Hub for newer digests.
 
-        Compares local image digests with registry digests to detect updates.
-        Updates the update_available flag in database.
+        For each tracked image that has a known local digest and a valid
+        repository name, fetches the current manifest digest from the registry
+        and compares.  Sets update_available = True when they differ.
+
+        Images that are skipped (no digest, <none> repo, private/unreachable
+        registries) are simply left unchanged — the check is best-effort.
 
         Returns:
-            list: Images with updates available
+            list: Dicts for images that have update_available == True
 
         Educational:
-            - Queries registry API for latest manifest
-            - Compares digests (not tags)
-            - Tag 'latest' can point to different digests over time
-            - This is a placeholder - full implementation requires registry API
-
-        Note:
-            Full implementation requires registry API integration.
-            For now, this is a placeholder that marks last_checked.
+            - Docker tags are mutable pointers; digests are immutable content hashes
+            - "latest" can silently point to a different digest after a push
+            - Comparing digests is the only reliable way to detect updates
+            - CLI equivalent: docker pull --quiet <image> (pulls only if changed)
         """
         logger.info("Checking for image updates")
+        from backend.utils.registry import get_remote_digest
 
         images_with_updates = []
-
-        # Get all images from database
         all_images = self.db.query(Image).all()
 
         for image in all_images:
-            # Update last_checked timestamp
             image.last_checked = datetime.utcnow()
 
-            # TODO: Implement actual registry digest comparison
-            # For now, just mark as checked
-            # Future: Query registry for manifest and compare digests
+            # Skip images we can't meaningfully check
+            if image.repository in ('<none>', '') or image.tag in ('<none>', ''):
+                continue
+
+            remote_digest = get_remote_digest(image.repository, image.tag)
+            if remote_digest is None:
+                # Registry unreachable or image not public — skip silently
+                continue
+
+            if image.digest and image.digest != remote_digest:
+                image.update_available = True
+                logger.info(f"Update available: {image.repository}:{image.tag} "
+                            f"(local={image.digest[:24]}… remote={remote_digest[:24]}…)")
+            elif image.digest == remote_digest:
+                image.update_available = False
 
             if image.update_available:
                 images_with_updates.append(image.to_dict())
 
         self.db.commit()
-
-        logger.info(f"Update check complete. {len(images_with_updates)} images have updates")
+        logger.info(f"Update check complete. {len(images_with_updates)} image(s) have updates")
         return images_with_updates
 
     # =========================================================================

@@ -2,8 +2,8 @@
 
 **Last Updated:** February 3, 2026
 **Current Version:** v0.1.0-alpha
-**Current Phase:** Sprint 3 - Image Management & Updates (Tasks 1-7 complete)
-**Overall Completion:** ~40% (Sprint 2 complete, Sprint 3 Tasks 1-7 complete)
+**Current Phase:** Sprint 4 - Network Management (Sprint 3 complete)
+**Overall Completion:** ~50% (Sprints 1-3 complete)
 
 ---
 
@@ -14,8 +14,8 @@ DockerMate is currently in **Sprint 3** of a 7-sprint development roadmap target
 **Key Milestones:**
 - ✅ Sprint 1: Foundation & Auth (100% complete)
 - ✅ Sprint 2: Container Management (100% complete)
-- 🔄 Sprint 3: Image & Updates (Tasks 1-7 complete — see below)
-- ⏳ Sprint 4: Network Management (0% - planned)
+- ✅ Sprint 3: Image & Updates (100% complete)
+- 🔄 Sprint 4: Network Management (0% - next)
 - ⏳ Sprint 5: Volumes, Stacks & Health (0% - planned)
 - ⏳ Sprint 6: Export & CLI (0% - planned)
 - ⏳ Sprint 7: Polish & Testing (0% - planned)
@@ -125,9 +125,9 @@ v2.0.0 - Advanced Features (Future)
 
 ---
 
-### Sprint 3: Image & Updates 🔄 IN PROGRESS
-**Status:** Tasks 1-7 complete (see below); Tasks 4-7 (update/redeploy/history/rollback) remain planned
-**Started:** February 2, 2026
+### Sprint 3: Image & Updates ✅ COMPLETE
+**Status:** 100% complete
+**Completed:** February 3, 2026
 
 | Task | Status | Completion Date |
 |------|--------|----------------|
@@ -138,26 +138,26 @@ v2.0.0 - Advanced Features (Future)
 | Task 5: Show All Containers (FEATURE-005) | ✅ | Feb 3, 2026 |
 | Task 6: Real-Time Dashboard (FEATURE-006) | ✅ | Feb 3, 2026 |
 | Task 7: Background Scheduler | ✅ | Feb 3, 2026 |
+| Task 8: Update / Rollback System | ✅ | Feb 3, 2026 |
 
-#### Additional Sprint 3 Work (completed Feb 3):
-- **Database Sync / Recovery** — `POST /api/containers/sync` recovers managed containers missing from DB after a reset. Labels `com.dockermate.managed` and `com.dockermate.environment` persist on containers and survive DB wipes. Sync runs automatically at startup via `docker-entrypoint.sh`.
-- **External Container Protection** — Checkboxes disabled, action buttons hidden, bulk-select excludes externals. DockerMate's own container shown as external (KISS).
-
-**Deliverables (completed):**
+**Deliverables:**
 - ✅ `backend/models/image.py` — Image model with Alembic migration
-- ✅ `backend/services/image_manager.py` — Full image CRUD + update-check placeholder
+- ✅ `backend/models/update_history.py` — UpdateHistory model + migration (idempotent)
+- ✅ `backend/services/image_manager.py` — Full image CRUD + real digest-based update detection via Docker Hub registry API
+- ✅ `backend/utils/registry.py` — Docker Hub v2 anonymous token flow; fetches manifest digest for update comparison
 - ✅ `backend/api/images.py` — 6 REST endpoints (list, get, pull, delete, tag, updates)
-- ✅ `frontend/templates/images.html` — Alpine.js image management page (pull modal, tag modal, delete confirmation, stats cards)
-- ✅ `backend/services/scheduler.py` — Daemon-thread scheduler; image update check every 6 h (configurable via `SCHEDULER_IMAGE_CHECK_HOURS`)
+- ✅ `backend/api/containers.py` — 4 new endpoints: update, rollback, update-all, history
+- ✅ `backend/services/container_manager.py` — `update_container_image()`, `rollback_container()`, `_record_update_history()`
+- ✅ `backend/services/scheduler.py` — Daemon-thread scheduler; image update check every 6 h
+- ✅ `frontend/templates/images.html` — Full image management page (pull, tag, delete, update-check, UPDATE AVAILABLE badges)
+- ✅ `frontend/templates/containers.html` — Update/Rollback buttons per container, UPDATE AVAILABLE badge, cross-references images API for live update status
+- ✅ `frontend/templates/dashboard.html` — Health card, images summary, networks summary, environment distribution; 10 s polling
+- ✅ `frontend/templates/health.html` — Health detail page stub
+- ✅ `/api/system/health` — Real checks (DB ping, Docker ping, exited container scan, capacity warning)
+- ✅ `/api/system/networks` — Live network listing from Docker daemon
 - ✅ `list_all_docker_containers()` + frontend toggle + managed/external badges
-- ✅ Real-time dashboard with 10 s auto-refresh, capacity bar, environment distribution
 - ✅ `sync_managed_containers_to_database()` + API endpoint + entrypoint hook
-
-**Remaining (planned for later sprint):**
-- Update & redeploy functionality (one-click image update for running containers)
-- "Update All" bulk feature
-- Update history tracking
-- Rollback capability
+- ✅ Navbar updated with Health link
 
 ---
 
@@ -261,12 +261,16 @@ v2.0.0 - Advanced Features (Future)
   - 12 Low Priority
 - **UI_Issues.md**: File not created — all UI issues tracked directly in KNOWN_ISSUES.md
 
-### Recent Fixes (Sprint 3)
+### Recent Fixes & Completions (Sprint 3)
 1. ✅ FEATURE-005 — Show all Docker containers (managed + external with protection)
-2. ✅ FEATURE-006 — Real-time dashboard with auto-refresh
+2. ✅ FEATURE-006 — Real-time dashboard with auto-refresh (health, images, networks)
 3. ✅ FEATURE-002 — Container sync endpoint + automatic startup recovery
 4. ✅ Image management full stack (model → service → API → frontend)
-5. ✅ Background scheduler for image update checks
+5. ✅ Background scheduler for image update checks (real digest comparison via registry)
+6. ✅ Update / Rollback system — per-container update, bulk update-all, rollback, history trail
+7. ✅ Dashboard overhaul — health card with real Docker/DB checks, images + networks summary
+8. ✅ Health page stub + nav link
+9. ✅ FEAT-013, FEAT-014, FEAT-015 added to backlog (retag, image pruning, tag drift)
 
 ### Previously Resolved (Sprint 2 Task 7)
 1. ✅ Alpine.js x-for key issues causing component crashes
@@ -283,16 +287,17 @@ v2.0.0 - Advanced Features (Future)
 
 ## 🎯 Current Focus & Next Steps
 
-### Current Focus (Sprint 3 — remaining work)
-- Update & redeploy: one-click image update for running containers
-- Update history tracking
-- Rollback capability
-
-### Next Sprint (Sprint 4)
+### Current Focus (Sprint 4 — Network Management)
 1. Network creation and management
 2. Hardware-aware subnet sizing
-3. IP reservation system
+3. IP auto-assignment and reservation
 4. Network topology visualization
+5. Auto-generated network docs
+
+### Backlog highlights (Improvements.md)
+- FEAT-013: Retag & Redeploy (change container image version without full recreate config)
+- FEAT-014: Unused image detection + auto-prune
+- FEAT-015: Tag drift detection (dangling image version resolution via digest)
 
 ### Deferred Items (Improvements.md)
 - See Improvements.md for full backlog
@@ -309,7 +314,8 @@ v2.0.0 - Advanced Features (Future)
 
 ### Development Velocity
 - **Sprint 1**: 8 tasks in 9 days (0.89 tasks/day)
-- **Sprint 2**: 7 tasks in 2 days (3.5 tasks/day) - accelerating
+- **Sprint 2**: 7 tasks in 2 days (3.5 tasks/day)
+- **Sprint 3**: 8 tasks in 2 days (4.0 tasks/day) — accelerating
 - **Estimated Completion**: v1.0.0 by end of February 2026 (if velocity maintains)
 
 ### Technical Debt
@@ -367,13 +373,12 @@ DockerMate prioritizes educational value:
 
 ## 🚀 Release Criteria
 
-### v0.1.0 Alpha (Current)
+### v0.1.0 Alpha ✅ COMPLETE
 - ✅ Authentication complete
 - ✅ Container management complete
-- ✅ Image management foundation complete
-- ✅ Dashboard live stats
-- ✅ Sprint 2 complete
-- 🔄 Sprint 3 in progress (Tasks 1-7 done)
+- ✅ Image management complete (CRUD, pull, update detection, update/rollback)
+- ✅ Dashboard live stats (health, images, networks, environments)
+- ✅ Sprints 1-3 complete
 
 ### v0.5.0 Beta
 - ⏳ Sprint 1-4 complete

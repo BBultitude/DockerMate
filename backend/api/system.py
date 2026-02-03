@@ -129,44 +129,140 @@ def get_hardware_profile():
 def health_check():
     """
     System health check endpoint.
-    
+
     GET /api/system/health
-    
-    Returns system health status including database and Docker connectivity.
-    
+
+    Performs live checks against the database and Docker daemon.
+    Returns per-check status plus any warnings worth surfacing
+    to the dashboard health card.
+
     Success Response (200):
     {
         "success": true,
-        "status": "healthy",
+        "status": "healthy",          // "healthy" | "warning" | "unhealthy"
         "checks": {
-            "database": "ok",
-            "docker": "ok",
-            "hardware": "ok"
-        }
+            "database": "ok",         // "ok" | "error"
+            "docker": "ok",           // "ok" | "error"
+        },
+        "warnings": []                // list of human-readable warning strings
+    }
+    """
+    checks = {}
+    warnings = []
+
+    # --- Database connectivity ---
+    db = None
+    try:
+        db = SessionLocal()
+        # A lightweight query — just proves the connection works
+        db.execute(__import__('sqlalchemy').text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as e:
+        logger.error(f"Health check — database: {e}")
+        checks["database"] = "error"
+        warnings.append("Database connection failed")
+    finally:
+        if db:
+            db.close()
+
+    # --- Docker daemon connectivity ---
+    try:
+        from backend.utils.docker_client import get_docker_client
+        client = get_docker_client()
+        client.ping()
+        checks["docker"] = "ok"
+    except Exception as e:
+        logger.error(f"Health check — docker: {e}")
+        checks["docker"] = "error"
+        warnings.append("Docker daemon is not reachable")
+
+    # --- Exited containers (worth flagging) ---
+    try:
+        from backend.utils.docker_client import get_docker_client
+        client = get_docker_client()
+        exited = client.containers.list(all=True, filters={"status": "exited"})
+        # Filter out DockerMate's own container
+        exited = [c for c in exited if 'dockermate' not in (c.name or '').lower()]
+        if exited:
+            warnings.append(f"{len(exited)} container(s) exited — check Containers page")
+    except Exception:
+        pass  # non-fatal; docker check above already covers connectivity
+
+    # --- Capacity warning ---
+    try:
+        db = SessionLocal()
+        config = HostConfig.get_or_create(db)
+        from backend.utils.docker_client import get_docker_client
+        client = get_docker_client()
+        total = len(client.containers.list(all=True))
+        pct = round((total / config.max_containers) * 100) if config.max_containers else 0
+        if pct >= 80:
+            warnings.append(f"Capacity at {pct}% ({total}/{config.max_containers} containers)")
+    except Exception:
+        pass
+    finally:
+        if db:
+            db.close()
+
+    # Derive overall status
+    if checks.get("database") == "error" or checks.get("docker") == "error":
+        status = "unhealthy"
+    elif warnings:
+        status = "warning"
+    else:
+        status = "healthy"
+
+    return jsonify({
+        "success": True,
+        "status": status,
+        "checks": checks,
+        "warnings": warnings
+    }), 200
+
+
+@system_bp.route('/networks', methods=['GET'])
+def get_networks():
+    """
+    List Docker networks on the host.
+
+    GET /api/system/networks
+
+    Lightweight endpoint — queries Docker daemon directly.  No database
+    model required until Sprint 4 adds full network management.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": [
+            {"name": "bridge", "driver": "bridge", "id": "abc123..."},
+            ...
+        ],
+        "count": 4
     }
     """
     try:
-        checks = {
-            "database": "ok",
-            "docker": "ok", 
-            "hardware": "ok"
-        }
-        
-        # TODO: Add actual health checks in future sprint
-        # - Database connection test
-        # - Docker daemon ping
-        # - Disk space check
-        
+        from backend.utils.docker_client import get_docker_client
+        client = get_docker_client()
+        networks = client.networks.list()
+
+        data = []
+        for net in networks:
+            data.append({
+                "name": net.name,
+                "driver": net.attrs.get("Driver", "unknown"),
+                "id": net.id
+            })
+
         return jsonify({
             "success": True,
-            "status": "healthy",
-            "checks": checks
+            "data": data,
+            "count": len(data)
         }), 200
-        
+
     except Exception as e:
-        logger.exception(f"Health check failed: {e}")
+        logger.exception(f"Failed to list networks: {e}")
         return jsonify({
             "success": False,
-            "status": "unhealthy",
-            "error": str(e)
+            "error": "Failed to retrieve network information",
+            "error_type": "ServerError"
         }), 500

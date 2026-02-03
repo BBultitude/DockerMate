@@ -912,7 +912,13 @@
                                     MANAGED
                                 </span>
                             </div>
-                                <p class="text-slate-400 mt-1 font-mono text-sm" x-text="container.image_name"></p>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <p class="text-slate-400 font-mono text-sm" x-text="container.image_name"></p>
+                                    <span x-show="hasUpdate(container)"
+                                          class="px-2 py-0.5 bg-yellow-900 text-yellow-300 rounded text-xs font-medium">
+                                        UPDATE AVAILABLE
+                                    </span>
+                                </div>
                                 <p class="text-slate-500 text-xs mt-1">
                                     Created: <span x-text="formatDate(container.created_at)"></span>
                                 </p>
@@ -964,6 +970,25 @@
                                 class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition text-sm font-medium"
                                 title="View container logs (docker logs)">
                             📜 Logs
+                        </button>
+
+                        <!-- Sprint 3: Update Button (shown when image has update available) -->
+                        <button x-show="hasUpdate(container)"
+                                @click="updateContainer(container.name)"
+                                :disabled="actionLoading[container.name]"
+                                title="Pull latest image and recreate container"
+                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">⬆ Update</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
+                        <!-- Sprint 3: Rollback Button (always available for managed containers) -->
+                        <button @click="rollbackContainer(container.name)"
+                                :disabled="actionLoading[container.name]"
+                                title="Rollback to previous image version"
+                                class="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-500 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">↩ Rollback</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
 
                         <!-- Delete Button -->
@@ -1047,6 +1072,9 @@ function containersComponent() {
         // Show all containers toggle (FEATURE-005)
         showAllContainers: true,
 
+        // Sprint 3: map of "repository:tag" -> update_available (from images API)
+        imagesUpdateMap: {},
+
         // Computed filter options (populated from containers)
         availableImages: [],
         
@@ -1122,8 +1150,11 @@ function containersComponent() {
          */
         async init() {
             this.loadFiltersFromURL();  // Load filters from URL first
-            await this.loadHardwareProfile();
-            await this.loadContainers();
+            await Promise.all([
+                this.loadHardwareProfile(),
+                this.loadContainers(),
+                this.loadImagesUpdateMap()
+            ]);
             this.startPolling();
         },
         
@@ -1985,6 +2016,80 @@ function containersComponent() {
             return date.toLocaleString();
         },
         
+        /**
+         * Sprint 3: Load images and build a map of image name -> update_available
+         */
+        async loadImagesUpdateMap() {
+            try {
+                const response = await fetch('/api/images');
+                if (!response.ok) return;
+                const data = await response.json();
+                if (data.success) {
+                    const map = {};
+                    data.data.forEach(img => {
+                        const key = (img.repository || '') + ':' + (img.tag || '');
+                        map[key] = img.update_available || false;
+                    });
+                    this.imagesUpdateMap = map;
+                }
+            } catch (e) { console.error('loadImagesUpdateMap:', e); }
+        },
+
+        /**
+         * Sprint 3: Check if a container's image has an update available
+         */
+        hasUpdate(container) {
+            return this.imagesUpdateMap[container.image_name] === true;
+        },
+
+        /**
+         * Sprint 3: Update a container's image to the latest version
+         */
+        async updateContainer(containerName) {
+            this.actionLoading[containerName] = true;
+            try {
+                const response = await fetch(`/api/containers/${containerName}/update`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Container "${containerName}" updated successfully`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.showToast(`Update failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Update failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[containerName] = false;
+            }
+        },
+
+        /**
+         * Sprint 3: Rollback a container to its previous image
+         */
+        async rollbackContainer(containerName) {
+            this.actionLoading[containerName] = true;
+            try {
+                const response = await fetch(`/api/containers/${containerName}/rollback`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Container "${containerName}" rolled back to ${data.data?.rolled_back_to || 'previous image'}`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.showToast(`Rollback failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Rollback failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[containerName] = false;
+            }
+        },
+
         /**
          * Show toast notification
          */

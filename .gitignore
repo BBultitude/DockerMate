@@ -64,6 +64,11 @@ venv.bak/
 .venv/
 
 # ============================================
+# Claude Code
+# ============================================
+.claude/
+
+# ============================================
 # IDEs and Editors
 # ============================================
 # VSCode
@@ -195,6 +200,7 @@ secrets/
 # API keys or sensitive config (should use environment variables instead)
 api_keys.txt
 config_local.py
+cookies.txt
 
 # ============================================
 # Backup Files

@@ -133,6 +133,102 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 
 ---
 
+### FEAT-012: Import / Adopt Unmanaged Containers
+**Priority:** Medium
+**Effort:** 4-6 hours
+**Sprint:** 4 or 5 (after network management foundation)
+**Status:** 🔴 OPEN — backlog
+**Description:**
+External (unmanaged) containers are visible on the Containers page when "Show all Docker containers" is toggled, but cannot be managed through DockerMate. This feature adds two paths to get them under DockerMate control:
+
+1. **Import (one-click adopt):** Button on each external container card that reads its current Docker config (image, ports, volumes, env vars, restart policy) and writes a matching record into the database. The container gains the `com.dockermate.managed=true` label via `docker rename` + label update (or container recreate if labels cannot be applied live). After import it behaves identically to a DockerMate-created container.
+
+2. **Rebuild instructions:** For cases where import is not desired (e.g. the container was created by another tool and should stay independent), a "How to recreate" info panel shows the equivalent `docker run` command that would recreate the container inside DockerMate. This lets the user manually create a managed copy and stop the external one at their own pace.
+
+**UI placement:**
+- "Import" button on external container cards (only shown when "Show all" is toggled)
+- "Show recreate command" expandable section on external container detail/info
+
+**Out of scope for this item:**
+- Volume data migration (import copies config only, not volume contents)
+- Containers created by docker-compose (recommend stack import instead — see FEAT-005)
+
+---
+
+### FEAT-013: Retag Container Image (change version without full redeploy config)
+**Priority:** Medium
+**Effort:** 3-4 hours
+**Sprint:** 4 or 5
+**Status:** 🔴 OPEN — backlog
+**Description:**
+The current update flow (`POST /api/containers/<id>/update`) pulls the same `repository:tag` the container was created with. If a container was deliberately pinned to `nginx:1.28`, update will only ever pull `nginx:1.28` — it will never jump to `1.29` or `latest`. This is correct default behaviour, but there is no way to *change* the tag without deleting and manually recreating the container.
+
+This feature adds a "Retag & Redeploy" action that lets the user pick a new tag for an existing container's image and recreate it with the same config but the new tag:
+
+1. **UI:** "Change Image Version" button on managed container cards (or in the details modal). Opens a modal showing the current `repository:tag` with a text input for the new tag. Optionally show a dropdown of tags recently seen for that repository (populated from Docker Hub tag list API).
+2. **Backend:** New endpoint `POST /api/containers/<id>/retag` with body `{"tag": "1.29"}`. Internally: pull `repository:newtag`, stop+remove old container, recreate with identical config but new image, start, write UpdateHistory record (so rollback back to the old tag is available).
+3. **Rollback compatibility:** The UpdateHistory record written by retag stores `old_image` as `nginx:1.28` and `new_image` as `nginx:1.29`. The existing rollback flow already uses `old_image` to recreate, so rollback works with zero changes.
+
+**Out of scope:**
+- Changing the repository (e.g. `nginx` → `alpine`). That is a different container.
+- Tag auto-discovery / registry tag listing (nice-to-have, tracked separately if wanted).
+
+---
+
+### FEAT-014: Unused Image Detection & Auto-Prune
+**Priority:** Medium
+**Effort:** 4-6 hours
+**Sprint:** 5
+**Status:** 🔴 OPEN — backlog
+**Description:**
+Images accumulate over time — old versions left behind after updates, test pulls never used, dangling images created when a tag moves to a new digest. This feature surfaces that waste and optionally cleans it up.
+
+**Three sub-features:**
+
+1. **Usage status on the Images page:** For each image in the list, show which containers (if any) are currently using it. Query the live Docker daemon for all containers, build a map of `image → [container names]`, and render it as a badge or expandable list on each image card. Images with zero containers get an "Unused" badge. Dangling images (tag = `<none>`) get a "Dangling" badge.
+
+2. **Auto-prune policy (configurable):** A setting (Settings page or env var) that defines a retention window, e.g. "prune unused images older than 30 days". A scheduled job (piggyback on the existing 6 h scheduler in `scheduler.py`) scans the `images` table: if `pulled_at` is older than the threshold AND no container references that image_id, delete it from both Docker and the database. Dangling images can have a shorter threshold (e.g. 7 days). All prune actions are logged with image name, size reclaimed, and reason.
+
+3. **Manual "Prune Unused" button:** A one-click button on the Images page that runs the same logic as auto-prune but immediately, with a confirmation modal showing what will be removed and total size to be reclaimed before committing.
+
+**Implementation notes:**
+- Container → image mapping: `docker inspect` each container gives `Config.Image`. Cross-reference against local image tags.
+- Dangling detection: images where `RepoTags` is empty or `['<none>:<none>']`.
+- The existing `Image.pulled_at` column already tracks when we first saw the image — use that as the age baseline.
+- Auto-prune should be opt-in (off by default) and configurable via the Settings page.
+
+---
+
+### FEAT-015: Tag Drift Detection (dangling image tracking after pull)
+**Priority:** Medium
+**Effort:** 3-4 hours
+**Sprint:** 5
+**Status:** 🔴 OPEN — backlog
+**Description:**
+When a mutable tag like `nginx:latest` is pulled again after a remote update, Docker locally untags the previous image — it becomes dangling (`<none>:<none>`). The new image gets the `latest` tag. DockerMate's `_sync_database_state()` already handles this correctly at the record level: it keys on `image_id` and updates `repository`/`tag` when it syncs. However, there are two gaps:
+
+1. **Sync timing:** `_sync_database_state` only runs when an image is explicitly listed or pulled. Between syncs, a stale record can sit in the DB with the old tag still attached, even though Docker has already moved it. The fix is straightforward: during `list_images()`, after querying the daemon, do a second pass over *all* DB records and mark any whose `image_id` is no longer present in the daemon response as dangling. This makes the DB consistent after every list call at minimal cost.
+
+2. **Surfacing to the user:** Once dangling records are correctly tracked, show them on the Images page with a "Dangling — was `nginx:latest` / `nginx:1.29`" label. This is where the digest becomes useful (see below).
+
+**Digest-based version resolution (preferred over simple previous_tag):**
+Docker does not auto-apply version tags locally — if you only pulled `nginx:latest` you only have that one tag on disk. However, `RepoDigests` (e.g. `nginx@sha256:abc...`) survives dangling and we already store the digest in the `Image` model. Mutable tags like `latest` and `1.29` (minor-version pointer) typically share the same digest on Docker Hub at any given time, while patch-pinned tags like `1.29.0` point to a different one. Verified against live registry:
+
+```
+nginx:latest  -> sha256:7fe5dda2...   ← same
+nginx:1.29    -> sha256:7fe5dda2...   ← same  (minor-version pointer)
+nginx:1.29.0  -> sha256:3ab4ed06...   ← different (patch-pinned)
+nginx:1.28    -> sha256:68334eae...   ← different
+```
+
+**Implementation approach — two-tier resolution:**
+- **Tier 1 (fast, offline):** Add a `previous_tag` column to `Image`. In `_sync_database_state`, before overwriting `repository`/`tag` with `<none>`, save the current values. This always works and costs nothing.
+- **Tier 2 (richer, network):** When displaying a dangling image, take its stored digest and call the registry tag-list endpoint for that repository. Find all tags whose manifest digest matches. Surface both the previous tag and any matching version tags (e.g. "was `latest` / also `1.29`"). This runs lazily on the UI side (only when the user views the Images page and there are dangling images) so it does not block anything.
+
+**Relationship to FEAT-014:** FEAT-015 is the detection layer; FEAT-014 is the cleanup layer. FEAT-015 should land first so that by the time auto-prune runs, dangling images are already correctly labelled and aged.
+
+---
+
 ### FEAT-010: WebSocket Live Updates
 **Priority:** Low  
 **Effort:** 6-8 hours  
@@ -561,8 +657,8 @@ src/services/container_manager.py
 ### Sprint Alignment
 - Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
 - Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
-- Sprint 4: Networks and volumes (REF-001, DEBT-002)
-- Sprint 5: System administration and polish (FEAT-002, FEAT-006, FEAT-008, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
+- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013)
+- Sprint 5: System administration, image housekeeping, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
 - Sprint 6+: Future enhancements (FEAT-005, FEAT-010, REF-003, DEBT-004)
 
 ### Prioritization Criteria
@@ -633,6 +729,7 @@ src/services/container_manager.py
 ---
 
 ## VERSION HISTORY
+- **v1.5** (2026-02-03): Sprint 3 finish — update/rollback endpoints, FEAT-013 (retag), FEAT-014 (unused image prune), FEAT-015 (tag drift detection) added to backlog
 - **v1.4** (2026-02-03): Sprint 3 — image management, show-all containers, dashboard, scheduler, DB sync
 - **v1.3** (2026-01-29): DEBT-006: Standardize Frontend JavaScript to Alpine.js & DEBT-007: Create Shared Navigation Component
 - **v1.2** (2026-01-27): Sprint 2 Task 4 strategic decisions + FEAT-011 health validation

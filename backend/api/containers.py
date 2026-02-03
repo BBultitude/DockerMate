@@ -24,6 +24,12 @@ Endpoints:
     POST   /api/containers/<id>/start   Start container
     POST   /api/containers/<id>/stop    Stop container
     POST   /api/containers/<id>/restart Restart container
+    GET    /api/containers/<id>/logs    Get container logs
+    POST   /api/containers/<id>/update  Pull latest image and recreate (Sprint 3)
+    POST   /api/containers/<id>/rollback Rollback to previous image (Sprint 3)
+    GET    /api/containers/<id>/history Update/rollback history (Sprint 3)
+    POST   /api/containers/update-all   Bulk update all containers with updates (Sprint 3)
+    POST   /api/containers/sync         Sync managed containers from Docker labels
 
 Usage:
     In app.py::
@@ -1441,6 +1447,303 @@ def get_container_logs(container_id: str):
 
     except Exception as e:
         logger.exception(f"Unexpected error fetching logs for {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/update', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def update_container_image(container_id: str):
+    """
+    Pull the latest image and recreate the container with the same config.
+
+    POST /api/containers/<id>/update
+
+    Stops the running container, pulls the latest image for its current
+    repository:tag, removes the old container, and recreates it with the
+    same configuration (ports, volumes, env vars, restart policy, labels).
+    The new container is started automatically.  An UpdateHistory record
+    is written on success or failure.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123...",
+            "container_name": "my-nginx",
+            "old_image": "nginx:latest",
+            "new_image": "nginx:latest",
+            "status": "updated"
+        },
+        "message": "Container 'my-nginx' updated successfully"
+    }
+
+    Error Responses:
+    - 404: Container not found
+    - 500: Update failed (pull error, recreate error)
+
+    CLI Equivalent:
+        docker pull nginx:latest
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:latest
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.update_container_image(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' updated successfully"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to update container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error updating container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/rollback', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def rollback_container(container_id: str):
+    """
+    Rollback a container to the image it had before its last update.
+
+    POST /api/containers/<id>/rollback
+
+    Looks up the most recent successful UpdateHistory entry for this
+    container, stops and removes the current container, and recreates
+    it using the previous image.  The old image must still be available
+    locally (not pruned).
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123...",
+            "container_name": "my-nginx",
+            "rolled_back_to": "nginx:1.24",
+            "status": "rolled_back"
+        },
+        "message": "Container 'my-nginx' rolled back to nginx:1.24"
+    }
+
+    Error Responses:
+    - 404: Container not found or no update history
+    - 500: Rollback failed (old image missing, recreate error)
+
+    CLI Equivalent:
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:1.24
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.rollback_container(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' rolled back to {result.get('rolled_back_to', 'previous image')}"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to rollback container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error rolling back container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/update-all', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def update_all_containers():
+    """
+    Update all managed containers that have newer images available.
+
+    POST /api/containers/update-all
+
+    Iterates through all managed containers, checks whether their image
+    has update_available == True in the images table, and calls
+    update_container_image() for each.  Results for each container are
+    collected and returned regardless of individual success/failure.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "updated": [...],
+            "failed": [...],
+            "skipped": [...],
+            "total": 5
+        },
+        "message": "Bulk update complete: 2 updated, 1 failed, 2 skipped"
+    }
+    """
+    try:
+        from backend.models.image import Image
+
+        db = SessionLocal()
+        try:
+            # Get all managed containers
+            all_containers = db.query(Container).all()
+
+            # Build a set of images that have updates available
+            images_with_updates = set()
+            for img in db.query(Image).filter(Image.update_available == True).all():
+                images_with_updates.add(f"{img.repository}:{img.tag}")
+        finally:
+            db.close()
+
+        updated = []
+        failed = []
+        skipped = []
+
+        with ContainerManager() as manager:
+            for container in all_containers:
+                image_key = container.image_name if container.image_name else ''
+                if image_key not in images_with_updates:
+                    skipped.append({
+                        'name': container.name,
+                        'reason': 'no update available'
+                    })
+                    continue
+
+                try:
+                    result = manager.update_container_image(container.name)
+                    updated.append({
+                        'name': container.name,
+                        'old_image': result.get('old_image'),
+                        'new_image': result.get('new_image')
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to update {container.name}: {e}")
+                    failed.append({
+                        'name': container.name,
+                        'error': str(e)
+                    })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "updated": updated,
+                "failed": failed,
+                "skipped": skipped,
+                "total": len(all_containers)
+            },
+            "message": f"Bulk update complete: {len(updated)} updated, {len(failed)} failed, {len(skipped)} skipped"
+        }), 200
+
+    except Exception as e:
+        logger.exception("Unexpected error in bulk update")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/history', methods=['GET'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def get_container_history(container_id: str):
+    """
+    Get update/rollback history for a container.
+
+    GET /api/containers/<id>/history
+
+    Returns all UpdateHistory records for the given container, ordered
+    newest first.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": [
+            {
+                "id": 1,
+                "container_name": "my-nginx",
+                "old_image": "nginx:1.24",
+                "new_image": "nginx:latest",
+                "status": "success",
+                "updated_at": "2026-02-03T12:00:00"
+            }
+        ],
+        "count": 1
+    }
+    """
+    try:
+        from backend.models.update_history import UpdateHistory
+
+        db = SessionLocal()
+        try:
+            history = db.query(UpdateHistory).filter(
+                (UpdateHistory.container_id == container_id) |
+                (UpdateHistory.container_name == container_id)
+            ).order_by(UpdateHistory.updated_at.desc()).all()
+
+            history_data = [h.to_dict() for h in history]
+        finally:
+            db.close()
+
+        return jsonify({
+            "success": True,
+            "data": history_data,
+            "count": len(history_data)
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Error fetching history for container {container_id}")
         return jsonify({
             "success": False,
             "error": "An unexpected error occurred",

@@ -135,6 +135,14 @@ def networks():
     return render_template('networks.html', session=session_info)
 
 
+@app.route('/health')
+@require_auth()
+def health():
+    """Health & Alerts detail page"""
+    session_info = get_current_session_info()
+    return render_template('health.html', session=session_info)
+
+
 @app.route('/settings')
 @require_auth()
 def settings():

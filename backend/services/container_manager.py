@@ -1046,9 +1046,305 @@ class ContainerManager:
             raise ContainerOperationError(f"Failed to update container: {e.explanation}")
     
     # =========================================================================
+    # IMAGE-UPDATE OPERATION  (Sprint 3 — Phase 2)
+    # =========================================================================
+
+    @docker_operation
+    def update_container_image(self, name_or_id: str) -> Dict[str, Any]:
+        """
+        Pull the latest image for a managed container and recreate it.
+
+        Steps:
+            1. Read current container config from Docker (ports, volumes, env,
+               restart policy, labels).
+            2. Pull the new image (same repository:tag).
+            3. Stop the running container.
+            4. Remove the old container (keeps volumes unless explicitly pruned).
+            5. Recreate with identical config but the freshly-pulled image.
+            6. Start the new container.
+            7. Write an UpdateHistory record.
+
+        The old image is intentionally NOT removed — it stays around so that
+        rollback can recreate from it if needed.
+
+        Returns:
+            dict with keys: container_id, name, old_image, new_image, status
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        # --- resolve container from DB (skip removed/dead entries) ---
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        client = get_docker_client()
+
+        # --- read live config from Docker ---
+        try:
+            old_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
+
+        attrs   = old_docker.attrs
+        config  = attrs.get('Config', {})
+        host    = attrs.get('HostConfig', {})
+        old_image_name = config.get('Image', db_container.image_name)
+
+        # extract everything we need to recreate
+        env_vars      = config.get('Env') or []
+        labels        = config.get('Labels') or {}
+        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus     = host.get('NanoCpus', 0)
+        memory        = host.get('Memory', 0)
+
+        # ports: Docker returns {container_port/proto: [{HostIp, HostPort}]}
+        port_bindings = {}
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        for cport, bindings in network_ports.items():
+            if bindings:
+                port_bindings[cport] = bindings
+
+        # volumes
+        binds = host.get('Binds') or []
+
+        # --- pull latest ---
+        logger.info(f"Pulling latest {old_image_name} for update…")
+        try:
+            if ':' in old_image_name:
+                repo, tag = old_image_name.rsplit(':', 1)
+            else:
+                repo, tag = old_image_name, 'latest'
+            new_image_obj = client.images.pull(repo, tag=tag)
+            new_digest = new_image_obj.attrs.get('RepoDigests', [None])[0]
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Pull failed: {e.explanation}")
+
+        # --- stop & remove old container ---
+        try:
+            if old_docker.status == 'running':
+                old_docker.stop(timeout=10)
+            old_docker.remove()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+
+        # --- recreate ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       old_image_name,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
+
+        # --- sync DB ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # --- history record ---
+        old_digest_str = None
+        try:
+            old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
+            old_digest_str = old_digests[0] if old_digests else None
+        except Exception:
+            pass
+        self._record_update_history(
+            db_container, old_image_name, old_image_name,
+            old_digest=old_digest_str,
+            new_digest=new_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' updated successfully")
+        return {
+            'container_id': new_docker.id,
+            'name':         db_container.name,
+            'old_image':    old_image_name,
+            'new_image':    old_image_name,
+            'status':       'success'
+        }
+
+    # =========================================================================
+    # ROLLBACK OPERATION  (Sprint 3)
+    # =========================================================================
+
+    @docker_operation
+    def rollback_container(self, name_or_id: str) -> Dict[str, Any]:
+        """
+        Rollback a container to the image it had before its last update.
+
+        Looks up the most recent successful UpdateHistory entry for this
+        container and recreates it with old_image.  The current container
+        is stopped and removed first (same as update flow).
+
+        Returns:
+            dict with keys: container_id, name, rolled_back_to, status
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        # Find the last successful update to know what old_image was
+        history = (
+            self.db.query(UpdateHistory)
+            .filter(UpdateHistory.container_name == db_container.name)
+            .filter(UpdateHistory.status == 'success')
+            .order_by(UpdateHistory.updated_at.desc())
+            .first()
+        )
+        if not history:
+            raise ValidationError(f"No update history found for '{db_container.name}' — nothing to roll back")
+
+        target_image = history.old_image
+        client = get_docker_client()
+
+        # Verify the old image is still locally available
+        try:
+            client.images.get(target_image)
+        except NotFound:
+            raise ContainerOperationError(
+                f"Rollback image '{target_image}' no longer exists locally. "
+                f"Cannot roll back."
+            )
+
+        # --- read live config ---
+        try:
+            current_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not in Docker daemon")
+
+        attrs  = current_docker.attrs
+        config = attrs.get('Config', {})
+        host   = attrs.get('HostConfig', {})
+
+        env_vars     = config.get('Env') or []
+        labels       = config.get('Labels') or {}
+        restart_name = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus    = host.get('NanoCpus', 0)
+        memory       = host.get('Memory', 0)
+        binds        = host.get('Binds') or []
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        port_bindings = {k: v for k, v in network_ports.items() if v}
+
+        current_image = config.get('Image', db_container.image_name)
+
+        # --- stop & remove ---
+        try:
+            if current_docker.status == 'running':
+                current_docker.stop(timeout=10)
+            current_docker.remove()
+        except APIError as e:
+            raise ContainerOperationError(f"Failed to remove current container: {e.explanation}")
+
+        # --- recreate with old image ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       target_image,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            raise ContainerOperationError(f"Rollback recreate failed: {e.explanation}")
+
+        # --- sync + history ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # Mark the original update history entry as rolled_back
+        history.status = 'rolled_back'
+        self.db.commit()
+
+        # Write a new history record for the rollback itself
+        self._record_update_history(
+            db_container, current_image, target_image,
+            old_digest=history.new_digest,
+            new_digest=history.old_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' rolled back to {target_image}")
+        return {
+            'container_id':   new_docker.id,
+            'name':           db_container.name,
+            'rolled_back_to': target_image,
+            'status':         'success'
+        }
+
+    # =========================================================================
+    # HELPER: record update history
+    # =========================================================================
+
+    def _record_update_history(self, db_container, old_image: str, new_image: str,
+                               old_digest: str = None, new_digest: str = None,
+                               status: str = 'success', error: str = None):
+        """Write a single UpdateHistory row."""
+        from backend.models.update_history import UpdateHistory
+        record = UpdateHistory(
+            container_id=db_container.container_id,
+            container_name=db_container.name,
+            old_image=old_image,
+            new_image=new_image,
+            old_digest=old_digest,
+            new_digest=new_digest,
+            status=status,
+            error_message=error
+        )
+        self.db.add(record)
+        self.db.commit()
+
+    # =========================================================================
     # DELETE OPERATION
     # =========================================================================
-    
+
     @docker_operation
     def delete_container(
         self,

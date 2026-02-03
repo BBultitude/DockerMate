@@ -6,16 +6,78 @@
     {% include 'components/navbar.html' %}
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- Welcome Section -->
+        <!-- Header -->
         <div class="mb-8">
             <h2 class="text-3xl font-bold text-white">Dashboard</h2>
-            <p class="mt-2 text-slate-400">System overview and statistics</p>
-            <p class="text-xs text-slate-500" x-text="'Last updated: ' + lastUpdated"></p>
+            <p class="mt-1 text-slate-400">Platform overview</p>
+            <p class="text-xs text-slate-600 mt-1" x-text="'Last updated: ' + lastUpdated"></p>
         </div>
 
-        <!-- Stats Grid -->
+        <!-- =====================================================================
+             TOP ROW  —  Health card  |  Containers card  |  Hardware card
+             ===================================================================== -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <!-- Container Stats Card -->
+
+            <!-- Health card (replaces old Capacity card) -->
+            <div class="bg-slate-800 p-6 rounded-lg border"
+                 :class="health.status === 'unhealthy' ? 'border-red-600' :
+                         health.status === 'warning'   ? 'border-yellow-500' :
+                                                         'border-slate-700'">
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-slate-400 text-sm">Health</p>
+                    <!-- status badge -->
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          :class="health.status === 'unhealthy' ? 'bg-red-900 text-red-300' :
+                                  health.status === 'warning'   ? 'bg-yellow-900 text-yellow-300' :
+                                                                  'bg-green-900 text-green-300'"
+                          x-text="health.status.charAt(0).toUpperCase() + health.status.slice(1)"></span>
+                </div>
+
+                <!-- capacity bar (always shown) -->
+                <div class="mb-3">
+                    <div class="flex justify-between text-xs text-slate-500 mb-1">
+                        <span>Capacity</span>
+                        <span x-text="stats.totalContainers + ' / ' + hardware.max_containers"></span>
+                    </div>
+                    <div class="w-full bg-slate-700 rounded-full h-2">
+                        <div class="h-2 rounded-full transition-all duration-300"
+                             :class="stats.capacityPercent > 80 ? 'bg-red-500' :
+                                     stats.capacityPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'"
+                             :style="'width: ' + stats.capacityPercent + '%'"></div>
+                    </div>
+                </div>
+
+                <!-- checks row: docker + db -->
+                <div class="flex gap-4 text-xs mb-3">
+                    <span class="flex items-center gap-1">
+                        <span :class="health.checks.docker === 'ok' ? 'text-green-400' : 'text-red-400'">●</span>
+                        <span class="text-slate-400">Docker</span>
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <span :class="health.checks.database === 'ok' ? 'text-green-400' : 'text-red-400'">●</span>
+                        <span class="text-slate-400">Database</span>
+                    </span>
+                </div>
+
+                <!-- warnings list -->
+                <div x-show="health.warnings.length > 0" class="border-t border-slate-700 pt-2 mt-1">
+                    <template x-for="w in health.warnings" :key="w">
+                        <p class="text-xs text-yellow-300 flex items-start gap-1 mb-1">
+                            <span class="mt-0.5">⚠</span>
+                            <span x-text="w"></span>
+                        </p>
+                    </template>
+                    <a href="/health" class="text-xs text-blue-400 hover:underline mt-1 inline-block">View details →</a>
+                </div>
+
+                <!-- all-clear when no warnings -->
+                <div x-show="health.warnings.length === 0 && health.status === 'healthy'"
+                     class="text-xs text-green-400 border-t border-slate-700 pt-2 mt-1">
+                    All checks passing
+                </div>
+            </div>
+
+            <!-- Containers card -->
             <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
                 <div class="flex items-center justify-between">
                     <div>
@@ -31,7 +93,7 @@
                 </div>
             </div>
 
-            <!-- Hardware Profile Card -->
+            <!-- Hardware card -->
             <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
                 <div class="flex items-center justify-between">
                     <div>
@@ -45,66 +107,94 @@
                     <div class="text-purple-400 text-3xl">💻</div>
                 </div>
             </div>
+        </div>
 
-            <!-- Capacity Card -->
-            <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <div class="flex items-center justify-between">
-                    <div class="w-full">
-                        <p class="text-slate-400 text-sm">Capacity</p>
-                        <p class="text-3xl font-bold text-white mt-1">
-                            <span x-text="stats.capacityPercent + '%'"></span>
-                        </p>
-                        <div class="mt-3 w-full bg-slate-700 rounded-full h-2">
-                            <div class="h-2 rounded-full transition-all duration-300"
-                                 :class="stats.capacityPercent > 80 ? 'bg-red-500' : stats.capacityPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'"
-                                 :style="'width: ' + stats.capacityPercent + '%'"></div>
+        <!-- =====================================================================
+             PLATFORM OVERVIEW  —  Environments  |  Images  |  Networks
+             ===================================================================== -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+
+            <!-- Environment Distribution -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+                <h3 class="text-base font-semibold text-white mb-3">Environments</h3>
+                <div x-show="stats.byEnvironment.length === 0" class="text-slate-500 text-sm">
+                    No containers yet
+                </div>
+                <div x-show="stats.byEnvironment.length > 0" class="space-y-2">
+                    <template x-for="env in stats.byEnvironment" :key="env.name">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-300" x-text="env.name"></span>
+                            <span class="text-sm font-semibold text-white bg-slate-700 px-2 py-0.5 rounded" x-text="env.count"></span>
                         </div>
-                        <p class="text-xs text-slate-500 mt-1" x-text="stats.totalContainers + ' / ' + hardware.max_containers + ' containers'"></p>
-                        <p class="text-xs text-slate-600 mt-1" title="Counts all containers on the host including DockerMate and external containers">
-                            ℹ️ All containers (toggle "Show all" in Containers to see)
-                        </p>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Images Summary -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+                <h3 class="text-base font-semibold text-white mb-3">Images</h3>
+                <div class="flex items-end justify-between mb-3">
+                    <div>
+                        <p class="text-3xl font-bold text-white" x-text="images.count"></p>
+                        <p class="text-xs text-slate-500 mt-0.5" x-text="'Total size: ' + images.totalSizeHuman"></p>
                     </div>
+                    <div class="text-purple-400 text-2xl">🖼️</div>
+                </div>
+                <!-- top 3 images by size -->
+                <div x-show="images.top.length > 0" class="space-y-1 border-t border-slate-700 pt-2">
+                    <p class="text-xs text-slate-500 mb-1">Largest</p>
+                    <template x-for="img in images.top" :key="img.name">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-300 truncate mr-2" x-text="img.name"></span>
+                            <span class="text-xs text-slate-500 whitespace-nowrap" x-text="img.size"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Networks Summary -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+                <h3 class="text-base font-semibold text-white mb-3">Networks</h3>
+                <div class="flex items-end justify-between mb-3">
+                    <div>
+                        <p class="text-3xl font-bold text-white" x-text="networks.count"></p>
+                        <p class="text-xs text-slate-500 mt-0.5">Active networks</p>
+                    </div>
+                    <div class="text-teal-400 text-2xl">🌐</div>
+                </div>
+                <!-- network list -->
+                <div x-show="networks.list.length > 0" class="space-y-1 border-t border-slate-700 pt-2">
+                    <template x-for="net in networks.list" :key="net.name">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-300" x-text="net.name"></span>
+                            <span class="text-xs text-slate-600" x-text="net.driver"></span>
+                        </div>
+                    </template>
                 </div>
             </div>
         </div>
 
-        <!-- Environment Distribution -->
-        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6">
-            <h3 class="text-xl font-semibold text-white mb-4">Environment Distribution</h3>
-            <div x-show="stats.byEnvironment.length === 0" class="text-slate-400 text-sm">
-                No containers yet. Create your first container to see environment distribution.
-            </div>
-            <div x-show="stats.byEnvironment.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <template x-for="env in stats.byEnvironment" :key="env.name">
-                    <div class="bg-slate-700 p-4 rounded">
-                        <p class="text-sm text-slate-400" x-text="env.name"></p>
-                        <p class="text-2xl font-bold text-white" x-text="env.count"></p>
-                    </div>
-                </template>
-            </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
-            <h3 class="text-xl font-semibold text-white mb-4">Quick Actions</h3>
-            <div class="flex flex-wrap gap-4">
-                <a href="/containers" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition">
-                    📦 Manage Containers
-                </a>
-                <a href="/images" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-white transition">
-                    🖼️ Manage Images
-                </a>
-                <a href="/settings" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white transition">
-                    ⚙️ Settings
-                </a>
-            </div>
-        </div>
     </main>
 </div>
 
 <script>
+// ---------------------------------------------------------------------------
+// Utility: format bytes → human-readable string
+// ---------------------------------------------------------------------------
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const k = 1024;
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + units[i];
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard Alpine.js component
+// ---------------------------------------------------------------------------
 function dashboardComponent() {
     return {
+        // --- state ---
         stats: {
             totalContainers: 0,
             runningContainers: 0,
@@ -118,94 +208,139 @@ function dashboardComponent() {
             total_memory_gb: 0,
             max_containers: 0
         },
+        health: {
+            status: 'healthy',
+            checks: { docker: 'ok', database: 'ok' },
+            warnings: []
+        },
+        images: {
+            count: 0,
+            totalSizeHuman: '0 B',
+            top: []          // [{name, size}] top 3 by size
+        },
+        networks: {
+            count: 0,
+            list: []         // [{name, driver}]
+        },
         lastUpdated: 'Never',
         loading: false,
         pollInterval: null,
 
+        // --- lifecycle ---
         async init() {
-            await this.loadDashboardData();
-            this.startPolling();
+            await this.loadAll();
+            this.pollInterval = setInterval(() => this.loadAll(), 10000);
         },
 
-        async loadDashboardData() {
+        destroy() {
+            if (this.pollInterval) clearInterval(this.pollInterval);
+        },
+
+        // --- fetch everything in parallel ---
+        async loadAll() {
             this.loading = true;
             try {
                 await Promise.all([
-                    this.loadHardwareProfile(),
-                    this.loadContainerStats()
+                    this.loadHardware(),
+                    this.loadHealth(),
+                    this.loadContainers(),
+                    this.loadImages(),
+                    this.loadNetworks()
                 ]);
                 this.lastUpdated = new Date().toLocaleTimeString();
-            } catch (error) {
-                console.error('Failed to load dashboard data:', error);
+            } catch (e) {
+                console.error('Dashboard load error:', e);
             } finally {
                 this.loading = false;
             }
         },
 
-        async loadHardwareProfile() {
+        // --- individual loaders ---
+        async loadHardware() {
             try {
-                const response = await fetch('/api/system/hardware');
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                const data = await response.json();
-                if (data.success) {
-                    this.hardware = data.data;
-                }
-            } catch (error) {
-                console.error('Failed to load hardware profile:', error);
-            }
+                const r = await fetch('/api/system/hardware');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.success) this.hardware = d.data;
+            } catch (e) { console.error('loadHardware:', e); }
         },
 
-        async loadContainerStats() {
+        async loadHealth() {
             try {
-                // Use show_all=true to count ALL containers (including DockerMate and external)
-                // for accurate capacity calculation
-                const response = await fetch('/api/containers?all=true&show_all=true');
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                const r = await fetch('/api/system/health');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.success) {
+                    this.health.status   = d.status;
+                    this.health.checks   = d.checks;
+                    this.health.warnings = d.warnings || [];
                 }
-                const data = await response.json();
-                if (data.success) {
-                    const containers = data.data;
-                    // Count all containers including DockerMate and external containers
-                    this.stats.totalContainers = containers.length;
-                    this.stats.runningContainers = containers.filter(c => c.state === 'running').length;
-                    this.stats.stoppedContainers = containers.filter(c => c.state !== 'running').length;
-
-                    // Calculate capacity percentage based on ALL containers on the host
-                    const maxContainers = this.hardware.max_containers || 100;
-                    this.stats.capacityPercent = Math.min(100, Math.round((containers.length / maxContainers) * 100));
-
-                    // Group by environment
-                    const envGroups = {};
-                    containers.forEach(c => {
-                        const env = c.environment || 'UNTAGGED';
-                        envGroups[env] = (envGroups[env] || 0) + 1;
-                    });
-
-                    // Convert to array and sort by count (descending)
-                    this.stats.byEnvironment = Object.entries(envGroups)
-                        .map(([name, count]) => ({ name, count }))
-                        .sort((a, b) => b.count - a.count);
-                }
-            } catch (error) {
-                console.error('Failed to load container stats:', error);
-            }
+            } catch (e) { console.error('loadHealth:', e); }
         },
 
-        startPolling() {
-            // Refresh every 10 seconds
-            this.pollInterval = setInterval(() => {
-                this.loadDashboardData();
-            }, 10000);
+        async loadContainers() {
+            try {
+                const r = await fetch('/api/containers?all=true&show_all=true');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (!d.success) return;
+                const containers = d.data;
+
+                this.stats.totalContainers  = containers.length;
+                this.stats.runningContainers = containers.filter(c => c.state === 'running').length;
+                this.stats.stoppedContainers = containers.filter(c => c.state !== 'running').length;
+
+                const max = this.hardware.max_containers || 100;
+                this.stats.capacityPercent = Math.min(100, Math.round((containers.length / max) * 100));
+
+                // group by environment
+                const groups = {};
+                containers.forEach(c => {
+                    const env = c.environment || 'UNTAGGED';
+                    groups[env] = (groups[env] || 0) + 1;
+                });
+                this.stats.byEnvironment = Object.entries(groups)
+                    .map(([name, count]) => ({ name, count }))
+                    .sort((a, b) => b.count - a.count);
+            } catch (e) { console.error('loadContainers:', e); }
         },
 
-        // Cleanup on component destroy (if Alpine supports it)
-        destroy() {
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
-            }
+        async loadImages() {
+            try {
+                const r = await fetch('/api/images');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (!d.success) return;
+
+                const imgs = d.data;
+                this.images.count = imgs.length;
+
+                // total size
+                const totalBytes = imgs.reduce((sum, i) => sum + (i.size_bytes || 0), 0);
+                this.images.totalSizeHuman = formatBytes(totalBytes);
+
+                // top 3 by size
+                this.images.top = imgs
+                    .slice()
+                    .sort((a, b) => (b.size_bytes || 0) - (a.size_bytes || 0))
+                    .slice(0, 3)
+                    .map(i => ({
+                        name: (i.repository || '<none>') + ':' + (i.tag || '<none>'),
+                        size: formatBytes(i.size_bytes)
+                    }));
+            } catch (e) { console.error('loadImages:', e); }
+        },
+
+        async loadNetworks() {
+            try {
+                const r = await fetch('/api/system/networks');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (!d.success) return;
+
+                this.networks.count = d.count;
+                this.networks.list  = d.data;
+            } catch (e) { console.error('loadNetworks:', e); }
         }
     };
 }
