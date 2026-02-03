@@ -58,6 +58,10 @@ app.register_blueprint(containers_bp)
 from backend.api.images import images_bp
 app.register_blueprint(images_bp)
 
+# Import and register networks blueprint (Sprint 4)
+from backend.api.networks import networks_bp
+app.register_blueprint(networks_bp)
+
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info, is_authenticated
 

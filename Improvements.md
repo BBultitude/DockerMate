@@ -498,8 +498,8 @@ Current templates inconsistently mix Alpine.js (loaded in base.html) with plain 
 All templates verified to use Alpine.js exclusively:
 - ✅ `frontend/templates/dashboard.html` - Uses navbar component (Alpine.js)
 - ✅ `frontend/templates/containers.html` - Uses `containersComponent()` (Alpine.js)
-- ✅ `frontend/templates/images.html` - Static content, no interactivity needed
-- ✅ `frontend/templates/networks.html` - Static content, no interactivity needed
+- ✅ `frontend/templates/images.html` - Uses `imagesComponent()` (Alpine.js)
+- ✅ `frontend/templates/networks.html` - Uses `networksComponent()` (Alpine.js)
 - ✅ `frontend/templates/settings.html` - Uses `settingsPage()` (Alpine.js)
 - ✅ `frontend/templates/login.html` - Uses `loginPage()` (Alpine.js)
 - ✅ `frontend/templates/setup.html` - Uses `setupPage()` (Alpine.js)
@@ -657,7 +657,7 @@ src/services/container_manager.py
 ### Sprint Alignment
 - Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
 - Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
-- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013)
+- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013) — network CRUD + IPAM delivered; IP reservation, topology, docs remaining
 - Sprint 5: System administration, image housekeeping, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
 - Sprint 6+: Future enhancements (FEAT-005, FEAT-010, REF-003, DEBT-004)
 
@@ -728,7 +728,24 @@ src/services/container_manager.py
 
 ---
 
+## SPRINT 4 IN-PROGRESS ITEMS
+
+### NETWORK MANAGEMENT (Tasks 1-3, 5) ✅ DELIVERED (Feb 3, 2026)
+- `backend/models/network.py` — Network model (network_id, name, driver, subnet, gateway, managed, purpose) + Alembic migration with idempotency guard
+- `backend/services/network_manager.py` — Full service: list (enriched with live container counts), create (with Docker IPAM config), get (with connected container details), delete (with safety guards), validate_subnet (CIDR parse + overlap check + hardware-profile limit), recommend_subnets (hardware-aware small/large per profile tier), oversized detection (>4× hosts vs containers, default networks excluded), auto-sync of discovered networks into DB
+- `backend/api/networks.py` — 6 REST endpoints: GET list, POST create, GET /:id, DELETE /:id, GET /recommend, POST /validate-subnet
+- `frontend/templates/networks.html` — Full Alpine.js page: network cards with Managed / Default / Oversized badges, hardware-aware subnet recommendation buttons in create wizard, live subnet validation on input, inline container detail toggle, delete confirmation modal, toast notifications
+- Safety guards: default Docker networks (bridge/host/none) excluded from oversized warnings and delete; DockerMate's own compose network protected from deletion
+
+### Remaining Sprint 4 Tasks
+- Task 4: IP Reservation System
+- Task 6: Network Topology Visualization
+- Task 7: Auto-Generated Network Docs
+
+---
+
 ## VERSION HISTORY
+- **v1.6** (2026-02-03): Sprint 4 in progress — network model, NetworkManager service, networks API + frontend, hardware-aware subnet sizing, oversized detection
 - **v1.5** (2026-02-03): Sprint 3 finish — update/rollback endpoints, FEAT-013 (retag), FEAT-014 (unused image prune), FEAT-015 (tag drift detection) added to backlog
 - **v1.4** (2026-02-03): Sprint 3 — image management, show-all containers, dashboard, scheduler, DB sync
 - **v1.3** (2026-01-29): DEBT-006: Standardize Frontend JavaScript to Alpine.js & DEBT-007: Create Shared Navigation Component

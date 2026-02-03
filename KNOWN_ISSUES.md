@@ -1,8 +1,8 @@
 # DockerMate - Known Issues Tracker
 
 **Created:** January 31, 2026
-**Last Updated:** February 3, 2026 (Sprint 3 Tasks 1-7 completed)
-**Current Sprint:** Sprint 3 (Image Management & Updates) — Tasks 1-7 complete
+**Last Updated:** February 3, 2026 (Sprint 4 in progress)
+**Current Sprint:** Sprint 4 (Network Management) — Tasks 1-3, 5 delivered
 
 This document tracks all known issues identified during development. Issues are categorized by priority and can be checked off as they're resolved.
 
@@ -576,20 +576,17 @@ Mocks don't accurately reflect Docker SDK behavior
 
 ---
 
-### FEATURE-001: System Health Check Not Implemented ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `backend/api/system.py:154-159`
+### FEATURE-001: System Health Check ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `backend/api/system.py` — `GET /api/system/health`
+**Resolved:** February 3, 2026 (Sprint 3)
 
-**Issue:**
-Health check endpoint returns hardcoded "ok"
-
-**Missing:**
-- Database connectivity check
-- Docker daemon health check
-- Disk space check
-
-**Comment:**
-"TODO: Add actual health checks in future sprint"
+**Resolution:**
+- Live database connectivity check (`SELECT 1`)
+- Docker daemon ping check
+- Exited container scan (flags containers worth investigating)
+- Capacity warning when container count ≥ 80% of hardware-profile limit
+- Returns structured `{ status, checks, warnings }` response used by dashboard health card
 
 ---
 
@@ -794,12 +791,17 @@ These can be fixed quickly with high impact:
 - Issues Resolved: 4 (UI fixes)
 - Issues Remaining: 49
 
-**Sprint 3 (current):**
-- Issues Resolved: 3 (FEATURE-005, FEATURE-006, FEATURE-002)
+**Sprint 3:**
+- Issues Resolved: 4 (FEATURE-005, FEATURE-006, FEATURE-002, FEATURE-001)
 - New issues identified: 0
-- Issues Remaining: 45
+- Issues Remaining: 44
+
+**Sprint 4 (current):**
+- Issues Resolved: 0
+- New issues identified: 0
+- Issues Remaining: 44
 
 ---
 
 **Last Scan:** February 3, 2026
-**Next Review:** Sprint 4 start
+**Next Review:** Sprint 4 completion

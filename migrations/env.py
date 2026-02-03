@@ -17,6 +17,7 @@ from backend.models.container import Container
 from backend.models.host_config import HostConfig
 from backend.models.image import Image
 from backend.models.update_history import UpdateHistory
+from backend.models.network import Network
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

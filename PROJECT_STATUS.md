@@ -161,25 +161,32 @@ v2.0.0 - Advanced Features (Future)
 
 ---
 
-### Sprint 4: Network Management ⏳ NOT STARTED
-**Status:** 0% complete (0 of 7 tasks)
+### Sprint 4: Network Management 🔄 IN PROGRESS
+**Status:** ~60% complete (Tasks 1-3 + 5 delivered)
 
 | Task | Status | Dependencies |
 |------|--------|-------------|
-| Task 1: Network Creation Wizard | ⏳ | Sprint 2 complete |
-| Task 2: Hardware-Aware Subnet Sizing | ⏳ | Task 1 |
-| Task 3: IP Auto-Assignment System | ⏳ | Task 1 |
+| Task 1: Network Creation Wizard | ✅ | Sprint 2 complete |
+| Task 2: Hardware-Aware Subnet Sizing | ✅ | Task 1 |
+| Task 3: IP Auto-Assignment System | ✅ | Task 1 |
 | Task 4: IP Reservation System | ⏳ | Task 3 |
-| Task 5: Oversized Network Detection | ⏳ | Task 2 |
+| Task 5: Oversized Network Detection | ✅ | Task 2 |
 | Task 6: Network Topology Visualization | ⏳ | Task 1-4 |
 | Task 7: Auto-Generated Network Docs | ⏳ | Task 1-4 |
 
-**Planned Deliverables:**
-- Network creation and management
-- Intelligent IPAM (IP Address Management)
-- Hardware-aware network sizing
-- Visual network topology
-- Network documentation generation
+**Delivered:**
+- `backend/models/network.py` — Network model (id, subnet, gateway, managed flag, purpose)
+- `migrations/versions/d4e5f6a7b8c9` — Alembic migration with idempotency guard
+- `backend/services/network_manager.py` — Full service: list, create, get, delete, validate_subnet, recommend_subnets, oversized detection, auto-sync of discovered networks
+- `backend/api/networks.py` — 6 REST endpoints: list, create, get, delete, recommend, validate-subnet
+- `frontend/templates/networks.html` — Full Alpine.js page: network list with badges (Managed/Default/Oversized), create wizard with hardware-aware subnet recommendations (small/large), inline container detail toggle, delete confirmation, toast notifications
+- Default Docker networks (bridge/host/none) excluded from oversized warnings
+- DockerMate's own compose network protected from deletion
+
+**Remaining:**
+- Task 4: IP Reservation System
+- Task 6: Network Topology Visualization
+- Task 7: Auto-Generated Network Docs
 
 ---
 
