@@ -449,14 +449,16 @@ def create_container():
 def list_containers():
     """
     List containers with optional filtering.
-    
-    GET /api/containers?environment=prod&state=running
-    
+
+    GET /api/containers?environment=prod&state=running&show_all=true
+
     Query Parameters:
         environment (optional): Filter by environment tag (dev, test, prod, staging)
         state (optional): Filter by state (running, exited, created, etc.)
         all (optional): Include stopped containers (default: true for API)
-    
+        show_all (optional): Show ALL Docker containers including external (default: false)
+        managed_only (optional): Only show managed containers when show_all=true (default: false)
+
     Success Response (200):
     {
         "success": true,
@@ -504,31 +506,48 @@ def list_containers():
         environment = request.args.get('environment')
         state = request.args.get('state')
         include_all = request.args.get('all', 'true').lower() == 'true'
-        
+        show_all = request.args.get('show_all', 'false').lower() == 'true'
+        managed_only = request.args.get('managed_only', 'false').lower() == 'true'
+
         # List containers via service
         with ContainerManager() as manager:
-            containers = manager.list_containers(
-            environment=environment,
-            state=state,
-            all=include_all
-        )
-        
+            if show_all:
+                # FEATURE-005: Show all Docker containers (managed + external)
+                # Including DockerMate itself (appears as external, protected from actions)
+                containers = manager.list_all_docker_containers(
+                    all=include_all,
+                    environment=environment,
+                    managed_only=managed_only
+                )
+            else:
+                # Legacy behavior - database only (managed containers)
+                containers = manager.list_containers(
+                    environment=environment,
+                    state=state,
+                    all=include_all
+                )
+
         # Build response
         response_data = {
             "success": True,
             "data": containers,
-            "count": len(containers)
+            "count": len(containers),
+            "show_all": show_all
         }
-        
+
         # Include filter info if filters applied
         filters = {}
         if environment:
             filters['environment'] = environment
         if state:
             filters['state'] = state
+        if show_all:
+            filters['show_all'] = True
+        if managed_only:
+            filters['managed_only'] = True
         if filters:
             response_data['filters'] = filters
-        
+
         return jsonify(response_data), 200
     
     except ContainerOperationError as e:
@@ -1425,5 +1444,51 @@ def get_container_logs(container_id: str):
         return jsonify({
             "success": False,
             "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/sync', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def sync_containers():
+    """
+    Sync managed containers from Docker back into the database.
+
+    POST /api/containers/sync
+
+    Recovers containers that have com.dockermate.managed=true labels
+    but are missing from the database (e.g. after a database reset or
+    migration).  This is also called automatically at container startup
+    via docker-entrypoint.sh.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "recovered": 2,
+            "skipped": 3,
+            "recovered_containers": ["my-nginx", "my-redis"]
+        },
+        "message": "Recovered 2 managed containers"
+    }
+
+    CLI Equivalent:
+        docker ps --filter "label=com.dockermate.managed=true"
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.sync_managed_containers_to_database()
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Recovered {result['recovered']} managed container(s)"
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Unexpected error syncing containers: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred during sync",
             "error_type": "ServerError"
         }), 500

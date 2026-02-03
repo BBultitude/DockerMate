@@ -1,8 +1,8 @@
 # DockerMate - Known Issues Tracker
 
 **Created:** January 31, 2026
-**Last Updated:** January 31, 2026 (Sprint 2 Task 7 completed)
-**Current Sprint:** Sprint 3 (Container UI)
+**Last Updated:** February 3, 2026 (Sprint 3 Tasks 1-7 completed)
+**Current Sprint:** Sprint 3 (Image Management & Updates) — Tasks 1-7 complete
 
 This document tracks all known issues identified during development. Issues are categorized by priority and can be checked off as they're resolved.
 
@@ -22,11 +22,13 @@ This document tracks all known issues identified during development. Issues are 
 | Documentation | 0 | 0 | 1 | 3 | 4 |
 | Performance | 0 | 0 | 2 | 2 | 4 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
-| Missing Features | 0 | 0 | 4 | 0 | 4 |
-| **TOTAL** | **0** | **0** | **32** | **11** | **43** |
+| Missing Features | 0 | 0 | 3 | 0 | 3 |
+| **TOTAL** | **0** | **0** | **33** | **12** | **45** |
 
-**Recently Resolved:** 6 issues (Sprint 2 Task 7: port validation, health check polling, login endpoint, restart policy, memory conversion docs)
+**Recently Resolved (Sprint 3):** FEATURE-005 (show all Docker containers with managed/external distinction), FEATURE-006 (real-time dashboard stats), FEATURE-002 (container sync endpoint implemented — `POST /api/containers/sync` with automatic startup recovery)
+**Previously Resolved:** 7 issues (Sprint 2 Task 7), PROJECT_STATUS.md created (Sprint 2 Task 8)
 **Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
+**Total Open Issues:** 45 (down from 47)
 
 ---
 
@@ -404,6 +406,40 @@ Single authoritative source
 
 ---
 
+### DOC-005: Missing PROJECT_STATUS.MD Tracking Document ⚠️ HIGH
+**Status:** ✅ RESOLVED
+**Location:** `/PROJECT_STATUS.md`
+**Reported:** February 2, 2026
+**Resolved:** February 2, 2026
+
+**Issue:**
+No centralized project status tracking document exists to show:
+- Current project phase and completion status
+- Roadmap breakdown by version
+- Sprint breakdown within each version
+- Sub-task status within sprints
+- Integration with KNOWN_ISSUES.md and UI_Issues.md
+- Overall progress visualization
+
+**Impact:**
+- Difficult to understand where project stands
+- No clear view of what's completed vs in-progress vs planned
+- Cannot easily plan future work
+- Hard to prioritize fixes vs features
+- No consolidated view of sprint progress
+
+**Fix Required:**
+Create `PROJECT_STATUS.MD` with:
+1. Executive summary (current phase, overall completion %)
+2. Roadmap structure (v0.1.0 Alpha → v0.5.0 Beta → v1.0.0 Release)
+3. Sprint breakdown per version with completion tracking
+4. Sub-task status within each sprint
+5. Links to KNOWN_ISSUES.md and UI_Issues.md for detailed tracking
+6. Completion criteria for each milestone
+7. Deferred features and technical debt tracking
+
+---
+
 ### SECURITY-001: Session Cookie Security in Development ⚠️ MEDIUM
 **Status:** 🔴 OPEN
 **Location:** `backend/api/auth.py:171-173`
@@ -557,15 +593,16 @@ Health check endpoint returns hardcoded "ok"
 
 ---
 
-### FEATURE-002: Sync Endpoint Not Implemented ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `frontend/templates/containers.html:793-805`
+### FEATURE-002: Sync Endpoint Not Implemented ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `backend/api/containers.py` — `POST /api/containers/sync`
+**Resolved:** February 3, 2026 (Sprint 3)
 
-**Issue:**
-Sync button calls `loadContainers()` instead of actual sync endpoint
-
-**Missing:**
-Reconcile database state with Docker daemon
+**Resolution:**
+- `sync_managed_containers_to_database()` in ContainerManager scans Docker for containers with `com.dockermate.managed=true` label that are missing from the DB and re-adds them with full metadata (ports, volumes, env vars, environment tag)
+- `POST /api/containers/sync` API endpoint exposes this
+- `docker-entrypoint.sh` calls sync automatically on every container start (non-fatal)
+- Redundant "Sync with Docker" UI button removed (auto-refresh + startup sync makes it unnecessary)
 
 ---
 
@@ -590,6 +627,39 @@ Referenced in documentation but not in codebase
 
 **Note:**
 `seed_test_user.py` exists as test helper
+
+---
+
+### FEATURE-005: Container List Only Shows DockerMate-Created Containers ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `backend/services/container_manager.py` — `list_all_docker_containers()`
+**Resolved:** February 3, 2026 (Sprint 3)
+
+**Resolution:**
+- `list_all_docker_containers()` queries Docker daemon for ALL containers
+- Cross-references with database to flag managed vs external
+- DockerMate's own container shown as external (KISS — protected from actions by disabled buttons/checkboxes)
+- Frontend toggle "Show all Docker containers" added to containers page
+- External containers: action buttons hidden, checkboxes disabled, excluded from bulk ops
+- `com.dockermate.managed` and `com.dockermate.environment` labels stamped on creation for persistence
+- `POST /api/containers/sync` endpoint recovers labeled containers missing from DB after reset
+- Sync runs automatically on container startup via `docker-entrypoint.sh`
+
+---
+
+### FEATURE-006: Dashboard Page Needs Update ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `frontend/templates/dashboard.html`
+**Resolved:** February 3, 2026 (Sprint 3)
+
+**Resolution:**
+- Complete dashboard rewrite with Alpine.js `dashboardComponent()`
+- Real-time stats: total/running/stopped container counts (includes ALL containers on host)
+- Hardware profile card (CPU, RAM, max containers from `/api/system/hardware`)
+- Capacity bar with colour thresholds (green → yellow → red at 60%/80%)
+- Environment distribution grid
+- Auto-refresh polling every 10 seconds
+- Quick action links to Containers, Images, Settings
 
 ---
 
@@ -724,7 +794,12 @@ These can be fixed quickly with high impact:
 - Issues Resolved: 4 (UI fixes)
 - Issues Remaining: 49
 
+**Sprint 3 (current):**
+- Issues Resolved: 3 (FEATURE-005, FEATURE-006, FEATURE-002)
+- New issues identified: 0
+- Issues Remaining: 45
+
 ---
 
-**Last Scan:** January 31, 2026
-**Next Review:** Sprint 2 completion
+**Last Scan:** February 3, 2026
+**Next Review:** Sprint 4 start

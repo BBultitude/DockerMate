@@ -1,29 +1,486 @@
 {% extends "base.html" %}
-
 {% block title %}Images - DockerMate{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-slate-900">
-    <!-- Shared Navigation Bar -->
+<div class="min-h-screen bg-slate-900" x-data="imagesComponent()" x-init="init()">
     {% include 'components/navbar.html' %}
-    
-    <!-- Main Content -->
+
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header -->
         <div class="flex justify-between items-center mb-8">
-            <h2 class="text-3xl font-bold text-white">Images</h2>
-            <button class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition opacity-50 cursor-not-allowed" disabled>
-                🔄 Check for Updates (Sprint 3)
+            <div>
+                <h2 class="text-3xl font-bold text-white">Docker Images</h2>
+                <p class="text-slate-400 mt-1">Manage Docker images and check for updates</p>
+            </div>
+            <div class="flex gap-3">
+                <button @click="checkForUpdates()"
+                        :disabled="loading"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-md transition">
+                    🔄 Check for Updates
+                </button>
+                <button @click="showPullModal = true"
+                        class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition">
+                    ⬇️ Pull Image
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Total Images</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="images.length"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Total Size</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="formatTotalSize()"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Updates Available</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="updatesCount"></p>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-slate-400 mt-4">Loading images...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && images.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+            <div class="text-6xl mb-4">🖼️</div>
+            <h3 class="text-2xl font-semibold text-white mb-2">No Images Found</h3>
+            <p class="text-slate-400 mb-4">Pull your first Docker image to get started</p>
+            <button @click="showPullModal = true"
+                    class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-md transition">
+                ⬇️ Pull Image
             </button>
         </div>
-        
-        <div class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
-            <div class="text-6xl mb-4">🖼️</div>
-            <h3 class="text-2xl font-semibold text-white mb-2">Image Management & Updates</h3>
-            <p class="text-slate-400 mb-4">Coming in Sprint 3</p>
+
+        <!-- Images List -->
+        <div x-show="!loading && images.length > 0" class="grid grid-cols-1 gap-4">
+            <template x-for="image in images" :key="image.image_id">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-3 mb-2">
+                                <h3 class="text-xl font-semibold text-white font-mono" x-text="image.full_name"></h3>
+                                <span x-show="image.update_available"
+                                      class="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-xs font-medium">
+                                    UPDATE AVAILABLE
+                                </span>
+                            </div>
+                            <p class="text-slate-400 text-sm font-mono mb-1">
+                                ID: <span x-text="image.image_id.substring(0, 12)"></span>
+                            </p>
+                            <p class="text-slate-500 text-xs">
+                                Size: <span x-text="formatSize(image.size_bytes)"></span> |
+                                Created: <span x-text="formatDate(image.created_at)"></span>
+                                <span x-show="image.pulled_at"> | Pulled: <span x-text="formatDate(image.pulled_at)"></span></span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex gap-2">
+                        <button @click="showTagModal(image)"
+                                class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition text-sm">
+                            🏷️ Tag
+                        </button>
+                        <button @click="confirmDelete(image)"
+                                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition text-sm">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Last Updated -->
+        <div x-show="!loading && images.length > 0" class="mt-6 text-center">
             <p class="text-slate-500 text-sm">
-                Automatic update detection, one-click updates, and rollback capabilities
+                Last updated: <span x-text="lastUpdated"></span>
             </p>
         </div>
     </main>
+
+    <!-- Pull Image Modal -->
+    <div x-show="showPullModal"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showPullModal = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Pull Docker Image</h3>
+
+            <form @submit.prevent="pullImage()">
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">Repository</label>
+                    <input type="text"
+                           x-model="pullForm.repository"
+                           placeholder="e.g., nginx, mysql, redis"
+                           required
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">Tag</label>
+                    <input type="text"
+                           x-model="pullForm.tag"
+                           placeholder="e.g., latest, alpine, 8.0"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
+                </div>
+
+                <div x-show="pullForm.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                    <span x-text="pullForm.error"></span>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button"
+                            @click="showPullModal = false"
+                            :disabled="pullForm.loading"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            :disabled="pullForm.loading"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition">
+                        <span x-show="!pullForm.loading">⬇️ Pull Image</span>
+                        <span x-show="pullForm.loading">⏳ Pulling...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tag Image Modal -->
+    <div x-show="showTagModalState"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showTagModalState = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Tag Image</h3>
+
+            <p class="text-slate-400 text-sm mb-4">
+                Source: <span class="text-white font-mono" x-text="tagForm.sourceImage"></span>
+            </p>
+
+            <form @submit.prevent="tagImage()">
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">New Repository</label>
+                    <input type="text"
+                           x-model="tagForm.repository"
+                           placeholder="e.g., my-nginx"
+                           required
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">New Tag</label>
+                    <input type="text"
+                           x-model="tagForm.tag"
+                           placeholder="e.g., v1.0"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
+                </div>
+
+                <div x-show="tagForm.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                    <span x-text="tagForm.error"></span>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button"
+                            @click="showTagModalState = false"
+                            :disabled="tagForm.loading"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            :disabled="tagForm.loading"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition">
+                        <span x-show="!tagForm.loading">🏷️ Tag</span>
+                        <span x-show="tagForm.loading">⏳ Tagging...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div x-show="deleteModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="deleteModal.show = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Confirm Delete</h3>
+
+            <p class="text-slate-300 mb-4">
+                Are you sure you want to delete image <span class="font-mono text-white" x-text="deleteModal.imageName"></span>?
+            </p>
+
+            <div class="mb-4">
+                <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                    <input type="checkbox" x-model="deleteModal.force" class="rounded">
+                    <span>Force delete (remove even if containers are using it)</span>
+                </label>
+            </div>
+
+            <div x-show="deleteModal.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                <span x-text="deleteModal.error"></span>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button @click="deleteModal.show = false"
+                        :disabled="deleteModal.loading"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="deleteImage()"
+                        :disabled="deleteModal.loading"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-md transition">
+                    <span x-show="!deleteModal.loading">🗑️ Delete</span>
+                    <span x-show="deleteModal.loading">⏳ Deleting...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show"
+         x-transition
+         class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50"
+         :class="{
+             'bg-green-600': toast.type === 'success',
+             'bg-red-600': toast.type === 'error',
+             'bg-blue-600': toast.type === 'info'
+         }">
+        <p class="text-white" x-text="toast.message"></p>
+    </div>
 </div>
+
+<script>
+function imagesComponent() {
+    return {
+        images: [],
+        loading: false,
+        lastUpdated: 'Never',
+        updatesCount: 0,
+        showPullModal: false,
+        showTagModalState: false,
+
+        pullForm: {
+            repository: '',
+            tag: 'latest',
+            loading: false,
+            error: ''
+        },
+
+        tagForm: {
+            sourceImage: '',
+            sourceId: '',
+            repository: '',
+            tag: 'latest',
+            loading: false,
+            error: ''
+        },
+
+        deleteModal: {
+            show: false,
+            imageId: '',
+            imageName: '',
+            force: false,
+            loading: false,
+            error: ''
+        },
+
+        toast: {
+            show: false,
+            message: '',
+            type: 'info'
+        },
+
+        async init() {
+            await this.loadImages();
+        },
+
+        async loadImages() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/images');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    this.images = data.data;
+                    this.updatesCount = this.images.filter(img => img.update_available).length;
+                    this.lastUpdated = new Date().toLocaleTimeString();
+                } else {
+                    this.showToast('Failed to load images: ' + data.error, 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to load images: ' + error.message, 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async pullImage() {
+            this.pullForm.loading = true;
+            this.pullForm.error = '';
+
+            try {
+                const response = await fetch('/api/images/pull', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository: this.pullForm.repository,
+                        tag: this.pullForm.tag
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast('Image pulled successfully', 'success');
+                    this.showPullModal = false;
+                    this.pullForm.repository = '';
+                    this.pullForm.tag = 'latest';
+                    await this.loadImages();
+                } else {
+                    this.pullForm.error = data.error || 'Failed to pull image';
+                }
+            } catch (error) {
+                this.pullForm.error = 'Failed to pull image: ' + error.message;
+            } finally {
+                this.pullForm.loading = false;
+            }
+        },
+
+        showTagModal(image) {
+            this.tagForm.sourceImage = image.full_name;
+            this.tagForm.sourceId = image.full_name;
+            this.tagForm.repository = '';
+            this.tagForm.tag = 'latest';
+            this.tagForm.error = '';
+            this.showTagModalState = true;
+        },
+
+        async tagImage() {
+            this.tagForm.loading = true;
+            this.tagForm.error = '';
+
+            try {
+                const response = await fetch(`/api/images/${encodeURIComponent(this.tagForm.sourceId)}/tag`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository: this.tagForm.repository,
+                        tag: this.tagForm.tag
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast('Image tagged successfully', 'success');
+                    this.showTagModalState = false;
+                    await this.loadImages();
+                } else {
+                    this.tagForm.error = data.error || 'Failed to tag image';
+                }
+            } catch (error) {
+                this.tagForm.error = 'Failed to tag image: ' + error.message;
+            } finally {
+                this.tagForm.loading = false;
+            }
+        },
+
+        confirmDelete(image) {
+            this.deleteModal.imageId = image.full_name;
+            this.deleteModal.imageName = image.full_name;
+            this.deleteModal.force = false;
+            this.deleteModal.error = '';
+            this.deleteModal.show = true;
+        },
+
+        async deleteImage() {
+            this.deleteModal.loading = true;
+            this.deleteModal.error = '';
+
+            try {
+                const params = new URLSearchParams();
+                if (this.deleteModal.force) {
+                    params.append('force', 'true');
+                }
+
+                const response = await fetch(`/api/images/${encodeURIComponent(this.deleteModal.imageId)}?${params}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast('Image deleted successfully', 'success');
+                    this.deleteModal.show = false;
+                    await this.loadImages();
+                } else {
+                    this.deleteModal.error = data.error || 'Failed to delete image';
+                }
+            } catch (error) {
+                this.deleteModal.error = 'Failed to delete image: ' + error.message;
+            } finally {
+                this.deleteModal.loading = false;
+            }
+        },
+
+        async checkForUpdates() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/images/updates');
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Update check complete. ${data.count} updates available`, 'success');
+                    await this.loadImages();
+                } else {
+                    this.showToast('Failed to check for updates', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to check for updates: ' + error.message, 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+        },
+
+        formatTotalSize() {
+            const total = this.images.reduce((sum, img) => sum + (img.size_bytes || 0), 0);
+            return this.formatSize(total);
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        },
+
+        showToast(message, type = 'info') {
+            this.toast.message = message;
+            this.toast.type = type;
+            this.toast.show = true;
+            setTimeout(() => {
+                this.toast.show = false;
+            }, 3000);
+        }
+    };
+}
+</script>
+
+<style>
+[x-cloak] { display: none !important; }
+</style>
 {% endblock %}

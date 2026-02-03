@@ -138,24 +138,30 @@ def get_db() -> Generator:
 def init_db():
     """
     Initialize the database by creating all tables
-    
+
+    IMPORTANT: This function is maintained for backward compatibility only.
+    For schema changes, use Alembic migrations instead:
+        - alembic revision --autogenerate -m "Description"
+        - alembic upgrade head
+
+    Migrations are automatically run on container startup via docker-entrypoint.sh
+
     This function should be called once when the application first starts.
     It reads all models that inherit from Base and creates their tables.
-    
+
     Tables created:
         - users: User authentication
         - sessions: Session tracking
         - containers: Container metadata
-        - networks: Network configuration
+        - host_config: Hardware configuration
         - environments: Environment tags
-        - (and more as we add models)
-    
+        - ssl_certificates: SSL cert management
+
     Safe to call multiple times - won't recreate existing tables.
-    
+
     Verification:
         python3 -c "from backend.models.database import init_db; init_db()"
-        sqlite3 /tmp/dockermate.db ".tables"  # Should show all tables
-        
+
     Example:
         from backend.models.database import init_db
         init_db()  # Creates all tables

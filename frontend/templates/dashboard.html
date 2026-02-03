@@ -1,73 +1,213 @@
 {% extends "base.html" %}
-
 {% block title %}Dashboard - DockerMate{% endblock %}
 
 {% block content %}
-<div class="min-h-screen">
-    <!-- Shared Navigation Bar -->
+<div class="min-h-screen bg-slate-900" x-data="dashboardComponent()" x-init="init()">
     {% include 'components/navbar.html' %}
-    
-    <!-- Main Content -->
+
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Welcome Section -->
         <div class="mb-8">
-            <h2 class="text-3xl font-bold text-white">Welcome to DockerMate</h2>
-            <p class="mt-2 text-slate-400">Your Docker management platform for home labs</p>
+            <h2 class="text-3xl font-bold text-white">Dashboard</h2>
+            <p class="mt-2 text-slate-400">System overview and statistics</p>
+            <p class="text-xs text-slate-500" x-text="'Last updated: ' + lastUpdated"></p>
         </div>
-        
-        <!-- Quick Stats (Placeholder) -->
+
+        <!-- Stats Grid -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Container Stats Card -->
             <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-slate-400 text-sm">Containers</p>
-                        <p class="text-3xl font-bold text-white mt-1">--</p>
+                        <p class="text-3xl font-bold text-white mt-1" x-text="stats.totalContainers"></p>
+                        <p class="text-sm mt-2">
+                            <span class="text-green-400" x-text="stats.runningContainers + ' running'"></span>
+                            <span class="text-slate-500"> / </span>
+                            <span class="text-slate-400" x-text="stats.stoppedContainers + ' stopped'"></span>
+                        </p>
                     </div>
                     <div class="text-blue-400 text-3xl">📦</div>
                 </div>
-                <p class="text-slate-500 text-xs mt-2">Coming in Sprint 2</p>
             </div>
-            
+
+            <!-- Hardware Profile Card -->
             <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
                 <div class="flex items-center justify-between">
                     <div>
-                        <p class="text-slate-400 text-sm">Images</p>
-                        <p class="text-3xl font-bold text-white mt-1">--</p>
+                        <p class="text-slate-400 text-sm">Hardware Profile</p>
+                        <p class="text-xl font-bold text-white mt-1" x-text="hardware.profile_name || 'Loading...'"></p>
+                        <p class="text-sm mt-2 text-slate-400">
+                            <span x-text="hardware.cpu_count + ' CPU'"></span> |
+                            <span x-text="hardware.total_memory_gb + ' GB RAM'"></span>
+                        </p>
                     </div>
-                    <div class="text-green-400 text-3xl">🖼️</div>
+                    <div class="text-purple-400 text-3xl">💻</div>
                 </div>
-                <p class="text-slate-500 text-xs mt-2">Coming in Sprint 3</p>
             </div>
-            
+
+            <!-- Capacity Card -->
             <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
                 <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-slate-400 text-sm">Networks</p>
-                        <p class="text-3xl font-bold text-white mt-1">--</p>
+                    <div class="w-full">
+                        <p class="text-slate-400 text-sm">Capacity</p>
+                        <p class="text-3xl font-bold text-white mt-1">
+                            <span x-text="stats.capacityPercent + '%'"></span>
+                        </p>
+                        <div class="mt-3 w-full bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300"
+                                 :class="stats.capacityPercent > 80 ? 'bg-red-500' : stats.capacityPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'"
+                                 :style="'width: ' + stats.capacityPercent + '%'"></div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1" x-text="stats.totalContainers + ' / ' + hardware.max_containers + ' containers'"></p>
+                        <p class="text-xs text-slate-600 mt-1" title="Counts all containers on the host including DockerMate and external containers">
+                            ℹ️ All containers (toggle "Show all" in Containers to see)
+                        </p>
                     </div>
-                    <div class="text-purple-400 text-3xl">🌐</div>
                 </div>
-                <p class="text-slate-500 text-xs mt-2">Coming in Sprint 4</p>
             </div>
         </div>
-        
-        <!-- Getting Started -->
-        <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
-            <h3 class="text-xl font-semibold text-white mb-4">🚀 Sprint 1 Complete!</h3>
-            <p class="text-slate-300 mb-4">
-                You've successfully set up DockerMate with authentication and HTTPS. 
-                Container management features are coming in Sprint 2.
-            </p>
-            
-            <div class="space-y-2 text-sm text-slate-400">
-                <p>✅ <span class="text-green-400">Task 1:</span> Project Structure</p>
-                <p>✅ <span class="text-green-400">Task 2:</span> Database Models</p>
-                <p>✅ <span class="text-green-400">Task 3:</span> Authentication System</p>
-                <p>✅ <span class="text-green-400">Task 4:</span> SSL/TLS Certificates</p>
-                <p>✅ <span class="text-green-400">Task 5:</span> Flask Application Setup</p>
-                <p class="mt-4"><strong>Sprint 1 Progress:</strong> 62.5% (5 of 8 tasks complete)</p>
+
+        <!-- Environment Distribution -->
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6">
+            <h3 class="text-xl font-semibold text-white mb-4">Environment Distribution</h3>
+            <div x-show="stats.byEnvironment.length === 0" class="text-slate-400 text-sm">
+                No containers yet. Create your first container to see environment distribution.
+            </div>
+            <div x-show="stats.byEnvironment.length > 0" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <template x-for="env in stats.byEnvironment" :key="env.name">
+                    <div class="bg-slate-700 p-4 rounded">
+                        <p class="text-sm text-slate-400" x-text="env.name"></p>
+                        <p class="text-2xl font-bold text-white" x-text="env.count"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+            <h3 class="text-xl font-semibold text-white mb-4">Quick Actions</h3>
+            <div class="flex flex-wrap gap-4">
+                <a href="/containers" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition">
+                    📦 Manage Containers
+                </a>
+                <a href="/images" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-white transition">
+                    🖼️ Manage Images
+                </a>
+                <a href="/settings" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white transition">
+                    ⚙️ Settings
+                </a>
             </div>
         </div>
     </main>
 </div>
+
+<script>
+function dashboardComponent() {
+    return {
+        stats: {
+            totalContainers: 0,
+            runningContainers: 0,
+            stoppedContainers: 0,
+            capacityPercent: 0,
+            byEnvironment: []
+        },
+        hardware: {
+            profile_name: 'Loading...',
+            cpu_count: 0,
+            total_memory_gb: 0,
+            max_containers: 0
+        },
+        lastUpdated: 'Never',
+        loading: false,
+        pollInterval: null,
+
+        async init() {
+            await this.loadDashboardData();
+            this.startPolling();
+        },
+
+        async loadDashboardData() {
+            this.loading = true;
+            try {
+                await Promise.all([
+                    this.loadHardwareProfile(),
+                    this.loadContainerStats()
+                ]);
+                this.lastUpdated = new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Failed to load dashboard data:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadHardwareProfile() {
+            try {
+                const response = await fetch('/api/system/hardware');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.success) {
+                    this.hardware = data.data;
+                }
+            } catch (error) {
+                console.error('Failed to load hardware profile:', error);
+            }
+        },
+
+        async loadContainerStats() {
+            try {
+                // Use show_all=true to count ALL containers (including DockerMate and external)
+                // for accurate capacity calculation
+                const response = await fetch('/api/containers?all=true&show_all=true');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.success) {
+                    const containers = data.data;
+                    // Count all containers including DockerMate and external containers
+                    this.stats.totalContainers = containers.length;
+                    this.stats.runningContainers = containers.filter(c => c.state === 'running').length;
+                    this.stats.stoppedContainers = containers.filter(c => c.state !== 'running').length;
+
+                    // Calculate capacity percentage based on ALL containers on the host
+                    const maxContainers = this.hardware.max_containers || 100;
+                    this.stats.capacityPercent = Math.min(100, Math.round((containers.length / maxContainers) * 100));
+
+                    // Group by environment
+                    const envGroups = {};
+                    containers.forEach(c => {
+                        const env = c.environment || 'UNTAGGED';
+                        envGroups[env] = (envGroups[env] || 0) + 1;
+                    });
+
+                    // Convert to array and sort by count (descending)
+                    this.stats.byEnvironment = Object.entries(envGroups)
+                        .map(([name, count]) => ({ name, count }))
+                        .sort((a, b) => b.count - a.count);
+                }
+            } catch (error) {
+                console.error('Failed to load container stats:', error);
+            }
+        },
+
+        startPolling() {
+            // Refresh every 10 seconds
+            this.pollInterval = setInterval(() => {
+                this.loadDashboardData();
+            }, 10000);
+        },
+
+        // Cleanup on component destroy (if Alpine supports it)
+        destroy() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
+        }
+    };
+}
+</script>
 {% endblock %}

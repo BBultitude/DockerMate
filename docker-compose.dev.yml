@@ -16,6 +16,9 @@ services:
       - ./backend:/app/backend
       - ./frontend:/app/frontend
       - ./app_dev.py:/app/app_dev.py
+      - ./manage.py:/app/manage.py
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
       
       # Persist database
       - ./data:/app/data

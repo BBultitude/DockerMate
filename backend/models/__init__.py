@@ -65,6 +65,7 @@ from backend.models.session import Session
 from backend.models.environment import Environment
 from backend.models.host_config import HostConfig
 from backend.models.container import Container
+from backend.models.image import Image
 
 # Try to import optional models (may not exist yet)
 try:
@@ -88,5 +89,7 @@ __all__ = [
     'Session',
     'Environment',
     'HostConfig',
+    'Container',
+    'Image',
     'SSLCertificate',
 ]

@@ -191,18 +191,21 @@ docker-compose logs
 
 ## 🏗️ Project Status
 
-**Current Version:** Pre-release (Sprint 1 in progress)
+**Current Version:** v0.1.0-alpha (Sprint 3 in progress)
 
-DockerMate is currently under active development. Sprint 1 focuses on foundation and authentication:
-
-- ✅ Task 1: Project Structure Setup
-- ✅ Task 2: Database Models & Schema
-- ✅ Task 3: Authentication System
-- ⏳ Task 4: SSL/TLS Certificate Management (Next)
-- ⏳ Task 5: Flask Application Setup
-- ⏳ Task 6: Frontend Templates
-- ⏳ Task 7: API Endpoints
-- ⏳ Task 8: Unit Tests
+- ✅ Sprint 1: Foundation & Auth — complete
+- ✅ Sprint 2: Container Management — complete
+- 🔄 Sprint 3: Image Management & Updates — Tasks 1-7 complete
+  - ✅ Image listing, pulling, tagging, deletion
+  - ✅ Show all Docker containers (managed + external)
+  - ✅ Real-time dashboard with auto-refresh
+  - ✅ Background scheduler for update checks
+  - ✅ Database sync / recovery after DB reset
+  - ⏳ Update & redeploy, history, rollback (upcoming)
+- ⏳ Sprint 4: Network Management
+- ⏳ Sprint 5: Volumes, Stacks & Health
+- ⏳ Sprint 6: Export & CLI
+- ⏳ Sprint 7: Polish & Testing
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed progress.
 
@@ -326,8 +329,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### v1.0.0 (Target: Q1 2026)
 - ✅ Authentication system
-- ⏳ Container management (CRUD operations)
-- ⏳ Image management & updates
+- ✅ Container management (CRUD operations)
+- 🔄 Image management & updates (foundation complete, update/redeploy upcoming)
 - ⏳ Network management with IPAM
 - ⏳ Volume management
 - ⏳ Stack deployment (Docker Compose)

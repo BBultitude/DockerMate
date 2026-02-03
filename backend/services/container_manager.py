@@ -252,11 +252,19 @@ class ContainerManager:
             pass  # Good - name is unique
         
         # Step 5: Prepare container configuration
+        # Add DockerMate management labels
+        docker_labels = labels or {}
+        docker_labels['com.dockermate.managed'] = 'true'
+        docker_labels['com.dockermate.version'] = '0.1.0'
+        docker_labels['com.dockermate.created_at'] = datetime.now().isoformat()
+        if environment:
+            docker_labels['com.dockermate.environment'] = environment
+
         container_config = {
             'name': name,
             'image': image,
             'detach': True,
-            'labels': labels or {},
+            'labels': docker_labels,
             'environment': env_vars or {},
         }
         
@@ -364,23 +372,25 @@ class ContainerManager:
             - Shows how to calculate available resources
         """
         host_config = self._get_host_config()
-        
+
         if cpu_limit:
-            max_cpu = host_config.max_container_cpu_cores
+            # Use total system CPU cores as the limit
+            max_cpu = host_config.cpu_cores
             if cpu_limit > max_cpu:
                 raise ValidationError(
-                    f"CPU limit {cpu_limit} cores exceeds maximum {max_cpu} cores "
-                    f"allowed by hardware profile '{host_config.profile}'"
+                    f"CPU limit {cpu_limit} cores exceeds system total of {max_cpu} cores "
+                    f"(hardware profile: '{host_config.profile_name}')"
                 )
-        
+
         if memory_limit:
-            max_memory = host_config.max_container_memory_mb * 1024 * 1024  # Convert MB to bytes
+            # Convert total RAM from GB to bytes
+            max_memory = int(host_config.ram_gb * 1024 * 1024 * 1024)  # GB to bytes
             if memory_limit > max_memory:
                 memory_mb = memory_limit / (1024 * 1024)
-                max_mb = host_config.max_container_memory_mb
+                max_mb = int(host_config.ram_gb * 1024)  # GB to MB
                 raise ValidationError(
-                    f"Memory limit {memory_mb:.0f}MB exceeds maximum {max_mb}MB "
-                    f"allowed by hardware profile '{host_config.profile}'"
+                    f"Memory limit {memory_mb:.0f}MB exceeds system total of {max_mb}MB "
+                    f"(hardware profile: '{host_config.profile_name}')"
                 )
     
     def _build_restart_policy(self, policy: str) -> Dict[str, Any]:
@@ -575,7 +585,13 @@ class ContainerManager:
         
         # TASK 7 FIX: Extract environment variables from Docker
         env_vars_list = config.get('Env', [])
-        
+
+        # Extract resource limits from Docker
+        host_config = attrs.get('HostConfig', {})
+        nano_cpus = host_config.get('NanoCpus', 0)
+        cpu_limit = nano_cpus / 1e9 if nano_cpus else None  # Convert nano CPUs to cores
+        memory_limit = host_config.get('Memory', 0) or None  # Bytes
+
         # Check if container already exists in database
         existing = self.db.query(Container).filter(
             Container.container_id == docker_container.id
@@ -590,6 +606,8 @@ class ContainerManager:
                 'RestartPolicy', {}
             ).get('Name', 'no')
             existing.ports_json = json.dumps(ports_list)  # TASK 7 FIX: Store ports
+            existing.cpu_limit = cpu_limit  # Store resource limits
+            existing.memory_limit = memory_limit
             existing.updated_at = datetime.utcnow()
             
             # Update timestamps based on state
@@ -630,6 +648,8 @@ class ContainerManager:
                     'RestartPolicy', {}
                 ).get('Name', 'no'),
                 ports_json=json.dumps(ports_list),  # TASK 7 FIX: Store ports
+                cpu_limit=cpu_limit,  # Store resource limits
+                memory_limit=memory_limit,
                 auto_start=False,  # Will be set by API if needed
                 created_at=created_at
             )
@@ -766,7 +786,195 @@ class ContainerManager:
                 result.append(container.to_dict())
         
         return result
-    
+
+    def list_all_docker_containers(
+        self,
+        all: bool = True,
+        environment: Optional[str] = None,
+        managed_only: bool = False,
+        unmanaged_only: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        List ALL containers from Docker daemon, not just DockerMate-managed.
+
+        FEATURE-005: Shows both managed and external containers with distinction.
+
+        This method queries Docker directly for all containers and cross-references
+        with the database to identify which are managed by DockerMate.
+
+        DockerMate's own container is shown as EXTERNAL (no action buttons) which
+        protects it from accidental damage while keeping UI simple (KISS principle).
+
+        Args:
+            all: If True, include stopped containers (default: True)
+            environment: Filter by environment tag (only for managed containers)
+            managed_only: If True, only show DockerMate-managed containers
+            unmanaged_only: If True, only show external containers
+
+        Returns:
+            list: List of container dictionaries with 'managed' flag
+
+        Educational:
+            - Queries Docker daemon for all containers on host
+            - Cross-references with database to identify managed containers
+            - DockerMate container appears as external (protected from actions)
+            - Shows both managed and external containers with distinction
+            - CLI equivalent: docker ps -a
+        """
+        logger.debug(f"Listing all Docker containers: all={all}, env={environment}")
+
+        client = get_docker_client()
+
+        # Get all containers from Docker daemon
+        docker_containers = client.containers.list(all=all)
+
+        # Get managed container IDs from database
+        managed_ids = {c.container_id for c in self.db.query(Container).all()}
+
+        result = []
+        for docker_container in docker_containers:
+            # KISS: Show ALL containers including DockerMate
+            # DockerMate will appear as external (no action buttons = protected)
+
+            container_id = docker_container.id
+            is_managed = container_id in managed_ids
+
+            # Apply managed/unmanaged filter
+            if managed_only and not is_managed:
+                continue
+            if unmanaged_only and is_managed:
+                continue
+
+            # Build basic container data
+            attrs = docker_container.attrs
+            config = attrs.get('Config', {})
+
+            container_data = {
+                'container_id': container_id,
+                'name': docker_container.name,
+                'image_name': config.get('Image', ''),
+                'state': docker_container.status,
+                'managed': is_managed,
+                'created_at': attrs.get('Created', ''),
+                'labels': docker_container.labels or {}
+            }
+
+            # If managed, augment with database metadata
+            if is_managed:
+                db_container = self.db.query(Container).filter_by(
+                    container_id=container_id
+                ).first()
+                if db_container:
+                    container_data['environment'] = db_container.environment
+                    container_data['ports_json'] = db_container.ports_json
+                    container_data['db_id'] = db_container.id
+
+                    # Parse ports from JSON
+                    try:
+                        container_data['ports'] = json.loads(db_container.ports_json or '[]')
+                    except:
+                        container_data['ports'] = []
+            else:
+                # For unmanaged containers, extract ports from Docker directly
+                network_settings = attrs.get('NetworkSettings', {})
+                ports_list = []
+                port_bindings = network_settings.get('Ports', {})
+                seen_ports = set()
+
+                for container_port, host_bindings in port_bindings.items():
+                    if host_bindings:
+                        port_parts = container_port.split('/')
+                        port_num = port_parts[0]
+                        protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
+
+                        for binding in host_bindings:
+                            host_port = binding.get('HostPort', '')
+                            port_key = f"{port_num}/{protocol}:{host_port}"
+
+                            if port_key not in seen_ports:
+                                seen_ports.add(port_key)
+                                ports_list.append({
+                                    'container': port_num,
+                                    'host': host_port,
+                                    'protocol': protocol,
+                                    'host_ip': binding.get('HostIp', '0.0.0.0')
+                                })
+
+                container_data['ports'] = ports_list
+                container_data['environment'] = None
+
+            # Apply environment filter (only for managed containers)
+            # External containers (is_managed=False) are not filtered by environment
+            if environment and is_managed and container_data.get('environment') != environment:
+                continue
+
+            result.append(container_data)
+
+        return result
+
+    def sync_managed_containers_to_database(self) -> Dict[str, Any]:
+        """
+        Sync containers with DockerMate labels to database.
+
+        CRITICAL: Recovers managed containers after database reset/migration.
+        Searches for containers with 'com.dockermate.managed=true' label
+        that are not in the database and adds them.
+
+        This solves the issue where:
+        - Database is reset/migrated
+        - Previously managed containers still exist in Docker
+        - But they're not in the database anymore
+        - So they appear as "external" instead of "managed"
+
+        Returns:
+            dict: Sync results with counts of recovered containers
+
+        Educational:
+            - Docker labels persist with containers
+            - Database can be recreated from Docker labels
+            - Critical for upgrades/migrations
+            - CLI equivalent: docker ps --filter "label=com.dockermate.managed=true"
+        """
+        logger.info("Starting container sync to database...")
+
+        client = get_docker_client()
+        docker_containers = client.containers.list(all=True)
+
+        # Get existing container IDs from database
+        existing_ids = {c.container_id for c in self.db.query(Container).all()}
+
+        recovered = []
+        skipped = []
+
+        for docker_container in docker_containers:
+            container_id = docker_container.id
+            labels = docker_container.labels or {}
+
+            # Skip if already in database
+            if container_id in existing_ids:
+                continue
+
+            # Check if this container was managed by DockerMate
+            if labels.get('com.dockermate.managed') == 'true':
+                logger.info(f"Recovering managed container: {docker_container.name}")
+
+                # Extract environment from labels if available
+                environment = labels.get('com.dockermate.environment')
+
+                # Sync to database
+                container_data = self._sync_database_state(docker_container, environment)
+                recovered.append(container_data)
+            else:
+                skipped.append(docker_container.name)
+
+        logger.info(f"Sync complete: {len(recovered)} containers recovered, {len(skipped)} external containers skipped")
+
+        return {
+            'recovered': len(recovered),
+            'skipped': len(skipped),
+            'recovered_containers': [c['name'] for c in recovered]
+        }
+
     # =========================================================================
     # UPDATE OPERATION
     # =========================================================================

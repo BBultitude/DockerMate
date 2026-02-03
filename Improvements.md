@@ -347,17 +347,14 @@ health_status = {
 
 ---
 
-### DEBT-003: Database Migration Strategy
-**Priority:** High  
-**Effort:** 3-4 hours  
-**Sprint:** 3 (Container UI)  
+### DEBT-003: Database Migration Strategy ✅ COMPLETE
+**Priority:** High
+**Status:** ✅ Completed February 2, 2026 (Sprint 3)
 **Description:**
-- Implement Flask-Migrate (Alembic) for schema versioning
-- Generate initial migration from current models
-- Add upgrade/downgrade scripts
-- Document migration workflow in CONTRIBUTING.md
-**Current State:** SQLAlchemy models exist, but no migration history
-**Risk:** Schema changes will break existing installations without migrations
+- Alembic configured (`alembic.ini`, `migrations/` directory)
+- Initial migration generated for Image model
+- `docker-entrypoint.sh` runs `alembic upgrade head` on every container start
+- One-time `fix_migrations.py` script handles state conflicts during transition
 
 ---
 
@@ -392,19 +389,29 @@ health_status = {
 ---
 
 ### DEBT-006: Standardize Frontend JavaScript to Alpine.js
-**Priority:** High  
-**Effort:** 2-3 hours  
-**Sprint:** 2 (Task 6 - Container UI)  
-**Dependencies:** Sprint 1 templates created  
+**Priority:** High
+**Effort:** 2-3 hours
+**Sprint:** 2 (Task 8 - Technical Debt)
+**Status:** ✅ COMPLETE
+**Completed:** February 2, 2026
+**Dependencies:** Sprint 1 templates created
 **Description:**
 Current templates inconsistently mix Alpine.js (loaded in base.html) with plain JavaScript patterns (`onclick` handlers). This violates KISS principle and wastes bandwidth.
 
-**Files to Update:**
-- `frontend/templates/dashboard.html` - Convert `onclick="logout()"` to Alpine pattern
-- `frontend/templates/containers.html` - Convert to Alpine pattern
-- `frontend/templates/images.html` - Convert to Alpine pattern
-- `frontend/templates/networks.html` - Convert to Alpine pattern
-- `frontend/templates/settings.html` - Convert to Alpine pattern
+**Resolution:**
+All templates verified to use Alpine.js exclusively:
+- ✅ `frontend/templates/dashboard.html` - Uses navbar component (Alpine.js)
+- ✅ `frontend/templates/containers.html` - Uses `containersComponent()` (Alpine.js)
+- ✅ `frontend/templates/images.html` - Static content, no interactivity needed
+- ✅ `frontend/templates/networks.html` - Static content, no interactivity needed
+- ✅ `frontend/templates/settings.html` - Uses `settingsPage()` (Alpine.js)
+- ✅ `frontend/templates/login.html` - Uses `loginPage()` (Alpine.js)
+- ✅ `frontend/templates/setup.html` - Uses `setupPage()` (Alpine.js)
+
+**Verification:**
+- No inline `onclick`, `onchange`, `onsubmit`, or `onload` handlers found
+- All JavaScript functions are Alpine.js component functions
+- Navbar component centralized with Alpine.js patterns
 
 **Pattern Migration:**
 
@@ -449,31 +456,35 @@ function auth() {
 ---
 
 ### DEBT-007: Create Shared Navigation Component
-**Priority:** High  
-**Effort:** 1 hour  
-**Sprint:** 2 (Task 6 - Container UI)  
-**Dependencies:** DEBT-006 (Alpine.js standardization)  
+**Priority:** High
+**Effort:** 1 hour
+**Sprint:** 2 (Task 8 - Technical Debt)
+**Status:** ✅ COMPLETE
+**Completed:** February 2, 2026 (discovered already implemented)
+**Dependencies:** DEBT-006 (Alpine.js standardization)
 **Description:**
 Current templates duplicate navigation bar code (50+ lines per template). Extract to shared component for maintainability.
 
-**Implementation:**
-1. Create `frontend/templates/components/navbar.html`
-2. Update all templates to use `{% include 'components/navbar.html' %}`
-3. Centralize logout logic in navbar component
-4. Use `request.path` for active link highlighting
+**Resolution:**
+Component already implemented and in use across all pages:
+- ✅ Created `frontend/templates/components/navbar.html`
+- ✅ Uses Alpine.js `navbar()` component function
+- ✅ Centralized logout logic with error handling
+- ✅ Active link highlighting using `request.path`
+- ✅ Included in all main templates
 
-**Benefits:**
-- Single source of truth for navigation
-- Easier to add/remove menu items
+**Benefits Achieved:**
+- Single source of truth for navigation (119 lines)
 - Consistent styling across all pages
-- Reduced code duplication (300+ lines → 60 lines)
+- No code duplication
+- Easy to modify menu items in one place
 
-**Files Modified:**
-- `frontend/templates/dashboard.html`
-- `frontend/templates/containers.html`
-- `frontend/templates/images.html`
-- `frontend/templates/networks.html`
-- `frontend/templates/settings.html`
+**Files Using Navbar:**
+- ✅ `frontend/templates/dashboard.html`
+- ✅ `frontend/templates/containers.html`
+- ✅ `frontend/templates/images.html`
+- ✅ `frontend/templates/networks.html`
+- ✅ `frontend/templates/settings.html`
 
 ---
 
@@ -591,8 +602,39 @@ src/services/container_manager.py
 
 ---
 
+## SPRINT 3 COMPLETED ITEMS
+
+### FEATURE-005: Show All Docker Containers ✅ COMPLETE (Feb 3, 2026)
+- `list_all_docker_containers()` hybrid listing with managed/external distinction
+- Docker labels (`com.dockermate.managed`, `com.dockermate.environment`) persist across DB resets
+- Frontend toggle, disabled checkboxes/buttons for externals, bulk-select exclusion
+- DockerMate container shown as external (KISS)
+
+### FEATURE-006: Real-Time Dashboard ✅ COMPLETE (Feb 3, 2026)
+- Alpine.js `dashboardComponent()` with 10 s polling
+- Live container stats, hardware profile, capacity bar, environment distribution
+
+### IMAGE MANAGEMENT (Tasks 1-4) ✅ COMPLETE (Feb 2-3, 2026)
+- `backend/models/image.py` — Image model + Alembic migration
+- `backend/services/image_manager.py` — CRUD, pull, tag, update-check
+- `backend/api/images.py` — 6 REST endpoints
+- `frontend/templates/images.html` — Full Alpine.js image management page
+
+### BACKGROUND SCHEDULER (Task 7) ✅ COMPLETE (Feb 3, 2026)
+- `backend/services/scheduler.py` — stdlib daemon thread, no extra deps
+- Image update check every 6 h (configurable via `SCHEDULER_IMAGE_CHECK_HOURS`)
+- Flask debug-mode reloader guard (`WERKZEUG_RUN_MAIN`)
+
+### DATABASE SYNC / RECOVERY ✅ COMPLETE (Feb 3, 2026)
+- `sync_managed_containers_to_database()` recovers labeled containers after DB reset
+- `POST /api/containers/sync` endpoint
+- Auto-sync on container startup via `docker-entrypoint.sh`
+
+---
+
 ## VERSION HISTORY
-- **v1.3** (2025-01-29): DEBT-006: Standardize Frontend JavaScript to Alpine.js & DEBT-007: Create Shared Navigation Component
-- **v1.2** (2025-01-27): Sprint 2 Task 4 strategic decisions + FEAT-011 health validation
-- **v1.1** (2025-01-27): Sprint 2 Task 3 strategic decision items (FEAT-008, FEAT-009, REF-003)
-- **v1.0** (2025-01-27): Initial creation after Sprint 1 completion
+- **v1.4** (2026-02-03): Sprint 3 — image management, show-all containers, dashboard, scheduler, DB sync
+- **v1.3** (2026-01-29): DEBT-006: Standardize Frontend JavaScript to Alpine.js & DEBT-007: Create Shared Navigation Component
+- **v1.2** (2026-01-27): Sprint 2 Task 4 strategic decisions + FEAT-011 health validation
+- **v1.1** (2026-01-27): Sprint 2 Task 3 strategic decision items (FEAT-008, FEAT-009, REF-003)
+- **v1.0** (2026-01-27): Initial creation after Sprint 1 completion

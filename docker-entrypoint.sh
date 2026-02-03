@@ -8,7 +8,21 @@ echo "======================================================================"
 echo "DockerMate Development Container Starting"
 echo "======================================================================"
 
-# Initialize database
+# Fix migration state (one-time fix for images table)
+if [ -f "backend/fix_migrations.py" ]; then
+    echo "Fixing migration state..."
+    python3 backend/fix_migrations.py
+    rm backend/fix_migrations.py
+    echo "✓ Migration state fixed"
+fi
+
+# Run database migrations
+echo "Running database migrations..."
+alembic upgrade head
+echo "✓ Database migrations applied"
+
+# Initialize database (backward compatibility)
+echo ""
 echo "Initializing database..."
 python3 << 'EOF'
 from backend.models.database import init_db, SessionLocal
@@ -66,6 +80,21 @@ finally:
     db.close()
 
 print("✓ Database initialization complete")
+
+# Recover any managed containers missing from the database
+# (e.g. after a database reset or migration)
+print("")
+print("Syncing managed containers with database...")
+try:
+    from backend.services.container_manager import ContainerManager
+    with ContainerManager() as manager:
+        sync_result = manager.sync_managed_containers_to_database()
+    if sync_result['recovered'] > 0:
+        print(f"✓ Recovered {sync_result['recovered']} managed container(s): {sync_result['recovered_containers']}")
+    else:
+        print("✓ All managed containers are in sync")
+except Exception as e:
+    print(f"⚠️  Container sync failed (non-fatal): {e}")
 EOF
 
 echo ""
