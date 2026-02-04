@@ -31,7 +31,8 @@ This document tracks all known issues identified during development. Issues are 
 **Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
 **New (Sprint 4):** FEATURE-007 (health page stub + dashboard health card incomplete)
 **Resolved (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized — fixed)
-**Total Open Issues:** 47
+**Resolved (Sprint 5):** NETWORK-002 (non-managed containers not visible on networks page — managed flag bug + missing badges), NETWORK-003 (topology oversized index shift), SSL-001 (cert SANs missing host LAN IP when running in Docker)
+**Total Open Issues:** 44
 
 ---
 

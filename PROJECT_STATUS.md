@@ -2,8 +2,8 @@
 
 **Last Updated:** February 3, 2026
 **Current Version:** v0.1.0-alpha
-**Current Phase:** Sprint 4 - Network Management (Sprint 3 complete)
-**Overall Completion:** ~57% (Sprints 1-4 complete)
+**Current Phase:** Sprint 5 - Volumes, Stacks & Health (Sprint 4 complete)
+**Overall Completion:** ~60% (Sprints 1-4 complete, Sprint 5 in progress)
 
 ---
 
@@ -16,7 +16,7 @@ DockerMate is currently in **Sprint 3** of a 7-sprint development roadmap target
 - ✅ Sprint 2: Container Management (100% complete)
 - ✅ Sprint 3: Image & Updates (100% complete)
 - ✅ Sprint 4: Network Management (100% complete)
-- ⏳ Sprint 5: Volumes, Stacks & Health (0% - planned)
+- 🔄 Sprint 5: Volumes, Stacks & Health (in progress)
 - ⏳ Sprint 6: Export & CLI (0% - planned)
 - ⏳ Sprint 7: Polish & Testing (0% - planned)
 
@@ -189,8 +189,14 @@ v2.0.0 - Advanced Features (Future)
 
 ---
 
-### Sprint 5: Volumes, Stacks & Health ⏳ NOT STARTED
-**Status:** 0% complete (0 of 7 tasks)
+### Sprint 5: Volumes, Stacks & Health 🔄 IN PROGRESS
+**Status:** Bug fixes & SSL enhancement delivered; main tasks pending
+
+**Completed (Sprint 5 — Feb 5, 2026):**
+- ✅ Bug fix: Networks page `managed` flag — `list_networks()` and `get_network()` were using `db_net is not None` which incorrectly marked synced-but-unmanaged networks as "managed". Fixed to `db_net.managed if db_net else False`.
+- ✅ Bug fix: Networks page non-managed container visibility — `get_network()` now cross-references container IDs with DB to tag each with `managed: True/False`. UI shows Managed/External badges in the Connected Containers panel, Connect modal, topology legend, and SVG nodes (orange stroke for external).
+- ✅ Bug fix: Topology view `oversized` index mapping — `.filter(null)` was shifting indices before `.map()` merged the flag. Reordered to `.map()` first.
+- ✅ Feature: SSL cert host IP detection — `generate_self_signed_cert()` now includes the host machine's routable IP in SANs via `_detect_host_ips()`: reads `DOCKERMATE_HOST_IP` env var, parses default gateway from `/proc/1/net/route`, resolves `host.docker.internal`. All detected IPs deduplicated and added alongside existing container/loopback IPs.
 
 | Task | Status | Dependencies |
 |------|--------|-------------|

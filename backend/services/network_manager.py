@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional
 from backend.models.database import SessionLocal
 from backend.models.host_config import HostConfig
 from backend.models.network import Network
+from backend.models.container import Container
 from backend.models.ip_reservation import IPReservation
 from backend.utils.docker_client import get_docker_client
 
@@ -169,7 +170,7 @@ class NetworkManager:
                 'subnet': subnet,
                 'gateway': gateway,
                 'container_count': container_count,
-                'managed': db_net is not None,
+                'managed': db_net.managed if db_net else False,
                 'purpose': db_net.purpose if db_net else None,
                 'oversized': (
                     False if is_default
@@ -204,13 +205,36 @@ class NetworkManager:
 
         db_net = self.db.query(Network).filter_by(network_id=network_id).first()
 
+        # Cross-reference with DB to tag managed vs external containers
+        managed_ids = {c.container_id for c in self.db.query(Container).all()}
+
+        containers_raw = net.attrs.get('Containers', {})
+
+        # Fallback: Docker's Containers dict is unreliable for host/none
+        # networks.  Use the network filter on containers instead.
+        if not containers_raw:
+            try:
+                for c in client.containers.list(all=True, filters={'network': [net.id]}):
+                    c.reload()
+                    for _, net_info in c.attrs.get('NetworkSettings', {}).get('Networks', {}).items():
+                        if net_info.get('NetworkID') == net.id:
+                            containers_raw[c.id] = {
+                                'Name': c.attrs.get('Name', ''),
+                                'IPv4Address': net_info.get('IPAddress', ''),
+                                'IPv6Address': net_info.get('IPv6Address', ''),
+                            }
+                            break
+            except Exception:
+                pass
+
         containers = []
-        for cid, cinfo in net.attrs.get('Containers', {}).items():
+        for cid, cinfo in containers_raw.items():
             containers.append({
                 'container_id': cid,
                 'name': cinfo.get('Name', '').lstrip('/'),
                 'ipv4_address': cinfo.get('IPv4Address', ''),
                 'ipv6_address': cinfo.get('IPv6Address', ''),
+                'managed': cid in managed_ids,
             })
 
         container_count = len(containers)
@@ -231,7 +255,7 @@ class NetworkManager:
             'ip_range': ipam_config[0].get('IPRange') if ipam_config else None,
             'container_count': container_count,
             'containers': containers,
-            'managed': db_net is not None,
+            'managed': db_net.managed if db_net else False,
             'purpose': db_net.purpose if db_net else None,
             'oversized': (
                 False if is_default
