@@ -466,6 +466,19 @@
                             </select>
                             <p class="text-xs text-slate-500 mt-1">How Docker should handle container restarts</p>
                         </div>
+
+                        <!-- Network -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Network</label>
+                            <select x-model="createModal.formData.network"
+                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Default (bridge)</option>
+                                <template x-for="net in createModal.networks" :key="net.network_id">
+                                    <option :value="net.name" x-text="net.name + (net.subnet ? ' (' + net.subnet + ')' : '')"></option>
+                                </template>
+                            </select>
+                            <p class="text-xs text-slate-500 mt-1">Which network should this container join?</p>
+                        </div>
                     </div>
                 </div>
                 
@@ -1109,6 +1122,7 @@ function containersComponent() {
             loading: false,
             errors: {},
             errorMessage: '',
+            networks: [],          // available networks for the dropdown
             formData: {
                 name: '',
                 image: '',
@@ -1120,7 +1134,8 @@ function containersComponent() {
                 cpu_limit: null,
                 memory_limit: null,
                 auto_start: true,
-                pull_if_missing: true
+                pull_if_missing: true,
+                network: ''
             }
         },
 
@@ -1518,11 +1533,24 @@ function containersComponent() {
                 cpu_limit: null,
                 memory_limit: null,
                 auto_start: true,
-                pull_if_missing: true
+                pull_if_missing: true,
+                network: ''
             };
             this.createModal.errors = {};
             this.createModal.errorMessage = '';
             this.createModal.show = true;
+            // Load available networks for the dropdown
+            this.loadNetworksForCreate();
+        },
+
+        async loadNetworksForCreate() {
+            try {
+                const res = await fetch('/api/networks');
+                const data = await res.json();
+                if (data.success) {
+                    this.createModal.networks = data.data.filter(n => n.driver === 'bridge');
+                }
+            } catch (e) { /* non-fatal */ }
         },
         
         /**
@@ -1712,7 +1740,12 @@ function containersComponent() {
                     auto_start: this.createModal.formData.auto_start,
                     pull_if_missing: this.createModal.formData.pull_if_missing
                 };
-                
+
+                // Network selection
+                if (this.createModal.formData.network) {
+                    requestData.network = this.createModal.formData.network;
+                }
+
                 // Transform ports array to API format
                 if (this.createModal.formData.ports.length > 0) {
                     requestData.ports = {};

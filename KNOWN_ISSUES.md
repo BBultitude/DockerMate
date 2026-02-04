@@ -23,13 +23,14 @@ This document tracks all known issues identified during development. Issues are 
 | Performance | 0 | 0 | 2 | 2 | 4 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | Missing Features | 0 | 0 | 4 | 0 | 4 |
-| Network | 0 | 0 | 1 | 0 | 1 |
+| Network | 0 | 0 | 0 | 0 | 0 |
 | **TOTAL** | **0** | **0** | **35** | **12** | **47** |
 
-**Recently Resolved (Sprint 3-4):** FEATURE-005 (show all containers), FEATURE-006 (real-time dashboard), FEATURE-002 (container sync), FEATURE-001 (system health checks)
+**Recently Resolved (Sprint 3-4):** NETWORK-001 (oversized false-positive on empty networks), FEATURE-005 (show all containers), FEATURE-006 (real-time dashboard), FEATURE-002 (container sync), FEATURE-001 (system health checks)
 **Previously Resolved:** 7 issues (Sprint 2 Task 7), PROJECT_STATUS.md created (Sprint 2 Task 8)
 **Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
-**New (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized), FEATURE-007 (health page stub + dashboard health card incomplete)
+**New (Sprint 4):** FEATURE-007 (health page stub + dashboard health card incomplete)
+**Resolved (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized — fixed)
 **Total Open Issues:** 47
 
 ---
@@ -724,6 +725,17 @@ Check if Flask route `/login` exists as a redirect/alias to `/api/auth/login`
 
 ## ✅ RECENTLY RESOLVED ISSUES
 
+### NETWORK-001: Recommended Subnets Flagged as Oversized ✅ FIXED
+**Resolved:** February 4, 2026 (Sprint 4)
+**Root Cause:** `_is_oversized()` used `max(container_count * 4, 10)` as the threshold. With 0 containers on a new network, any subnet with >10 usable hosts was flagged oversized. All hardware-recommended subnets (/25=126, /26=62, /27=30) exceed 10.
+
+**Fix:**
+- Added early-return guard in `_is_oversized()`: if `container_count == 0` return `False`
+- Empty networks are "unused", not "oversized" — the 4× ratio is meaningless with zero containers
+- Location: `backend/services/network_manager.py`
+
+---
+
 ### UI-001: Start/Stop/Restart Buttons Not Clickable ✅ FIXED
 **Resolved:** January 31, 2026
 **Root Cause:** Alpine.js x-for loops had invalid keys + actionLoading returned undefined
@@ -819,8 +831,8 @@ These can be fixed quickly with high impact:
 - Issues Remaining: 44
 
 **Sprint 4 (current):**
-- Issues Resolved: 0
-- New issues identified: 0
+- Issues Resolved: 1 (NETWORK-001)
+- New issues identified: 1 (FEATURE-007)
 - Issues Remaining: 44
 
 ---

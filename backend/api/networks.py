@@ -158,6 +158,29 @@ def validate_subnet():
 
 
 # ------------------------------------------------------------------
+# Auto-generated network documentation
+# ------------------------------------------------------------------
+
+@networks_bp.route('/docs', methods=['GET'])
+def generate_docs():
+    """
+    GET /api/networks/docs
+
+    Returns a Markdown report documenting every network on the host:
+    metadata, connected containers, reserved IP ranges, and utilisation
+    stats.  Copy-paste ready.
+    """
+    try:
+        with NetworkManager() as manager:
+            markdown = manager.generate_docs()
+        return jsonify({'success': True, 'markdown': markdown}), 200
+
+    except Exception as e:
+        logger.exception(f"generate_docs failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
 # Get single network
 # ------------------------------------------------------------------
 
@@ -180,6 +203,156 @@ def get_network(network_id):
 
     except Exception as e:
         logger.exception(f"get_network failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
+# IP allocations (reservations + live assignments)
+# ------------------------------------------------------------------
+
+@networks_bp.route('/<network_id>/ips', methods=['GET'])
+def get_ip_allocations(network_id):
+    """
+    GET /api/networks/<network_id>/ips
+
+    Returns the full IP-allocation picture for one network:
+    - Subnet geometry (usable range, totals)
+    - Live assigned IPs (from Docker)
+    - Reserved IP ranges (from DB)
+    - Free IP count and utilisation percentage
+    """
+    try:
+        with NetworkManager() as manager:
+            result = manager.get_ip_allocations(network_id)
+
+        if not result:
+            return jsonify({'success': False, 'error': 'Network not found or has no subnet'}), 404
+
+        return jsonify({'success': True, 'data': result}), 200
+
+    except Exception as e:
+        logger.exception(f"get_ip_allocations failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
+# Reserve an IP range
+# ------------------------------------------------------------------
+
+@networks_bp.route('/<network_id>/reserve', methods=['POST'])
+def reserve_ips(network_id):
+    """
+    POST /api/networks/<network_id>/reserve
+
+    Body (JSON):
+        range_name   (str)  — required, label for the block (e.g. "Web services")
+        start_ip     (str)  — required, first IP in the range
+        end_ip       (str)  — required, last IP in the range
+        description  (str)  — optional, human-readable note
+    """
+    data = request.get_json(silent=True) or {}
+
+    range_name = data.get('range_name', '').strip()
+    start_ip = data.get('start_ip', '').strip()
+    end_ip = data.get('end_ip', '').strip()
+    description = data.get('description') or None
+
+    if not range_name:
+        return jsonify({'success': False, 'error': 'Range name is required'}), 400
+    if not start_ip or not end_ip:
+        return jsonify({'success': False, 'error': 'start_ip and end_ip are required'}), 400
+
+    try:
+        with NetworkManager() as manager:
+            result = manager.reserve_ip_range(
+                network_id=network_id,
+                range_name=range_name,
+                start_ip=start_ip,
+                end_ip=end_ip,
+                description=description,
+            )
+
+        if result['success']:
+            return jsonify(result), 201
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"reserve_ips failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
+# Delete a reservation range
+# ------------------------------------------------------------------
+
+@networks_bp.route('/<network_id>/reserve/<range_name>', methods=['DELETE'])
+def delete_reservation(network_id, range_name):
+    """
+    DELETE /api/networks/<network_id>/reserve/<range_name>
+
+    Removes all reserved IPs in the named block from the given network.
+    """
+    try:
+        with NetworkManager() as manager:
+            result = manager.delete_reservation(network_id, range_name)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"delete_reservation failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
+# Connect / disconnect containers
+# ------------------------------------------------------------------
+
+@networks_bp.route('/<network_id>/connect', methods=['POST'])
+def connect_container(network_id):
+    """
+    POST /api/networks/<network_id>/connect
+
+    Body (JSON):
+        container_id  (str)  — Docker container ID or name
+    """
+    data = request.get_json(silent=True) or {}
+    container_id = data.get('container_id', '').strip()
+
+    if not container_id:
+        return jsonify({'success': False, 'error': 'container_id is required'}), 400
+
+    try:
+        with NetworkManager() as manager:
+            result = manager.connect_container(network_id, container_id)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"connect_container failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@networks_bp.route('/<network_id>/connect/<container_id>', methods=['DELETE'])
+def disconnect_container(network_id, container_id):
+    """
+    DELETE /api/networks/<network_id>/connect/<container_id>
+
+    Detach the specified container from the network.
+    """
+    try:
+        with NetworkManager() as manager:
+            result = manager.disconnect_container(network_id, container_id)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"disconnect_container failed: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

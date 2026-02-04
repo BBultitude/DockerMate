@@ -183,6 +183,7 @@ def init_db():
         from backend.models.image import Image
         from backend.models.update_history import UpdateHistory
         from backend.models.network import Network
+        from backend.models.ip_reservation import IPReservation
         logger.info("All models imported successfully")
     except ImportError as e:
         logger.warning(f"Some models not yet created: {e}")

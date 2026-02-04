@@ -407,7 +407,8 @@ def create_container():
                 auto_start=data.get('auto_start', True),
                 pull_if_missing=data.get('pull_if_missing', True),
                 cpu_limit=data.get('cpu_limit'),
-                memory_limit=data.get('memory_limit')
+                memory_limit=data.get('memory_limit'),
+                network=data.get('network')
             )
         
         logger.info(f"Container created via API: {data['name']}")

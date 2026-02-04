@@ -41,13 +41,33 @@
             </div>
         </div>
 
+        <!-- Search & Filter Bar -->
+        <div x-show="!loading && images.length > 0" class="flex flex-col sm:flex-row gap-3 mb-4">
+            <input type="text"
+                   x-model="searchTerm"
+                   placeholder="Search images…"
+                   class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+            <div class="flex gap-1">
+                <button @click="imageFilter = 'all'"
+                        class="px-3 py-1.5 rounded text-sm transition"
+                        :class="imageFilter === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                    All
+                </button>
+                <button @click="imageFilter = 'updates'"
+                        class="px-3 py-1.5 rounded text-sm transition"
+                        :class="imageFilter === 'updates' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                    Updates Available
+                </button>
+            </div>
+        </div>
+
         <!-- Loading State -->
         <div x-show="loading" class="text-center py-12">
             <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
             <p class="text-slate-400 mt-4">Loading images...</p>
         </div>
 
-        <!-- Empty State -->
+        <!-- Empty State (no images at all) -->
         <div x-show="!loading && images.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
             <div class="text-6xl mb-4">🖼️</div>
             <h3 class="text-2xl font-semibold text-white mb-2">No Images Found</h3>
@@ -58,9 +78,14 @@
             </button>
         </div>
 
+        <!-- Empty State (filter returned nothing) -->
+        <div x-show="!loading && images.length > 0 && filteredImages.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
+            <p class="text-slate-400">No images match your search or filter.</p>
+        </div>
+
         <!-- Images List -->
-        <div x-show="!loading && images.length > 0" class="grid grid-cols-1 gap-4">
-            <template x-for="image in images" :key="image.image_id">
+        <div x-show="!loading && filteredImages.length > 0" class="grid grid-cols-1 gap-4">
+            <template x-for="image in filteredImages" :key="image.image_id">
                 <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
                     <div class="flex justify-between items-start mb-4">
                         <div class="flex-1">
@@ -98,7 +123,7 @@
         </div>
 
         <!-- Last Updated -->
-        <div x-show="!loading && images.length > 0" class="mt-6 text-center">
+        <div x-show="!loading && filteredImages.length > 0" class="mt-6 text-center">
             <p class="text-slate-500 text-sm">
                 Last updated: <span x-text="lastUpdated"></span>
             </p>
@@ -266,6 +291,20 @@ function imagesComponent() {
         updatesCount: 0,
         showPullModal: false,
         showTagModalState: false,
+        searchTerm: '',
+        imageFilter: 'all',   // 'all' | 'updates'
+
+        get filteredImages() {
+            let list = this.images;
+            if (this.imageFilter === 'updates') {
+                list = list.filter(img => img.update_available);
+            }
+            const term = this.searchTerm.trim().toLowerCase();
+            if (term) {
+                list = list.filter(img => (img.full_name || '').toLowerCase().includes(term));
+            }
+            return list;
+        },
 
         pullForm: {
             repository: '',

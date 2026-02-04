@@ -162,7 +162,8 @@ class ContainerManager:
         auto_start: bool = True,
         pull_if_missing: bool = True,
         cpu_limit: Optional[float] = None,
-        memory_limit: Optional[int] = None
+        memory_limit: Optional[int] = None,
+        network: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a new container with validation and optional auto-start.
@@ -289,7 +290,10 @@ class ContainerManager:
         if memory_limit:
             # Memory limit in bytes
             container_config['mem_limit'] = memory_limit
-        
+
+        if network:
+            container_config['network'] = network
+
         # Step 6: Create container
         try:
             docker_container = client.containers.create(**container_config)

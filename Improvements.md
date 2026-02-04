@@ -867,7 +867,7 @@ src/services/container_manager.py
 ### Sprint Alignment
 - Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
 - Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
-- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013, FEAT-016, FEAT-017, FEAT-018) — network CRUD + IPAM delivered; IP allocation detail view, expanded subnet picker, adopt/manage unmanaged networks, IP reservation, topology, docs remaining
+- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013, FEAT-016, FEAT-017, FEAT-018) — ✅ COMPLETE: network CRUD + IPAM, IP reservation system, topology view, auto-generated docs, NETWORK-001 fix; backlog items FEAT-016, FEAT-017 remain open for Sprint 5+
 - Sprint 5: System administration, image housekeeping, health, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FEAT-019, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
 - Sprint 6+: Future enhancements (FEAT-005, FEAT-010, REF-003, DEBT-004)
 
@@ -947,14 +947,17 @@ src/services/container_manager.py
 - `frontend/templates/networks.html` — Full Alpine.js page: network cards with Managed / Default / Oversized badges, hardware-aware subnet recommendation buttons in create wizard, live subnet validation on input, inline container detail toggle, delete confirmation modal, toast notifications
 - Safety guards: default Docker networks (bridge/host/none) excluded from oversized warnings and delete; DockerMate's own compose network protected from deletion
 
-### Remaining Sprint 4 Tasks
-- Task 4: IP Reservation System
-- Task 6: Network Topology Visualization
-- Task 7: Auto-Generated Network Docs
+### Sprint 4 Completion (Feb 4, 2026)
+All 7 tasks delivered. Additional items completed beyond the original scope:
+- **NETWORK-001 bug fix:** `_is_oversized()` no longer false-positives on empty networks
+- **Task 4 — IP Reservation System:** Per-IP reservation rows grouped by range_name; utilisation bar + reserve/release UI in detail panel; collision detection against live assignments and existing reservations
+- **Task 6 — Network Topology Visualization:** Pure-CSS hierarchical tree; collapsible branch nodes per network; container leaves with name + IP; expand-all / collapse-all controls
+- **Task 7 — Auto-Generated Network Docs:** Backend `generate_docs()` assembles Markdown (metadata + containers table + IP stats + reservations table) for all networks; frontend modal with copy-to-clipboard
 
 ---
 
 ## VERSION HISTORY
+- **v1.8** (2026-02-04): Sprint 4 complete — NETWORK-001 fixed, Task 4 (IP reservations), Task 6 (topology view), Task 7 (auto-generated docs) all delivered; PROJECT_STATUS and KNOWN_ISSUES updated
 - **v1.7** (2026-02-03): Backlog additions — FEAT-016 (expanded subnet picker), FEAT-017 (adopt unmanaged networks), FEAT-018 (IP allocation detail view), FEAT-019 (full health page + dashboard health expansion); NETWORK-001 bug confirmed and detailed
 - **v1.6** (2026-02-03): Sprint 4 in progress — network model, NetworkManager service, networks API + frontend, hardware-aware subnet sizing, oversized detection
 - **v1.5** (2026-02-03): Sprint 3 finish — update/rollback endpoints, FEAT-013 (retag), FEAT-014 (unused image prune), FEAT-015 (tag drift detection) added to backlog

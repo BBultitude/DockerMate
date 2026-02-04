@@ -3,7 +3,7 @@
 **Last Updated:** February 3, 2026
 **Current Version:** v0.1.0-alpha
 **Current Phase:** Sprint 4 - Network Management (Sprint 3 complete)
-**Overall Completion:** ~50% (Sprints 1-3 complete)
+**Overall Completion:** ~57% (Sprints 1-4 complete)
 
 ---
 
@@ -15,7 +15,7 @@ DockerMate is currently in **Sprint 3** of a 7-sprint development roadmap target
 - ✅ Sprint 1: Foundation & Auth (100% complete)
 - ✅ Sprint 2: Container Management (100% complete)
 - ✅ Sprint 3: Image & Updates (100% complete)
-- 🔄 Sprint 4: Network Management (0% - next)
+- ✅ Sprint 4: Network Management (100% complete)
 - ⏳ Sprint 5: Volumes, Stacks & Health (0% - planned)
 - ⏳ Sprint 6: Export & CLI (0% - planned)
 - ⏳ Sprint 7: Polish & Testing (0% - planned)
@@ -161,32 +161,31 @@ v2.0.0 - Advanced Features (Future)
 
 ---
 
-### Sprint 4: Network Management 🔄 IN PROGRESS
-**Status:** ~60% complete (Tasks 1-3 + 5 delivered)
+### Sprint 4: Network Management ✅ COMPLETE
+**Status:** 100% complete (7 of 7 tasks)
+**Completed:** February 4, 2026
 
-| Task | Status | Dependencies |
-|------|--------|-------------|
-| Task 1: Network Creation Wizard | ✅ | Sprint 2 complete |
-| Task 2: Hardware-Aware Subnet Sizing | ✅ | Task 1 |
-| Task 3: IP Auto-Assignment System | ✅ | Task 1 |
-| Task 4: IP Reservation System | ⏳ | Task 3 |
-| Task 5: Oversized Network Detection | ✅ | Task 2 |
-| Task 6: Network Topology Visualization | ⏳ | Task 1-4 |
-| Task 7: Auto-Generated Network Docs | ⏳ | Task 1-4 |
+| Task | Status | Completion Date |
+|------|--------|----------------|
+| Task 1: Network Creation Wizard | ✅ | Feb 3, 2026 |
+| Task 2: Hardware-Aware Subnet Sizing | ✅ | Feb 3, 2026 |
+| Task 3: IP Auto-Assignment System | ✅ | Feb 3, 2026 |
+| Task 4: IP Reservation System | ✅ | Feb 4, 2026 |
+| Task 5: Oversized Network Detection | ✅ | Feb 3, 2026 |
+| Task 6: Network Topology Visualization | ✅ | Feb 4, 2026 |
+| Task 7: Auto-Generated Network Docs | ✅ | Feb 4, 2026 |
 
-**Delivered:**
-- `backend/models/network.py` — Network model (id, subnet, gateway, managed flag, purpose)
-- `migrations/versions/d4e5f6a7b8c9` — Alembic migration with idempotency guard
-- `backend/services/network_manager.py` — Full service: list, create, get, delete, validate_subnet, recommend_subnets, oversized detection, auto-sync of discovered networks
-- `backend/api/networks.py` — 6 REST endpoints: list, create, get, delete, recommend, validate-subnet
-- `frontend/templates/networks.html` — Full Alpine.js page: network list with badges (Managed/Default/Oversized), create wizard with hardware-aware subnet recommendations (small/large), inline container detail toggle, delete confirmation, toast notifications
-- Default Docker networks (bridge/host/none) excluded from oversized warnings
-- DockerMate's own compose network protected from deletion
-
-**Remaining:**
-- Task 4: IP Reservation System
-- Task 6: Network Topology Visualization
-- Task 7: Auto-Generated Network Docs
+**Deliverables:**
+- ✅ `backend/models/network.py` — Network model (id, subnet, gateway, managed flag, purpose)
+- ✅ `backend/models/ip_reservation.py` — IPReservation model (per-IP rows grouped by range_name, unique constraint on network+ip)
+- ✅ `migrations/versions/d4e5f6a7b8c9` — Network table migration with idempotency guard
+- ✅ `migrations/versions/e5f6a7b8c9d0` — IP reservations table migration with idempotency guard
+- ✅ `backend/services/network_manager.py` — Full service: list, create, get, delete, validate_subnet, recommend_subnets, oversized detection, auto-sync, IP allocations, reserve/release IP ranges, generate_docs
+- ✅ `backend/api/networks.py` — 10 REST endpoints: list, create, get, delete, recommend, validate-subnet, docs, /:id/ips, /:id/reserve (POST + DELETE)
+- ✅ `frontend/templates/networks.html` — Full Alpine.js page: network list/topology toggle, IP allocation panel with utilisation bar, reserve modal, topology tree view, auto-generated docs modal with copy-to-clipboard
+- ✅ NETWORK-001 bug fixed (oversized false-positive on empty networks)
+- ✅ Default Docker networks (bridge/host/none) excluded from oversized warnings
+- ✅ DockerMate's own compose network protected from deletion
 
 ---
 
@@ -294,12 +293,13 @@ v2.0.0 - Advanced Features (Future)
 
 ## 🎯 Current Focus & Next Steps
 
-### Current Focus (Sprint 4 — Network Management)
-1. Network creation and management
-2. Hardware-aware subnet sizing
-3. IP auto-assignment and reservation
-4. Network topology visualization
-5. Auto-generated network docs
+### Current Focus (Sprint 5 — Volumes, Stacks & Health)
+Sprint 4 (Network Management) is complete. Next up:
+1. Volume management and backups
+2. Docker Compose stack deployment
+3. Automatic health monitoring (expands on FEAT-019)
+4. Log analysis tools
+5. Health history tracking
 
 ### Backlog highlights (Improvements.md)
 - FEAT-013: Retag & Redeploy (change container image version without full recreate config)
@@ -388,9 +388,9 @@ DockerMate prioritizes educational value:
 - ✅ Sprints 1-3 complete
 
 ### v0.5.0 Beta
-- ⏳ Sprint 1-4 complete
-- ⏳ Update system operational
-- ⏳ Network management with IPAM
+- ✅ Sprint 1-4 complete
+- ✅ Update system operational
+- ✅ Network management with IPAM
 - ⏳ Public beta testing
 
 ### v1.0.0 Release
@@ -419,5 +419,5 @@ DockerMate prioritizes educational value:
 - Update issue counts weekly
 - Review and update metrics monthly
 
-**Last Updated:** February 3, 2026 by Claude Sonnet 4.5
-**Next Review:** Sprint 3 remaining tasks completion
+**Last Updated:** February 4, 2026 by Claude Sonnet 4.5
+**Next Review:** Sprint 5 kickoff
