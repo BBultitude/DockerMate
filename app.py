@@ -211,22 +211,62 @@ def login_page():
 def dashboard():
     """
     Main dashboard - requires authentication
-    
+
     GET /dashboard
-    
+
     This is the main application interface. Users must be logged in to access.
-    
+
     Authentication:
     - Protected by @require_auth() decorator
     - Redirects to /login if not authenticated
     - Validates session on every request
-    
+
     Session Info:
     - Passed to template for display
     - Shows IP address, user agent, expiry time
     """
     session_info = get_current_session_info()
     return render_template('dashboard.html', session=session_info)
+
+
+@app.route('/containers')
+@require_auth()
+def containers_page():
+    """Containers management page"""
+    session_info = get_current_session_info()
+    return render_template('containers.html', session=session_info)
+
+
+@app.route('/images')
+@require_auth()
+def images_page():
+    """Images management page"""
+    session_info = get_current_session_info()
+    return render_template('images.html', session=session_info)
+
+
+@app.route('/networks')
+@require_auth()
+def networks_page():
+    """Networks management page"""
+    session_info = get_current_session_info()
+    return render_template('networks.html', session=session_info)
+
+
+@app.route('/settings')
+@require_auth()
+def settings_page():
+    """Settings page"""
+    session_info = get_current_session_info()
+    return render_template('settings.html', session=session_info)
+
+
+@app.route('/health')
+@require_auth()
+def health_page():
+    """Health monitoring page"""
+    session_info = get_current_session_info()
+    return render_template('health.html', session=session_info)
 
 
 # ========================================
