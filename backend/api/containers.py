@@ -1617,6 +1617,94 @@ def rollback_container(container_id: str):
         }), 500
 
 
+@containers_bp.route('/<container_id>/retag', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def retag_container(container_id: str):
+    """
+    Change a managed container's image tag and recreate it.
+
+    POST /api/containers/<id>/retag
+    Body: { "tag": "1.29" }
+
+    Pulls repo:new_tag, stops and removes the current container, then
+    recreates it with identical config but the new image.  An UpdateHistory
+    record is written so rollback back to the old tag works automatically.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123…",
+            "name": "my-nginx",
+            "old_image": "nginx:1.28",
+            "new_image": "nginx:1.29",
+            "status": "success"
+        },
+        "message": "Container 'my-nginx' retagged nginx:1.28 → nginx:1.29"
+    }
+
+    Error Responses:
+    - 400: Missing or empty "tag" field
+    - 404: Container not found
+    - 500: Pull or recreate failed
+
+    CLI Equivalent:
+        docker pull nginx:1.29
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:1.29
+    """
+    data = request.get_json(silent=True) or {}
+    tag = data.get('tag', '').strip()
+    if not tag:
+        return jsonify({
+            "success": False,
+            "error": "Missing or empty 'tag' field",
+            "error_type": "ValidationError"
+        }), 400
+
+    try:
+        with ContainerManager() as manager:
+            result = manager.retag_container(container_id, tag)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' retagged {result.get('old_image')} → {result.get('new_image')}"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to retag container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error retagging container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
 @containers_bp.route('/update-all', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
 @mutation_limit
@@ -1804,5 +1892,88 @@ def sync_containers():
         return jsonify({
             "success": False,
             "error": "An unexpected error occurred during sync",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/import', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def import_container(container_id: str):
+    """
+    Import an external (unmanaged) container into DockerMate.
+
+    POST /api/containers/<id>/import
+
+    Reads the container's current Docker config and writes a matching record
+    into the database.  The container itself is not modified — no labels are
+    added, no recreate happens.  After import the container gains the
+    MANAGED badge and all action buttons on the Containers page.
+
+    Note: imported containers are metadata-only and will NOT survive a DB
+    reset (no com.dockermate.managed label).  This matches the network
+    adopt pattern (FEAT-017).
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123…",
+            "name": "my-app",
+            "image_name": "myimage:latest",
+            "state": "running",
+            "status": "imported"
+        },
+        "message": "Container 'my-app' imported successfully …"
+    }
+
+    Error Responses:
+    - 404: Container not found in Docker daemon
+    - 500: Already managed, or is the DockerMate container itself
+
+    CLI Equivalent:
+        # No CLI equivalent — this is a DockerMate-only operation
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.import_container(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": (
+                f"Container '{result.get('name', container_id)}' imported successfully. "
+                f"Note: imported containers won't survive a DB reset."
+            )
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to import container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error importing container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
             "error_type": "ServerError"
         }), 500

@@ -991,9 +991,74 @@ class ContainerManager:
         }
 
     # =========================================================================
+    # IMPORT OPERATION  (FEAT-012)
+    # =========================================================================
+
+    @docker_operation
+    def import_container(self, container_id: str) -> Dict[str, Any]:
+        """
+        Import an unmanaged (external) container into DockerMate by writing
+        its current Docker state into the database.  No Docker-side changes
+        are made — the container keeps running exactly as it was.
+
+        Note: imported containers are metadata-only.  They will NOT survive
+        a DB reset because they lack the com.dockermate.managed label.  This
+        matches the network adopt pattern (FEAT-017).
+
+        Args:
+            container_id: Full Docker container ID (short IDs are not accepted
+                          to avoid ambiguity with containers whose names look
+                          like hex strings).
+
+        Returns:
+            dict: { container_id, name, image_name, state, status: 'imported' }
+
+        Raises:
+            ContainerNotFoundError: ID not in Docker daemon.
+            ContainerOperationError: container is the DockerMate app itself,
+                or is already managed (already in the DB).
+        """
+        # 1. Reject if already managed (already in DB)
+        existing = self.db.query(Container).filter(
+            Container.container_id == container_id
+        ).first()
+        if existing:
+            raise ContainerOperationError(
+                f"Container '{container_id}' is already managed by DockerMate"
+            )
+
+        # 2. Fetch from Docker
+        client = get_docker_client()
+        try:
+            docker_container = client.containers.get(container_id)
+        except NotFound:
+            raise ContainerNotFoundError(
+                f"Container '{container_id}' not found in Docker daemon"
+            )
+
+        # 3. Reject DockerMate's own container
+        name = docker_container.name.lstrip('/')
+        if name in ('dockermate', 'dockermate-dev', 'dockermate-prod'):
+            raise ContainerOperationError(
+                "Cannot import the DockerMate container itself"
+            )
+
+        # 4. Sync into DB (creates a new Container row with full metadata)
+        container_data = self._sync_database_state(docker_container)
+
+        logger.info(f"Imported external container: {name} ({container_id[:12]}…)")
+        return {
+            'container_id': docker_container.id,
+            'name':         name,
+            'image_name':   container_data.get('image_name', ''),
+            'state':        container_data.get('state', ''),
+            'status':       'imported'
+        }
+
+    # =========================================================================
     # UPDATE OPERATION
     # =========================================================================
-    
+
     def update_container(self, name_or_id: str, **kwargs) -> Dict[str, Any]:
         """
         Update container (Phase 1: labels only).
@@ -1201,6 +1266,152 @@ class ContainerManager:
             'name':         db_container.name,
             'old_image':    old_image_name,
             'new_image':    old_image_name,
+            'status':       'success'
+        }
+
+    # =========================================================================
+    # RETAG OPERATION  (FEAT-013)
+    # =========================================================================
+
+    @docker_operation
+    def retag_container(self, name_or_id: str, new_tag: str) -> Dict[str, Any]:
+        """
+        Change a managed container's image tag and recreate it.
+
+        The recreate flow is identical to update_container_image(): read live
+        config → pull new image → stop/remove → recreate → sync → history.
+        The only difference is that the pull target is ``repo:new_tag``
+        instead of the current ``repo:current_tag``.
+
+        An UpdateHistory record is written with old_image=repo:old_tag and
+        new_image=repo:new_tag, so the existing rollback flow works with
+        zero changes.
+
+        Args:
+            name_or_id: Container name or DB container_id.
+            new_tag: The tag to switch to (e.g. "1.29", "latest").
+
+        Returns:
+            dict: { container_id, name, old_image, new_image, status }
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        # --- resolve from DB ---
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        client = get_docker_client()
+
+        # --- read live config ---
+        try:
+            old_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
+
+        attrs   = old_docker.attrs
+        config  = attrs.get('Config', {})
+        host    = attrs.get('HostConfig', {})
+        old_image_name = config.get('Image', db_container.image_name)
+
+        # Parse repo from current image
+        if ':' in old_image_name:
+            repo, old_tag = old_image_name.rsplit(':', 1)
+        else:
+            repo, old_tag = old_image_name, 'latest'
+
+        new_image_name = f"{repo}:{new_tag}"
+
+        # extract recreate config (same block as update_container_image)
+        env_vars      = config.get('Env') or []
+        labels        = config.get('Labels') or {}
+        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus     = host.get('NanoCpus', 0)
+        memory        = host.get('Memory', 0)
+
+        port_bindings = {}
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        for cport, bindings in network_ports.items():
+            if bindings:
+                port_bindings[cport] = bindings
+
+        binds = host.get('Binds') or []
+
+        # --- pull new tag ---
+        logger.info(f"Pulling {new_image_name} for retag…")
+        try:
+            new_image_obj = client.images.pull(repo, tag=new_tag)
+            new_digest = new_image_obj.attrs.get('RepoDigests', [None])[0]
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Pull failed: {e.explanation}")
+
+        # --- stop & remove old ---
+        try:
+            if old_docker.status == 'running':
+                old_docker.stop(timeout=10)
+            old_docker.remove()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+
+        # --- recreate with new image ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       new_image_name,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
+
+        # --- sync DB ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # --- history record ---
+        old_digest_str = None
+        try:
+            old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
+            old_digest_str = old_digests[0] if old_digests else None
+        except Exception:
+            pass
+        self._record_update_history(
+            db_container, old_image_name, new_image_name,
+            old_digest=old_digest_str,
+            new_digest=new_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' retagged {old_image_name} → {new_image_name}")
+        return {
+            'container_id': new_docker.id,
+            'name':         db_container.name,
+            'old_image':    old_image_name,
+            'new_image':    new_image_name,
             'status':       'success'
         }
 

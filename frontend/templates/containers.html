@@ -58,6 +58,39 @@
         </div>
     </div>
 
+    <!-- Retag Modal (FEAT-013) -->
+    <div x-show="retagModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="retagModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Retag Container</h3>
+            <p class="text-slate-400 text-sm mb-1">Container: <strong class="text-white" x-text="retagModal.container?.name"></strong></p>
+            <p class="text-slate-400 text-sm mb-4">Current image: <code class="text-indigo-300" x-text="retagModal.currentImage"></code></p>
+
+            <label class="block text-slate-300 text-sm font-medium mb-1">New tag</label>
+            <input type="text"
+                   x-model="retagModal.newTag"
+                   placeholder="e.g. 1.29, latest"
+                   class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 mb-2">
+
+            <div x-show="retagModal.error" class="text-red-400 text-sm mb-2" x-text="retagModal.error"></div>
+
+            <div class="flex justify-end space-x-3 mt-4">
+                <button @click="retagModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="submitRetag()"
+                        :disabled="retagModal.loading || !retagModal.newTag.trim()"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition">
+                    <span x-show="!retagModal.loading">Retag & Redeploy</span>
+                    <span x-show="retagModal.loading">Retagging...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Bulk Operations Confirmation Modal -->
     <div x-show="bulkModal.show"
          x-cloak
@@ -1004,6 +1037,15 @@
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
 
+                        <!-- FEAT-013: Retag Button -->
+                        <button @click="openRetagModal(container)"
+                                :disabled="actionLoading[container.name]"
+                                title="Change image tag and redeploy"
+                                class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">🏷 Retag</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
                         <!-- Delete Button -->
                         <button @click="showDeleteConfirmation(container.name, container.name)"
                                 :disabled="actionLoading[container.name]"
@@ -1014,9 +1056,16 @@
                         </button>
                     </div>
 
-                    <!-- FEATURE-005: Message for external containers -->
-                    <div x-show="container.managed === false" class="mt-4 p-3 bg-orange-900/20 border border-orange-700 rounded text-sm text-orange-300">
-                        ℹ️ This is an external container not managed by DockerMate. Use Docker CLI to manage it, or recreate it in DockerMate to enable management.
+                    <!-- FEAT-012: Import button for external containers -->
+                    <div x-show="container.managed === false" class="mt-4 p-3 bg-orange-900/20 border border-orange-700 rounded text-sm text-orange-300 flex items-center justify-between">
+                        <span>ℹ️ External container — not managed by DockerMate.</span>
+                        <button @click="importContainer(container)"
+                                :disabled="actionLoading[container.name]"
+                                title="Import this container into DockerMate (metadata only)"
+                                class="ml-3 px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded text-sm font-medium whitespace-nowrap transition">
+                            <span x-show="!actionLoading[container.name]">⬇ Import</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
                     </div>
                 </div>
             </template>
@@ -1158,6 +1207,16 @@ function containersComponent() {
             truncated: false,
             cliCommand: '',
             lastUpdated: null
+        },
+
+        // Retag modal state (FEAT-013)
+        retagModal: {
+            show: false,
+            loading: false,
+            container: null,
+            currentImage: '',
+            newTag: '',
+            error: null
         },
 
         /**
@@ -2138,6 +2197,74 @@ function containersComponent() {
         },
 
         /**
+         * FEAT-012: Import an external container into DockerMate
+         */
+        async importContainer(container) {
+            this.actionLoading[container.name] = true;
+            try {
+                const response = await fetch(`/api/containers/${container.container_id}/import`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message || `Container "${container.name}" imported successfully`, 'success');
+                    await this.loadContainers();
+                } else {
+                    this.showToast(`Import failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Import failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[container.name] = false;
+            }
+        },
+
+        /**
+         * FEAT-013: Open the retag modal for a managed container
+         */
+        openRetagModal(container) {
+            this.retagModal.container = container;
+            this.retagModal.currentImage = container.image_name || '';
+            this.retagModal.newTag = '';
+            this.retagModal.error = null;
+            this.retagModal.loading = false;
+            this.retagModal.show = true;
+        },
+
+        /**
+         * FEAT-013: Submit the retag request
+         */
+        async submitRetag() {
+            const tag = this.retagModal.newTag.trim();
+            if (!tag) {
+                this.retagModal.error = 'Please enter a new tag.';
+                return;
+            }
+            this.retagModal.loading = true;
+            this.retagModal.error = null;
+            try {
+                const response = await fetch(`/api/containers/${this.retagModal.container.name}/retag`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag: tag })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.retagModal.show = false;
+                    this.showToast(`Container "${this.retagModal.container.name}" retagged to ${data.data?.new_image || tag}`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.retagModal.error = data.error || 'Retag failed';
+                }
+            } catch (error) {
+                this.retagModal.error = error.message;
+            } finally {
+                this.retagModal.loading = false;
+            }
+        },
+
+        /**
          * Show toast notification
          */
         showToast(message, type = 'info') {
@@ -2163,6 +2290,7 @@ function containersComponent() {
                     !this.detailsModal.show &&
                     !this.createModal.show &&
                     !this.bulkModal.show &&
+                    !this.retagModal.show &&
                     this.selectedContainers.length === 0) {
                     this.loadContainers();
                 }

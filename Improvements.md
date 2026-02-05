@@ -136,8 +136,8 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 ### FEAT-012: Import / Adopt Unmanaged Containers
 **Priority:** Medium
 **Effort:** 4-6 hours
-**Sprint:** 4 or 5 (after network management foundation)
-**Status:** 🔴 OPEN — backlog
+**Sprint:** 5
+**Status:** ✅ COMPLETE (Feb 5, 2026)
 **Description:**
 External (unmanaged) containers are visible on the Containers page when "Show all Docker containers" is toggled, but cannot be managed through DockerMate. This feature adds two paths to get them under DockerMate control:
 
@@ -158,8 +158,8 @@ External (unmanaged) containers are visible on the Containers page when "Show al
 ### FEAT-013: Retag Container Image (change version without full redeploy config)
 **Priority:** Medium
 **Effort:** 3-4 hours
-**Sprint:** 4 or 5
-**Status:** 🔴 OPEN — backlog
+**Sprint:** 5
+**Status:** ✅ COMPLETE (Feb 5, 2026)
 **Description:**
 The current update flow (`POST /api/containers/<id>/update`) pulls the same `repository:tag` the container was created with. If a container was deliberately pinned to `nginx:1.28`, update will only ever pull `nginx:1.28` — it will never jump to `1.29` or `latest`. This is correct default behaviour, but there is no way to *change* the tag without deleting and manually recreating the container.
 
@@ -971,6 +971,12 @@ Flask-Limiter added to `requirements.txt`. Limiter instance + shared mutation sc
 
 ### FEAT-019: Full Health Page + Expanded Health API ✅ COMPLETE (Feb 5, 2026)
 `/api/system/health` expanded from 2 to 6 check domains: database, docker, containers, images, networks, dockermate. Warnings carry `{domain, message}` structure. Health page (`/health`) replaces stub: stats row, per-domain detail cards with grouped warnings, 10 s auto-refresh. Dashboard health card uses dynamic `healthDots` computed property for all 6 domains.
+
+### FEAT-012: Import Unmanaged Containers ✅ COMPLETE (Feb 5, 2026)
+`import_container()` in ContainerManager writes an external container's live Docker state into the DB via `_sync_database_state()` — no label surgery, no recreate. API: `POST /api/containers/<id>/import`. Frontend: Import button on external container cards (inside the orange info bar). Toast warns that imported containers won't survive a DB reset (metadata-only, same as network adopt).
+
+### FEAT-013: Retag & Redeploy ✅ COMPLETE (Feb 5, 2026)
+`retag_container(name_or_id, new_tag)` in ContainerManager reuses the exact update_container_image recreate flow but pulls `repo:new_tag` instead of the current tag. API: `POST /api/containers/<id>/retag` with body `{"tag": "…"}`. Frontend: Retag button (indigo) on managed container cards opens a modal showing current image and a text input for the new tag. UpdateHistory record written with old/new image so rollback works automatically.
 
 ### UI Bug Fixes (Sprint 5)
 - **Rollback button** — disabled + dimmed when no update history exists; populated via single bulk query against `UpdateHistory` (no N+1).
