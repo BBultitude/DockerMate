@@ -90,6 +90,11 @@
                                       class="px-2 py-0.5 bg-green-900 text-green-300 rounded text-xs font-medium">
                                     Managed
                                 </span>
+                                <!-- Unmanaged badge (non-default, not yet adopted) -->
+                                <span x-show="!network.managed && network.name !== 'bridge'"
+                                      class="px-2 py-0.5 bg-orange-900 text-orange-300 rounded text-xs font-medium">
+                                    Unmanaged
+                                </span>
                                 <!-- Default network badge -->
                                 <span x-show="network.name === 'bridge'"
                                       class="px-2 py-0.5 bg-slate-600 text-slate-300 rounded text-xs font-medium">
@@ -118,7 +123,20 @@
                                     class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-sm transition">
                                 Details
                             </button>
-                            <button x-show="network.name !== 'bridge' && !network.name.toLowerCase().includes('dockermate')"
+                            <!-- Adopt — shown for unmanaged, non-default networks -->
+                            <button x-show="!network.managed && network.name !== 'bridge'"
+                                    @click="adoptNetwork(network)"
+                                    class="px-3 py-1.5 bg-green-900 hover:bg-green-800 text-green-300 rounded text-sm transition">
+                                Adopt
+                            </button>
+                            <!-- Release — shown for managed, non-default networks -->
+                            <button x-show="network.managed && !['bridge','host','none'].includes(network.name)"
+                                    @click="releaseNetwork(network)"
+                                    class="px-3 py-1.5 bg-yellow-900 hover:bg-yellow-800 text-yellow-300 rounded text-sm transition">
+                                Release
+                            </button>
+                            <!-- Delete — shown for non-default networks; backend rejects if containers attached -->
+                            <button x-show="!['bridge','host','none'].includes(network.name)"
                                     @click="confirmDelete(network)"
                                     class="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-300 rounded text-sm transition">
                                 Delete
@@ -950,6 +968,40 @@ function networksComponent() {
                 }
             } catch (e) {
                 this.showToast('Failed to delete network: ' + e.message, 'error');
+            }
+        },
+
+        // ---- adopt / release (FEAT-017) ----
+        async adoptNetwork(network) {
+            try {
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to adopt network: ' + e.message, 'error');
+            }
+        },
+
+        async releaseNetwork(network) {
+            try {
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    if (this.selectedNetwork && this.selectedNetwork.network_id === network.network_id) {
+                        this.selectedNetwork = null;
+                    }
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to release network: ' + e.message, 'error');
             }
         },
 

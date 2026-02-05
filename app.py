@@ -39,7 +39,8 @@ app = Flask(__name__,
 app.secret_key = os.urandom(24)
 
 # Configuration
-app.config['DATABASE_PATH'] = os.getenv('DATABASE_PATH', '/app/data/dockermate.db')
+from backend.models.database import DATABASE_PATH
+app.config['DATABASE_PATH'] = DATABASE_PATH
 app.config['SSL_MODE'] = os.getenv('DOCKERMATE_SSL_MODE', 'self-signed')
 
 ## Import and register authentication blueprint
@@ -61,6 +62,10 @@ app.register_blueprint(images_bp)
 # Import and register networks blueprint (Sprint 4)
 from backend.api.networks import networks_bp
 app.register_blueprint(networks_bp)
+
+# Import and initialise rate limiter (Sprint 5 — SEC-001)
+from backend.extensions import limiter
+limiter.init_app(app)
 
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info, is_authenticated
@@ -227,6 +232,15 @@ def dashboard():
 # ========================================
 # Error Handlers
 # ========================================
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle 429 Too Many Requests from Flask-Limiter"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later."
+    }), 429
+
 
 @app.errorhandler(404)
 def not_found(error):

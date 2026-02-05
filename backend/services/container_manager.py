@@ -835,6 +835,16 @@ class ContainerManager:
         # Get managed container IDs from database
         managed_ids = {c.container_id for c in self.db.query(Container).all()}
 
+        # Bulk-fetch container names that have at least one successful update
+        # (used to set rollback_available flag without N+1 queries)
+        from backend.models.update_history import UpdateHistory
+        rollbackable_names = {
+            row.container_name for row in
+            self.db.query(UpdateHistory.container_name)
+            .filter(UpdateHistory.status == 'success')
+            .distinct()
+        }
+
         result = []
         for docker_container in docker_containers:
             # KISS: Show ALL containers including DockerMate
@@ -872,6 +882,7 @@ class ContainerManager:
                     container_data['environment'] = db_container.environment
                     container_data['ports_json'] = db_container.ports_json
                     container_data['db_id'] = db_container.id
+                    container_data['rollback_available'] = db_container.name in rollbackable_names
 
                     # Parse ports from JSON
                     try:

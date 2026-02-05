@@ -265,8 +265,8 @@ No new endpoint needed.  The existing `POST /api/networks` body already accepts 
 ### FEAT-017: Adopt / Manage Non-DockerMate Networks
 **Priority:** Medium
 **Effort:** 4-5 hours
-**Sprint:** 4 or 5
-**Status:** 🔴 OPEN — backlog
+**Sprint:** 5
+**Status:** ✅ COMPLETE (Feb 5, 2026)
 **Description:**
 Mirrors the pattern already established for containers (FEAT-012) and images: networks that exist on the Docker host but were not created through DockerMate are visible on the Networks page with an "unmanaged" state.  This feature lets users adopt them into DockerMate so they can be fully managed (purpose field, oversized tracking, delete-guard, topology inclusion) without leaving the UI.
 
@@ -349,7 +349,7 @@ The existing "Details" toggle panel is expanded: when `ip_stats` is present in t
 **Priority:** Medium
 **Effort:** 5-7 hours
 **Sprint:** 5 (builds on Sprint 4 network foundation)
-**Status:** 🔴 OPEN — backlog
+**Status:** ✅ COMPLETE (Feb 5, 2026)
 **Description:**
 The health system today is two layers deep and both are thin.  The backend (`GET /api/system/health`) checks only two things — database ping and Docker daemon ping — and surfaces warnings as free-text strings about exited containers and capacity.  The dashboard health card renders those two dots and the warning list.  The `/health` detail page is a stub that says "coming soon."
 
@@ -501,16 +501,17 @@ health_status = {
 
 ---
 
-### FIX-002: Password Reset Functionality
-**Priority:** High  
-**Effort:** 3-4 hours  
-**Sprint:** 5 (System Administration)  
+### FIX-002: Password Reset Functionality ✅ COMPLETE (Feb 5, 2026)
+**Priority:** High
+**Effort:** 3-4 hours
+**Sprint:** 5 (System Administration)
 **Description:**
 - Single-user system has no password recovery mechanism
 - Add CLI tool: `python manage.py reset-password`
 - Prompt for new password with confirmation
 - Log password reset event
 **Security Note:** CLI-only (no web endpoint) to prevent brute force
+**Resolution:** `manage.py reset-password` implemented with `--temp` flag (generates secure temp password + forces change on next login) and interactive mode (prompts twice, validates strength). Must run inside container.
 
 ---
 
@@ -560,16 +561,17 @@ health_status = {
 
 ## SECURITY ENHANCEMENTS
 
-### SEC-001: Rate Limiting
-**Priority:** High  
-**Effort:** 2-3 hours  
-**Sprint:** 5 (System Administration)  
+### SEC-001: Rate Limiting ✅ COMPLETE (Feb 5, 2026)
+**Priority:** High
+**Effort:** 2-3 hours
+**Sprint:** 5 (System Administration)
 **Description:**
 - Add Flask-Limiter for API rate limiting
 - Limit login attempts: 5 per 15 minutes per IP
 - Limit container operations: 30 per minute per session
 - Return 429 Too Many Requests with Retry-After header
 **Benefit:** Prevent brute force and resource exhaustion
+**Resolution:** Flask-Limiter integrated via `backend/extensions.py`. Login capped at 5/15 min; 9 container + 8 network mutation endpoints share a 30/min scope. 429 handler returns JSON in both `app.py` and `app_dev.py`. Gotcha: `RATELIMIT_ENABLED = True` must be set explicitly when `TESTING = True`.
 
 ---
 
@@ -956,7 +958,30 @@ All 7 tasks delivered. Additional items completed beyond the original scope:
 
 ---
 
+## SPRINT 5 COMPLETED ITEMS
+
+### SEC-001: Rate Limiting ✅ COMPLETE (Feb 5, 2026)
+Flask-Limiter added to `requirements.txt`. Limiter instance + shared mutation scope in `backend/extensions.py`. Login: 5/15 min. Container + network mutation endpoints: 30/min shared scope. 429 JSON handler in both app entry points.
+
+### FIX-002: Password Reset CLI ✅ COMPLETE (Feb 5, 2026)
+`manage.py reset-password` with `--temp` (secure generated password, forces change on next login) and interactive mode (double-prompt, strength validation). Lazy imports — no Flask app context required.
+
+### FEAT-017: Adopt / Release Networks ✅ COMPLETE (Feb 5, 2026)
+`adopt_network()` / `release_network()` in `network_manager.py` toggle the `managed` column. API: `POST /api/networks/<id>/adopt`, `DELETE /api/networks/<id>/adopt`. Default networks (bridge/host/none) rejected. Networks must be synced to DB first (via `list_networks()`). Release and Delete buttons now use explicit default-network allowlist instead of fragile substring checks.
+
+### FEAT-019: Full Health Page + Expanded Health API ✅ COMPLETE (Feb 5, 2026)
+`/api/system/health` expanded from 2 to 6 check domains: database, docker, containers, images, networks, dockermate. Warnings carry `{domain, message}` structure. Health page (`/health`) replaces stub: stats row, per-domain detail cards with grouped warnings, 10 s auto-refresh. Dashboard health card uses dynamic `healthDots` computed property for all 6 domains.
+
+### UI Bug Fixes (Sprint 5)
+- **Rollback button** — disabled + dimmed when no update history exists; populated via single bulk query against `UpdateHistory` (no N+1).
+- **Network Release/Delete visibility** — replaced `includes('dockermate')` substring guard with `['bridge','host','none']` allowlist on both frontend buttons and backend delete guard.
+- **Container detail env vars** — `showDetails()` now fetches the single-container endpoint for managed containers (two-phase: instant list data, then enriched detail).
+- **Volume mount display** — changed `x-text="volume"` → explicit `source:destination:mode` formatting in both the detail modal and the Docker command generator.
+
+---
+
 ## VERSION HISTORY
+- **v1.9** (2026-02-05): Sprint 5 complete — SEC-001 (rate limiting), FIX-002 (password reset CLI), FEAT-017 (adopt/release networks), FEAT-019 (full health page + expanded health API); 4 UI bugs fixed (rollback button, network Release/Delete visibility, container detail env vars, volume mount display); PROJECT_STATUS, KNOWN_ISSUES, UI_Issues, Improvements updated
 - **v1.8** (2026-02-04): Sprint 4 complete — NETWORK-001 fixed, Task 4 (IP reservations), Task 6 (topology view), Task 7 (auto-generated docs) all delivered; PROJECT_STATUS and KNOWN_ISSUES updated
 - **v1.7** (2026-02-03): Backlog additions — FEAT-016 (expanded subnet picker), FEAT-017 (adopt unmanaged networks), FEAT-018 (IP allocation detail view), FEAT-019 (full health page + dashboard health expansion); NETWORK-001 bug confirmed and detailed
 - **v1.6** (2026-02-03): Sprint 4 in progress — network model, NetworkManager service, networks API + frontend, hardware-aware subnet sizing, oversized detection

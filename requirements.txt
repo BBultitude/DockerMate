@@ -10,6 +10,7 @@ Flask-Migrate==4.0.7
 
 # Authentication & Security
 Flask-Login==0.6.3
+Flask-Limiter==3.6.0
 bcrypt==4.2.1
 
 # Forms & Validation

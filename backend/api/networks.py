@@ -25,6 +25,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from backend.services.network_manager import NetworkManager
+from backend.extensions import mutation_limit
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def list_networks():
 # ------------------------------------------------------------------
 
 @networks_bp.route('', methods=['POST'])
+@mutation_limit
 def create_network():
     """
     POST /api/networks
@@ -240,6 +242,7 @@ def get_ip_allocations(network_id):
 # ------------------------------------------------------------------
 
 @networks_bp.route('/<network_id>/reserve', methods=['POST'])
+@mutation_limit
 def reserve_ips(network_id):
     """
     POST /api/networks/<network_id>/reserve
@@ -286,6 +289,7 @@ def reserve_ips(network_id):
 # ------------------------------------------------------------------
 
 @networks_bp.route('/<network_id>/reserve/<range_name>', methods=['DELETE'])
+@mutation_limit
 def delete_reservation(network_id, range_name):
     """
     DELETE /api/networks/<network_id>/reserve/<range_name>
@@ -310,6 +314,7 @@ def delete_reservation(network_id, range_name):
 # ------------------------------------------------------------------
 
 @networks_bp.route('/<network_id>/connect', methods=['POST'])
+@mutation_limit
 def connect_container(network_id):
     """
     POST /api/networks/<network_id>/connect
@@ -337,6 +342,7 @@ def connect_container(network_id):
 
 
 @networks_bp.route('/<network_id>/connect/<container_id>', methods=['DELETE'])
+@mutation_limit
 def disconnect_container(network_id, container_id):
     """
     DELETE /api/networks/<network_id>/connect/<container_id>
@@ -357,10 +363,60 @@ def disconnect_container(network_id, container_id):
 
 
 # ------------------------------------------------------------------
+# Adopt / Release (FEAT-017)
+# ------------------------------------------------------------------
+
+@networks_bp.route('/<network_id>/adopt', methods=['POST'])
+@mutation_limit
+def adopt_network(network_id):
+    """
+    POST /api/networks/<network_id>/adopt
+
+    Pull an unmanaged network into DockerMate (metadata-only — the
+    Docker network is not touched).  After adoption the network
+    participates in oversized detection, purpose editing, etc.
+    """
+    try:
+        with NetworkManager() as manager:
+            result = manager.adopt_network(network_id)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"adopt_network failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@networks_bp.route('/<network_id>/adopt', methods=['DELETE'])
+@mutation_limit
+def release_network(network_id):
+    """
+    DELETE /api/networks/<network_id>/adopt
+
+    Release a previously-adopted network back to unmanaged state
+    (metadata-only — the Docker network continues to exist).
+    """
+    try:
+        with NetworkManager() as manager:
+            result = manager.release_network(network_id)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 400
+
+    except Exception as e:
+        logger.exception(f"release_network failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ------------------------------------------------------------------
 # Delete network
 # ------------------------------------------------------------------
 
 @networks_bp.route('/<network_id>', methods=['DELETE'])
+@mutation_limit
 def delete_network(network_id):
     """
     DELETE /api/networks/<network_id>

@@ -34,6 +34,7 @@ from backend.models.user import User
 from backend.models.session import Session as SessionModel
 from backend.auth.password_manager import PasswordManager
 from backend.auth.session_manager import SessionManager
+from backend.extensions import limiter
 from datetime import datetime
 import logging
 
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per 15 minutes")
 def login():
     """
     Login endpoint - authenticate user and create session

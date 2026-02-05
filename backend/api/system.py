@@ -128,44 +128,53 @@ def get_hardware_profile():
 @system_bp.route('/health', methods=['GET'])
 def health_check():
     """
-    System health check endpoint.
+    System health check endpoint (expanded Sprint 5 — FEAT-019).
 
     GET /api/system/health
 
-    Performs live checks against the database and Docker daemon.
-    Returns per-check status plus any warnings worth surfacing
-    to the dashboard health card.
+    Checks every managed-resource domain and returns structured,
+    domain-tagged warnings so both the dashboard card and the full
+    health page can render them.
 
     Success Response (200):
     {
         "success": true,
         "status": "healthy",          // "healthy" | "warning" | "unhealthy"
         "checks": {
-            "database": "ok",         // "ok" | "error"
-            "docker": "ok",           // "ok" | "error"
+            "database":   "ok",       // "ok" | "warning" | "error"
+            "docker":     "ok",
+            "containers": "ok",
+            "images":     "ok",
+            "networks":   "ok",
+            "dockermate": "ok"
         },
-        "warnings": []                // list of human-readable warning strings
+        "warnings": [
+            { "domain": "containers", "message": "..." },
+            ...
+        ]
     }
     """
+    import sqlalchemy
     checks = {}
     warnings = []
 
-    # --- Database connectivity ---
+    # ------------------------------------------------------------------
+    # Infrastructure: database + docker daemon
+    # ------------------------------------------------------------------
     db = None
     try:
         db = SessionLocal()
-        # A lightweight query — just proves the connection works
-        db.execute(__import__('sqlalchemy').text("SELECT 1"))
+        db.execute(sqlalchemy.text("SELECT 1"))
         checks["database"] = "ok"
     except Exception as e:
         logger.error(f"Health check — database: {e}")
         checks["database"] = "error"
-        warnings.append("Database connection failed")
+        warnings.append({"domain": "infrastructure", "message": "Database connection failed"})
     finally:
         if db:
             db.close()
 
-    # --- Docker daemon connectivity ---
+    client = None
     try:
         from backend.utils.docker_client import get_docker_client
         client = get_docker_client()
@@ -174,40 +183,111 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check — docker: {e}")
         checks["docker"] = "error"
-        warnings.append("Docker daemon is not reachable")
+        warnings.append({"domain": "infrastructure", "message": "Docker daemon is not reachable"})
 
-    # --- Exited containers (worth flagging) ---
+    # ------------------------------------------------------------------
+    # Containers: exited non-zero, failing health-checks
+    # ------------------------------------------------------------------
+    checks["containers"] = "ok"
+    if client:
+        try:
+            all_containers = client.containers.list(all=True)
+            exited_nonzero = []
+            unhealthy = []
+            for c in all_containers:
+                if 'dockermate' in (c.name or '').lower():
+                    continue
+                if c.status == 'exited':
+                    try:
+                        c.reload()
+                        if c.attrs.get('State', {}).get('ExitCode', 0) != 0:
+                            exited_nonzero.append(c.name.lstrip('/'))
+                    except Exception:
+                        pass
+                # Health-check failures (only present when a HEALTHCHECK is defined)
+                try:
+                    health = c.attrs.get('State', {}).get('Health')
+                    if health and health.get('Status') == 'unhealthy':
+                        unhealthy.append(c.name.lstrip('/'))
+                except Exception:
+                    pass
+
+            if exited_nonzero or unhealthy:
+                checks["containers"] = "warning"
+                if exited_nonzero:
+                    warnings.append({"domain": "containers",
+                                     "message": f"{len(exited_nonzero)} container(s) exited with non-zero exit code"})
+                if unhealthy:
+                    warnings.append({"domain": "containers",
+                                     "message": f"{len(unhealthy)} container(s) failing health check: {', '.join(unhealthy)}"})
+        except Exception as e:
+            logger.warning(f"Containers health check: {e}")
+
+    # ------------------------------------------------------------------
+    # Images: dangling + updates available
+    # ------------------------------------------------------------------
+    checks["images"] = "ok"
     try:
-        from backend.utils.docker_client import get_docker_client
-        client = get_docker_client()
-        exited = client.containers.list(all=True, filters={"status": "exited"})
-        # Filter out DockerMate's own container
-        exited = [c for c in exited if 'dockermate' not in (c.name or '').lower()]
-        if exited:
-            warnings.append(f"{len(exited)} container(s) exited — check Containers page")
-    except Exception:
-        pass  # non-fatal; docker check above already covers connectivity
+        dangling_count = 0
+        if client:
+            for img in client.images.list():
+                if not img.tags or img.tags == ['<none>:<none>']:
+                    dangling_count += 1
 
-    # --- Capacity warning ---
+        from backend.models.image import Image
+        db = SessionLocal()
+        updates_available = db.query(Image).filter(Image.update_available == True).count()
+        db.close()
+
+        if dangling_count or updates_available:
+            checks["images"] = "warning"
+            if dangling_count:
+                warnings.append({"domain": "images", "message": f"{dangling_count} dangling image(s) present"})
+            if updates_available:
+                warnings.append({"domain": "images", "message": f"{updates_available} image(s) with updates available"})
+    except Exception as e:
+        logger.warning(f"Images health check: {e}")
+
+    # ------------------------------------------------------------------
+    # Networks: oversized detection
+    # ------------------------------------------------------------------
+    checks["networks"] = "ok"
+    try:
+        from backend.services.network_manager import NetworkManager
+        with NetworkManager() as mgr:
+            networks = mgr.list_networks()
+        oversized = [n for n in networks if n.get('oversized')]
+        if oversized:
+            checks["networks"] = "warning"
+            warnings.append({"domain": "networks",
+                             "message": f"{len(oversized)} oversized network(s): {', '.join(n['name'] for n in oversized)}"})
+    except Exception as e:
+        logger.warning(f"Networks health check: {e}")
+
+    # ------------------------------------------------------------------
+    # DockerMate: capacity check
+    # ------------------------------------------------------------------
+    checks["dockermate"] = "ok"
     try:
         db = SessionLocal()
         config = HostConfig.get_or_create(db)
-        from backend.utils.docker_client import get_docker_client
-        client = get_docker_client()
-        total = len(client.containers.list(all=True))
-        pct = round((total / config.max_containers) * 100) if config.max_containers else 0
-        if pct >= 80:
-            warnings.append(f"Capacity at {pct}% ({total}/{config.max_containers} containers)")
-    except Exception:
-        pass
-    finally:
-        if db:
-            db.close()
+        if client:
+            total = len(client.containers.list(all=True))
+            pct = round((total / config.max_containers) * 100) if config.max_containers else 0
+            if pct >= 80:
+                checks["dockermate"] = "warning"
+                warnings.append({"domain": "dockermate",
+                                 "message": f"Capacity at {pct}% ({total}/{config.max_containers} containers)"})
+        db.close()
+    except Exception as e:
+        logger.warning(f"DockerMate capacity check: {e}")
 
+    # ------------------------------------------------------------------
     # Derive overall status
-    if checks.get("database") == "error" or checks.get("docker") == "error":
+    # ------------------------------------------------------------------
+    if "error" in checks.values():
         status = "unhealthy"
-    elif warnings:
+    elif "warning" in checks.values():
         status = "warning"
     else:
         status = "healthy"

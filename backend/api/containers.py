@@ -65,6 +65,7 @@ from backend.utils.exceptions import (
 )
 from backend.models.database import SessionLocal
 from backend.models.container import Container
+from backend.extensions import mutation_limit
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -297,6 +298,7 @@ def validate_update_request(data: Dict[str, Any]) -> None:
 
 @containers_bp.route('', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def create_container():
     """
     Create a new container with validation and optional auto-start.
@@ -770,6 +772,7 @@ def get_container_health(name_or_id: str):
 
 @containers_bp.route('/<container_id>', methods=['PATCH'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def update_container(container_id: str):
     """
     Update container configuration (Phase 1: labels only).
@@ -893,6 +896,7 @@ def update_container(container_id: str):
 
 @containers_bp.route('/<container_id>', methods=['DELETE'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def delete_container(container_id: str):
     """
     Delete a container (stop and remove).
@@ -1001,6 +1005,7 @@ def delete_container(container_id: str):
 
 @containers_bp.route('/<container_id>/start', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def start_container(container_id: str):
     """
     Start a stopped container.
@@ -1093,6 +1098,7 @@ def start_container(container_id: str):
 
 @containers_bp.route('/<container_id>/stop', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def stop_container(container_id: str):
     """
     Stop a running container gracefully.
@@ -1201,6 +1207,7 @@ def stop_container(container_id: str):
 
 @containers_bp.route('/<container_id>/restart', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def restart_container(container_id: str):
     """
     Restart a container (stop + start).
@@ -1457,6 +1464,7 @@ def get_container_logs(container_id: str):
 
 @containers_bp.route('/<container_id>/update', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def update_container_image(container_id: str):
     """
     Pull the latest image and recreate the container with the same config.
@@ -1535,6 +1543,7 @@ def update_container_image(container_id: str):
 
 @containers_bp.route('/<container_id>/rollback', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def rollback_container(container_id: str):
     """
     Rollback a container to the image it had before its last update.
@@ -1610,6 +1619,7 @@ def rollback_container(container_id: str):
 
 @containers_bp.route('/update-all', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def update_all_containers():
     """
     Update all managed containers that have newer images available.

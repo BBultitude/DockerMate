@@ -371,11 +371,9 @@ class NetworkManager:
         except Exception:
             return {'success': False, 'error': 'Network not found'}
 
-        # Safety: refuse to delete default Docker networks or DockerMate's own
+        # Safety: refuse to delete default Docker networks
         if net.name in ('bridge', 'host', 'none'):
             return {'success': False, 'error': f"Cannot delete default Docker network '{net.name}'"}
-        if 'dockermate' in net.name.lower():
-            return {'success': False, 'error': f"Cannot delete DockerMate's internal network '{net.name}'"}
 
         # Safety: refuse if containers are still attached
         if net.attrs.get('Containers'):
@@ -778,6 +776,53 @@ class NetworkManager:
 
         logger.info(f"Disconnected '{container.name.lstrip('/')}' from '{net.name}'")
         return {'success': True, 'container_name': container.name.lstrip('/')}
+
+    # ------------------------------------------------------------------
+    # Adopt / Release (FEAT-017)
+    # ------------------------------------------------------------------
+
+    def adopt_network(self, network_id: str) -> Dict[str, Any]:
+        """
+        Adopt an unmanaged network — flip managed → True.
+
+        Metadata-only: no change is made to the Docker network itself.
+        After adoption the network participates in all DockerMate
+        management features (purpose field, oversized warnings, etc.).
+        """
+        net = self.db.query(Network).filter(Network.network_id == network_id).first()
+        if not net:
+            return {'success': False, 'error': 'Network not found'}
+        if net.name in ('bridge', 'host', 'none'):
+            return {'success': False, 'error': 'Default networks cannot be adopted'}
+        if net.managed:
+            return {'success': False, 'error': 'Network is already managed'}
+
+        net.managed = True
+        self.db.commit()
+        logger.info(f"Network '{net.name}' adopted")
+        return {'success': True, 'message': f"Network '{net.name}' adopted"}
+
+    def release_network(self, network_id: str) -> Dict[str, Any]:
+        """
+        Release a managed network — flip managed → False.
+
+        Metadata-only: the Docker network continues to exist and
+        function.  The DB row is kept (so IP reservations etc. are
+        preserved) but the network reverts to "unmanaged" state in
+        the UI.
+        """
+        net = self.db.query(Network).filter(Network.network_id == network_id).first()
+        if not net:
+            return {'success': False, 'error': 'Network not found'}
+        if net.name in ('bridge', 'host', 'none'):
+            return {'success': False, 'error': 'Default networks cannot be released'}
+        if not net.managed:
+            return {'success': False, 'error': 'Network is not currently managed'}
+
+        net.managed = False
+        self.db.commit()
+        logger.info(f"Network '{net.name}' released")
+        return {'success': True, 'message': f"Network '{net.name}' released"}
 
     # ------------------------------------------------------------------
     # Documentation generation

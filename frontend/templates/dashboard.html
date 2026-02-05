@@ -47,24 +47,22 @@
                     </div>
                 </div>
 
-                <!-- checks row: docker + db -->
-                <div class="flex gap-4 text-xs mb-3">
-                    <span class="flex items-center gap-1">
-                        <span :class="health.checks.docker === 'ok' ? 'text-green-400' : 'text-red-400'">●</span>
-                        <span class="text-slate-400">Docker</span>
-                    </span>
-                    <span class="flex items-center gap-1">
-                        <span :class="health.checks.database === 'ok' ? 'text-green-400' : 'text-red-400'">●</span>
-                        <span class="text-slate-400">Database</span>
-                    </span>
+                <!-- checks row: one dot per domain (dynamic) -->
+                <div class="flex gap-4 text-xs mb-3 flex-wrap">
+                    <template x-for="dot in healthDots" :key="dot.label">
+                        <span class="flex items-center gap-1">
+                            <span :class="dot.status === 'ok' ? 'text-green-400' : dot.status === 'warning' ? 'text-yellow-400' : 'text-red-400'">●</span>
+                            <span class="text-slate-400" x-text="dot.label"></span>
+                        </span>
+                    </template>
                 </div>
 
                 <!-- warnings list -->
                 <div x-show="health.warnings.length > 0" class="border-t border-slate-700 pt-2 mt-1">
-                    <template x-for="w in health.warnings" :key="w">
+                    <template x-for="w in health.warnings" :key="w.domain + w.message">
                         <p class="text-xs text-yellow-300 flex items-start gap-1 mb-1">
                             <span class="mt-0.5">⚠</span>
-                            <span x-text="w"></span>
+                            <span x-text="w.message"></span>
                         </p>
                     </template>
                     <a href="/health" class="text-xs text-blue-400 hover:underline mt-1 inline-block">View details →</a>
@@ -224,6 +222,18 @@ function dashboardComponent() {
         },
         lastUpdated: 'Never',
         loading: false,
+
+        // Computed: one dot per check key, friendly labels, ordered
+        get healthDots() {
+            const labels = {
+                docker: 'Docker', database: 'DB', containers: 'Containers',
+                images: 'Images', networks: 'Networks', dockermate: 'DockerMate'
+            };
+            const order = ['docker', 'database', 'containers', 'images', 'networks', 'dockermate'];
+            return order
+                .filter(k => this.health.checks[k] !== undefined)
+                .map(k => ({ label: labels[k] || k, status: this.health.checks[k] }));
+        },
         pollInterval: null,
 
         // --- lifecycle ---

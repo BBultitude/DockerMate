@@ -38,44 +38,113 @@ Educational Notes:
 
 import os
 import sys
-from flask import Flask
-from flask_migrate import Migrate, init as migrate_init, migrate as migrate_migrate, upgrade, downgrade, history, current
-from flask_sqlalchemy import SQLAlchemy
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from backend.models.database import db, init_db
-from backend.models.user import User
-from backend.models.container import Container
-from backend.models.system import HostConfig
 
+def reset_password():
+    """
+    Reset the admin password via CLI.
 
-def create_app():
-    """Create Flask app for migration management."""
-    app = Flask(__name__)
+    Security: CLI-only — there is no web endpoint for password reset.
+    This prevents brute-force or unauthenticated reset attacks.
 
-    # Database configuration
-    db_path = os.environ.get('DATABASE_PATH', '/tmp/dockermate.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    Usage:
+        python manage.py reset-password          # interactive: type new password
+        python manage.py reset-password --temp   # generate a temporary password
+                                                 # (user must change on next login)
+    """
+    import getpass
+    import logging
+    from datetime import datetime
+    from backend.models.database import SessionLocal, init_db
+    from backend.models.user import User
+    from backend.auth.password_manager import PasswordManager
 
-    # Initialize database
-    db.init_app(app)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
-    return app
+    use_temp = '--temp' in sys.argv
+
+    print("=" * 60)
+    print("  DockerMate — Password Reset (CLI)")
+    print("=" * 60)
+
+    init_db()
+    db = SessionLocal()
+    try:
+        user = User.get_admin(db)
+        if not user:
+            print("\n  ❌  No user found — initial setup has not been completed.")
+            sys.exit(1)
+
+        if use_temp:
+            temp_password = PasswordManager.generate_temp_password()
+            user.password_hash = PasswordManager.hash_password(temp_password)
+            user.force_password_change = True
+            user.password_reset_at = datetime.utcnow()
+            db.commit()
+            logger.info("Password reset via CLI (temporary password)")
+            print(f"\n  ✓  Temporary password set:  {temp_password}")
+            print("      User must change password on next login.\n")
+        else:
+            print("\n  Enter a new password (min 12 chars, upper + lower + digit).\n")
+            while True:
+                new_password = getpass.getpass("  New password:      ")
+                if not new_password:
+                    print("  Password cannot be empty.\n")
+                    continue
+                confirm = getpass.getpass("  Confirm password:  ")
+                if new_password != confirm:
+                    print("  Passwords do not match. Try again.\n")
+                    continue
+
+                validation = PasswordManager.validate_password_strength(new_password)
+                if not validation['valid']:
+                    print("  Password does not meet requirements:")
+                    for issue in validation['issues']:
+                        print(f"    - {issue}")
+                    print()
+                    continue
+                break
+
+            user.password_hash = PasswordManager.hash_password(new_password)
+            user.force_password_change = False
+            user.password_reset_at = datetime.utcnow()
+            db.commit()
+            logger.info("Password reset via CLI (new password)")
+            print("\n  ✓  Password reset successfully.\n")
+    finally:
+        db.close()
 
 
 def main():
     """Main CLI entry point."""
-    app = create_app()
-    migrate = Migrate(app, db)
 
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
 
     command = sys.argv[1]
+
+    # reset-password is self-contained — no Flask app context needed
+    if command == 'reset-password':
+        reset_password()
+        sys.exit(0)
+
+    # All other commands need the Flask app + Flask-Migrate context
+    # Imports are lazy so that 'reset-password' above works without flask_migrate
+    from flask import Flask
+    from flask_migrate import Migrate, upgrade, downgrade, history, current
+    from flask_sqlalchemy import SQLAlchemy
+
+    db_path = os.environ.get('DATABASE_PATH', '/tmp/dockermate.db')
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db = SQLAlchemy(app)
+    migrate = Migrate(app, db)
 
     with app.app_context():
         if command == 'db':
@@ -95,8 +164,8 @@ def main():
             elif subcommand == 'migrate':
                 message = sys.argv[3] if len(sys.argv) > 3 else "Auto-generated migration"
                 print(f"Generating migration: {message}")
-                from flask_migrate import migrate
-                migrate(message=message)
+                from flask_migrate import migrate as run_migrate
+                run_migrate(message=message)
                 print("✓ Migration generated. Review it in migrations/versions/")
 
             elif subcommand == 'upgrade':

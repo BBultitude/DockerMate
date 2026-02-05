@@ -1,9 +1,9 @@
 # DockerMate - Project Status Tracker
 
-**Last Updated:** February 3, 2026
+**Last Updated:** February 5, 2026
 **Current Version:** v0.1.0-alpha
 **Current Phase:** Sprint 5 - Volumes, Stacks & Health (Sprint 4 complete)
-**Overall Completion:** ~60% (Sprints 1-4 complete, Sprint 5 in progress)
+**Overall Completion:** ~65% (Sprints 1-4 complete, Sprint 5 in progress — security, health, adopt/release delivered)
 
 ---
 
@@ -197,6 +197,14 @@ v2.0.0 - Advanced Features (Future)
 - ✅ Bug fix: Networks page non-managed container visibility — `get_network()` now cross-references container IDs with DB to tag each with `managed: True/False`. UI shows Managed/External badges in the Connected Containers panel, Connect modal, topology legend, and SVG nodes (orange stroke for external).
 - ✅ Bug fix: Topology view `oversized` index mapping — `.filter(null)` was shifting indices before `.map()` merged the flag. Reordered to `.map()` first.
 - ✅ Feature: SSL cert host IP detection — `generate_self_signed_cert()` now includes the host machine's routable IP in SANs via `_detect_host_ips()`: reads `DOCKERMATE_HOST_IP` env var, parses default gateway from `/proc/1/net/route`, resolves `host.docker.internal`. All detected IPs deduplicated and added alongside existing container/loopback IPs.
+- ✅ SEC-001: Rate limiting via Flask-Limiter — login capped at 5/15 min per IP; all container + network mutation endpoints share a 30/min counter (`mutation_limit`). 429 responses return structured JSON. `app_dev.py` wired with `RATELIMIT_ENABLED = True` (required because `TESTING = True` disables limiter by default).
+- ✅ FIX-002: Password reset CLI — `manage.py reset-password` with `--temp` (generates secure random password, sets `force_password_change`) and interactive mode (prompt-twice + strength validation). Runs inside container only; lazy imports, no Flask context needed.
+- ✅ FEAT-017: Adopt/Release unmanaged networks — `POST /api/networks/<id>/adopt` and `DELETE /api/networks/<id>/adopt`. Metadata-only (no Docker network change). Default networks (bridge/host/none) rejected. Frontend Adopt/Release buttons on network cards.
+- ✅ FEAT-019: Full health page + expanded health API — `/api/system/health` now returns 6 check domains (`database`, `docker`, `containers`, `images`, `networks`, `dockermate`) with domain-tagged warnings. Dashboard health card uses dynamic `healthDots`. `/health` page: stats row, per-domain detail cards, actionable links, 10 s auto-refresh.
+- ✅ Bug fix: Rollback button disabled when no update history — `rollback_available` flag added to container list response via single bulk query; button disabled + dimmed + tooltip updated in UI.
+- ✅ Bug fix: Release/Delete buttons hidden for adopted `dockermate_dockermate-net` — removed overly broad `includes('dockermate')` name check from frontend buttons and backend `delete_network`. Real protection is the "containers attached" guard.
+- ✅ Bug fix: Container details modal missing env_vars/volumes/limits — `showDetails()` now fetches full detail from `GET /api/containers/<id>` for managed containers instead of reusing sparse list data.
+- ✅ Bug fix: Volume mounts rendered as `[object Object]` — both the detail modal and docker-command generator now format volumes as `source:destination:mode`.
 
 | Task | Status | Dependencies |
 |------|--------|-------------|
@@ -273,16 +281,25 @@ v2.0.0 - Advanced Features (Future)
   - 12 Low Priority
 - **UI_Issues.md**: File not created — all UI issues tracked directly in KNOWN_ISSUES.md
 
-### Recent Fixes & Completions (Sprint 3)
+### Recent Fixes & Completions (Sprint 5)
+1. ✅ SEC-001 — Rate limiting (Flask-Limiter: login 5/15 min, mutations 30/min shared)
+2. ✅ FIX-002 — Password reset CLI (`manage.py reset-password --temp`)
+3. ✅ FEAT-017 — Adopt/Release unmanaged networks (metadata-only, UI buttons, API endpoints)
+4. ✅ FEAT-019 — Full health page + 6-domain health API + dashboard healthDots
+5. ✅ UI-003 — Rollback button disabled when no update history (`rollback_available` flag)
+6. ✅ UI-004 — Release/Delete no longer hidden for adopted compose networks
+7. ✅ UI-005 — Container details modal fetches full data (env_vars, volumes, limits)
+8. ✅ UI-006 — Volume mounts render as `source:destination:mode` instead of `[object Object]`
+
+### Previously Completed (Sprint 3-4)
 1. ✅ FEATURE-005 — Show all Docker containers (managed + external with protection)
 2. ✅ FEATURE-006 — Real-time dashboard with auto-refresh (health, images, networks)
 3. ✅ FEATURE-002 — Container sync endpoint + automatic startup recovery
 4. ✅ Image management full stack (model → service → API → frontend)
 5. ✅ Background scheduler for image update checks (real digest comparison via registry)
 6. ✅ Update / Rollback system — per-container update, bulk update-all, rollback, history trail
-7. ✅ Dashboard overhaul — health card with real Docker/DB checks, images + networks summary
-8. ✅ Health page stub + nav link
-9. ✅ FEAT-013, FEAT-014, FEAT-015 added to backlog (retag, image pruning, tag drift)
+7. ✅ Network management full stack — CRUD, IPAM, IP reservations, topology, auto-docs
+8. ✅ FEAT-013, FEAT-014, FEAT-015 added to backlog (retag, image pruning, tag drift)
 
 ### Previously Resolved (Sprint 2 Task 7)
 1. ✅ Alpine.js x-for key issues causing component crashes
@@ -356,9 +373,9 @@ DockerMate prioritizes educational value:
 - ✅ HTTPS/TLS 1.2+ enforcement
 - ✅ Bcrypt password hashing (work factor 12)
 - ✅ Secure session cookies (httpOnly, Secure, SameSite=Strict)
-- ⏳ Rate limiting (planned Sprint 5)
-- ⏳ CSRF token validation (planned Sprint 5)
-- ⏳ Content Security Policy (planned Sprint 5)
+- ✅ Rate limiting (SEC-001 — Flask-Limiter, login 5/15 min, mutations 30/min shared)
+- ⏳ CSRF token validation (planned Sprint 5+)
+- ⏳ Content Security Policy (planned Sprint 5+)
 
 ### Known Security Issues
 - See KNOWN_ISSUES.md SECURITY-001 through SECURITY-004
@@ -425,5 +442,5 @@ DockerMate prioritizes educational value:
 - Update issue counts weekly
 - Review and update metrics monthly
 
-**Last Updated:** February 4, 2026 by Claude Sonnet 4.5
-**Next Review:** Sprint 5 kickoff
+**Last Updated:** February 5, 2026 by Claude Sonnet 4.5
+**Next Review:** Sprint 5 completion

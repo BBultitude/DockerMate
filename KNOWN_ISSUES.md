@@ -1,8 +1,8 @@
 # DockerMate - Known Issues Tracker
 
 **Created:** January 31, 2026
-**Last Updated:** February 3, 2026 (Sprint 4 in progress)
-**Current Sprint:** Sprint 4 (Network Management) — Tasks 1-3, 5 delivered
+**Last Updated:** February 5, 2026 (Sprint 5 in progress)
+**Current Sprint:** Sprint 5 — SEC-001, FIX-002, FEAT-017, FEAT-019 delivered; UI bug fixes applied
 
 This document tracks all known issues identified during development. Issues are categorized by priority and can be checked off as they're resolved.
 
@@ -31,8 +31,8 @@ This document tracks all known issues identified during development. Issues are 
 **Reclassified as Design:** 2 issues (API auth, perimeter security) - intentional per DESIGN-v2.md
 **New (Sprint 4):** FEATURE-007 (health page stub + dashboard health card incomplete)
 **Resolved (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized — fixed)
-**Resolved (Sprint 5):** NETWORK-002 (non-managed containers not visible on networks page — managed flag bug + missing badges), NETWORK-003 (topology oversized index shift), SSL-001 (cert SANs missing host LAN IP when running in Docker)
-**Total Open Issues:** 44
+**Resolved (Sprint 5 — Feb 5):** NETWORK-002, NETWORK-003, SSL-001 (previous session); FEATURE-007 (full health page + expanded API — SEC-001 rate limiting, FIX-002 password reset CLI, FEAT-017 adopt/release networks, FEAT-019 health page); FEATURE-004 (password reset — now `manage.py reset-password`); SECURITY-004 (password reset workflow — implemented via manage.py); UI-003 (rollback button clickable with no history — `rollback_available` flag); UI-004 (Release/Delete hidden for adopted dockermate network — overly broad name filter removed); UI-005 (env vars missing from container details — showDetails now fetches full detail); UI-006 (volumes rendered as [object Object] — fixed to source:destination:mode)
+**Total Open Issues:** 38
 
 ---
 
@@ -485,12 +485,12 @@ README says "SameSite=Strict cookies prevent CSRF" but explicit validation is be
 
 ---
 
-### SECURITY-004: Password Reset Workflow Incomplete ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** Documentation mentions password reset
+### SECURITY-004: Password Reset Workflow Incomplete ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `manage.py`
+**Resolved:** February 5, 2026 (Sprint 5 — FIX-002)
 
-**Issue:**
-README shows `reset_password.py` but not implemented in codebase
+**Resolution:** See FEATURE-004 above. CLI-only (no web endpoint) as originally specified.
 
 ---
 
@@ -619,35 +619,29 @@ Port changes, volume changes, env var changes
 
 ---
 
-### FEATURE-004: Password Reset Script Missing ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** README references
+### FEATURE-004: Password Reset Script Missing ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `manage.py`
+**Resolved:** February 5, 2026 (Sprint 5 — FIX-002)
 
-**Issue:**
-Referenced in documentation but not in codebase
-
-**Note:**
-`seed_test_user.py` exists as test helper
+**Resolution:**
+- `python manage.py reset-password` added (must run inside container: `docker exec dockermate-dev python3 /app/manage.py reset-password`)
+- `--temp` flag generates a secure random password and sets `force_password_change=True`
+- Interactive mode prompts twice, validates password strength via `PasswordManager`
+- Lazy imports — runs without Flask app context
 
 ---
 
-### FEATURE-007: Health Page Is a Stub + Dashboard Health Card Only Covers Two Domains ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `frontend/templates/health.html` (stub), `frontend/templates/dashboard.html` (health card), `backend/api/system.py` (health endpoint)
+### FEATURE-007: Health Page Is a Stub + Dashboard Health Card Only Covers Two Domains ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `frontend/templates/health.html`, `frontend/templates/dashboard.html`, `backend/api/system.py`
 **Reported:** February 3, 2026 (Sprint 4)
+**Resolved:** February 5, 2026 (Sprint 5 — FEAT-019)
 
-**Issue — three gaps, all connected:**
-
-1. **Health page (`/health`)** is a placeholder.  It renders a single card that says "Coming soon" and directs users back to the dashboard health card.  There is no detail view, no per-resource breakdown, no actionable alerts.
-
-2. **Dashboard health card** shows only two status dots — Docker daemon and Database.  It has no visibility into containers (exited, health-check failures), images (dangling, updates available), or networks (oversized).  Warnings that do surface are free-text strings with no domain grouping.
-
-3. **`/api/system/health` backend** sets only two `checks` keys (`docker`, `database`).  The warnings array carries exited-container and capacity strings but nothing about images or networks, and the warnings have no `domain` tag for the frontend to group by.
-
-**Impact:**
-A user looking at the health card or clicking through to the health page cannot tell whether their images need pruning, whether any containers are silently failing health checks, or whether any networks are misconfigured — without leaving the UI entirely and running separate Docker CLI commands.
-
-**Full spec:** See FEAT-019 in Improvements.md.  Covers the expanded backend checks, the dashboard card dot expansion, and the full health-page detail layout.
+**Resolution:**
+- `/api/system/health` expanded to 6 check domains: `database`, `docker`, `containers`, `images`, `networks`, `dockermate`. All warnings carry a `domain` tag for grouping.
+- Dashboard health card replaced hardcoded two-dot row with dynamic `healthDots` computed property — one coloured dot per check key.
+- `/health` page fully implemented: stats row (overall status, warning count, checks passing, last checked), per-domain detail cards with status badges, actionable links (→ View Containers / Images / Networks), Infrastructure card merges docker+database. Auto-refreshes every 10 s.
 
 ---
 
@@ -831,12 +825,17 @@ These can be fixed quickly with high impact:
 - New issues identified: 0
 - Issues Remaining: 44
 
-**Sprint 4 (current):**
+**Sprint 4:**
 - Issues Resolved: 1 (NETWORK-001)
 - New issues identified: 1 (FEATURE-007)
 - Issues Remaining: 44
 
+**Sprint 5 (current):**
+- Issues Resolved: 6 (FEATURE-007, FEATURE-004, SECURITY-004, UI-003, UI-004, UI-005, UI-006)
+- New issues identified: 4 (UI-003 through UI-006 — all resolved same session)
+- Issues Remaining: 38
+
 ---
 
-**Last Scan:** February 3, 2026
-**Next Review:** Sprint 4 completion
+**Last Scan:** February 5, 2026
+**Next Review:** Sprint 5 completion

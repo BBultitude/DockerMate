@@ -34,7 +34,12 @@ app.secret_key = os.urandom(24)
 
 # Configuration
 app.config['DATABASE_PATH'] = os.getenv('DATABASE_PATH', 'data/dockermate.db')
-app.config['TESTING'] = True  # Disable HTTPS redirect
+app.config['TESTING'] = True          # Disable HTTPS redirect
+app.config['RATELIMIT_ENABLED'] = True  # Flask-Limiter disables itself when TESTING; re-enable
+
+# Initialise rate-limiter (extensions.py creates the Limiter instance)
+from backend.extensions import limiter
+limiter.init_app(app)
 
 # Import and register authentication blueprint
 from backend.api.auth import auth_bp
@@ -165,6 +170,16 @@ def logout():
 # ========================================
 # Error Handlers
 # ========================================
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle rate-limit (429) errors from Flask-Limiter"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later.",
+        "retry_after": error.retry_after if hasattr(error, 'retry_after') else None
+    }), 429
+
 
 @app.errorhandler(404)
 def not_found(error):

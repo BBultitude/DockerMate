@@ -253,7 +253,7 @@
                     <label class="text-slate-400 text-sm">Volume Mounts</label>
                     <div class="mt-1 bg-slate-900 rounded p-3">
                         <template x-for="(volume, index) in detailsModal.container?.volumes" :key="`volume-${index}`">
-                            <div class="text-white font-mono text-sm" x-text="volume"></div>
+                            <div class="text-white font-mono text-sm" x-text="volume.source + ':' + volume.destination + ':' + volume.mode"></div>
                         </template>
                     </div>
                 </div>
@@ -995,11 +995,11 @@
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
 
-                        <!-- Sprint 3: Rollback Button (always available for managed containers) -->
+                        <!-- Sprint 3: Rollback Button — disabled when no update history exists -->
                         <button @click="rollbackContainer(container.name)"
-                                :disabled="actionLoading[container.name]"
-                                title="Rollback to previous image version"
-                                class="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-500 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                                :disabled="actionLoading[container.name] || !container.rollback_available"
+                                :title="container.rollback_available ? 'Rollback to previous image version' : 'No previous version to roll back to'"
+                                class="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
                             <span x-show="!actionLoading[container.name]">↩ Rollback</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
@@ -1504,9 +1504,23 @@ function containersComponent() {
         /**
          * Show container details modal
          */
-        showDetails(container) {
+        async showDetails(container) {
+            // Show modal immediately with list data, then enrich with full
+            // detail (env_vars, volumes, cpu/memory limits) for managed containers.
             this.detailsModal.container = container;
             this.detailsModal.show = true;
+
+            if (container.managed) {
+                try {
+                    const r = await fetch(`/api/containers/${container.container_id}`);
+                    if (r.ok) {
+                        const d = await r.json();
+                        if (d.success) this.detailsModal.container = d.data;
+                    }
+                } catch (e) {
+                    console.error('showDetails fetch:', e);
+                }
+            }
         },
         
         /**
@@ -1887,7 +1901,7 @@ function containersComponent() {
             // Add volumes
             if (container.volumes && container.volumes.length > 0) {
                 container.volumes.forEach(volume => {
-                    cmd += ` \\\n  -v ${volume}`;
+                    cmd += ` \\\n  -v ${volume.source}:${volume.destination}:${volume.mode}`;
                 });
             }
 
