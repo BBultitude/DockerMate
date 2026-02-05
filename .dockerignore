@@ -27,18 +27,39 @@ build/
 .DS_Store
 Thumbs.db
 
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+.flaskenv
+cookies.txt
+
+# Claude Code
+.claude/
+
 # DockerMate specific
 data/*.db
 data/*.db-*
+data/backups/
 certs/*
 
 # Documentation (not needed in container)
 *.md
 docs/
 
-# Tests (not needed in production image)
+# Tests & dev tooling (not needed in production image)
 tests/
 scripts/verify_*.sh
+seed_test_user.py
+test_docker_compose.sh
+requirements-dev.txt
+.pre-commit-config.yaml
+
+# Coverage & cache
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
 
 # Docker
 Dockerfile*

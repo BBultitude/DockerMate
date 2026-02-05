@@ -24,6 +24,12 @@ Endpoints:
     POST   /api/containers/<id>/start   Start container
     POST   /api/containers/<id>/stop    Stop container
     POST   /api/containers/<id>/restart Restart container
+    GET    /api/containers/<id>/logs    Get container logs
+    POST   /api/containers/<id>/update  Pull latest image and recreate (Sprint 3)
+    POST   /api/containers/<id>/rollback Rollback to previous image (Sprint 3)
+    GET    /api/containers/<id>/history Update/rollback history (Sprint 3)
+    POST   /api/containers/update-all   Bulk update all containers with updates (Sprint 3)
+    POST   /api/containers/sync         Sync managed containers from Docker labels
 
 Usage:
     In app.py::
@@ -44,11 +50,13 @@ CLI Equivalents Shown:
 """
 
 import logging
+import docker
 from typing import Dict, Any, Optional, List
 from flask import Blueprint, request, jsonify
 
 from backend.auth.middleware import require_auth
 from backend.services.container_manager import ContainerManager
+from backend.utils.docker_client import get_docker_client
 from backend.utils.exceptions import (
     ContainerNotFoundError,
     ContainerOperationError,
@@ -57,6 +65,7 @@ from backend.utils.exceptions import (
 )
 from backend.models.database import SessionLocal
 from backend.models.container import Container
+from backend.extensions import mutation_limit
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -289,6 +298,7 @@ def validate_update_request(data: Dict[str, Any]) -> None:
 
 @containers_bp.route('', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def create_container():
     """
     Create a new container with validation and optional auto-start.
@@ -319,11 +329,11 @@ def create_container():
             "version": "1.0.0",
             "team": "backend"
         },
-        "restart_policy": "unless-stopped",   # Optional (no, on-failure, always, unless-stopped)
+        "restart_policy": "unless-stopped",   # Optional (default: unless-stopped) - no, on-failure, always, unless-stopped
         "auto_start": true,                   # Optional (default: true)
         "pull_if_missing": true,              # Optional (default: true)
         "cpu_limit": 1.5,                     # Optional (cores)
-        "memory_limit": 536870912             # Optional (bytes)
+        "memory_limit": 536870912             # Optional (bytes) - frontend converts MB→bytes before sending
     }
     
     Success Response (201):
@@ -395,11 +405,12 @@ def create_container():
                 volumes=data.get('volumes'),
                 env_vars=data.get('env_vars'),
                 labels=data.get('labels'),
-                restart_policy=data.get('restart_policy', 'no'),
+                restart_policy=data.get('restart_policy', 'unless-stopped'),  # Match frontend default
                 auto_start=data.get('auto_start', True),
                 pull_if_missing=data.get('pull_if_missing', True),
                 cpu_limit=data.get('cpu_limit'),
-                memory_limit=data.get('memory_limit')
+                memory_limit=data.get('memory_limit'),
+                network=data.get('network')
             )
         
         logger.info(f"Container created via API: {data['name']}")
@@ -447,14 +458,16 @@ def create_container():
 def list_containers():
     """
     List containers with optional filtering.
-    
-    GET /api/containers?environment=prod&state=running
-    
+
+    GET /api/containers?environment=prod&state=running&show_all=true
+
     Query Parameters:
         environment (optional): Filter by environment tag (dev, test, prod, staging)
         state (optional): Filter by state (running, exited, created, etc.)
         all (optional): Include stopped containers (default: true for API)
-    
+        show_all (optional): Show ALL Docker containers including external (default: false)
+        managed_only (optional): Only show managed containers when show_all=true (default: false)
+
     Success Response (200):
     {
         "success": true,
@@ -502,31 +515,48 @@ def list_containers():
         environment = request.args.get('environment')
         state = request.args.get('state')
         include_all = request.args.get('all', 'true').lower() == 'true'
-        
+        show_all = request.args.get('show_all', 'false').lower() == 'true'
+        managed_only = request.args.get('managed_only', 'false').lower() == 'true'
+
         # List containers via service
         with ContainerManager() as manager:
-            containers = manager.list_containers(
-            environment=environment,
-            state=state,
-            all=include_all
-        )
-        
+            if show_all:
+                # FEATURE-005: Show all Docker containers (managed + external)
+                # Including DockerMate itself (appears as external, protected from actions)
+                containers = manager.list_all_docker_containers(
+                    all=include_all,
+                    environment=environment,
+                    managed_only=managed_only
+                )
+            else:
+                # Legacy behavior - database only (managed containers)
+                containers = manager.list_containers(
+                    environment=environment,
+                    state=state,
+                    all=include_all
+                )
+
         # Build response
         response_data = {
             "success": True,
             "data": containers,
-            "count": len(containers)
+            "count": len(containers),
+            "show_all": show_all
         }
-        
+
         # Include filter info if filters applied
         filters = {}
         if environment:
             filters['environment'] = environment
         if state:
             filters['state'] = state
+        if show_all:
+            filters['show_all'] = True
+        if managed_only:
+            filters['managed_only'] = True
         if filters:
             response_data['filters'] = filters
-        
+
         return jsonify(response_data), 200
     
     except ContainerOperationError as e:
@@ -742,6 +772,7 @@ def get_container_health(name_or_id: str):
 
 @containers_bp.route('/<container_id>', methods=['PATCH'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def update_container(container_id: str):
     """
     Update container configuration (Phase 1: labels only).
@@ -865,6 +896,7 @@ def update_container(container_id: str):
 
 @containers_bp.route('/<container_id>', methods=['DELETE'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def delete_container(container_id: str):
     """
     Delete a container (stop and remove).
@@ -973,6 +1005,7 @@ def delete_container(container_id: str):
 
 @containers_bp.route('/<container_id>/start', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def start_container(container_id: str):
     """
     Start a stopped container.
@@ -1065,6 +1098,7 @@ def start_container(container_id: str):
 
 @containers_bp.route('/<container_id>/stop', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def stop_container(container_id: str):
     """
     Stop a running container gracefully.
@@ -1173,6 +1207,7 @@ def stop_container(container_id: str):
 
 @containers_bp.route('/<container_id>/restart', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
 def restart_container(container_id: str):
     """
     Restart a container (stop + start).
@@ -1272,6 +1307,671 @@ def restart_container(container_id: str):
     
     except Exception as e:
         logger.exception(f"Unexpected error restarting container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/logs', methods=['GET'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def get_container_logs(container_id: str):
+    """
+    Get container logs with optional filtering.
+
+    GET /api/containers/<id>/logs?tail=100&timestamps=true&since=2025-01-31T00:00:00
+
+    Query Parameters:
+        tail: Number of lines from end (default: 100, max: 10000)
+        timestamps: Include timestamps (default: false)
+        since: Unix timestamp or ISO 8601 datetime
+        until: Unix timestamp or ISO 8601 datetime
+        stdout: Include stdout (default: true)
+        stderr: Include stderr (default: true)
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "logs": "2025-01-31 10:30:00 Container started\\n...",
+            "container_id": "abc123",
+            "container_name": "my-nginx",
+            "line_count": 100,
+            "truncated": false,
+            "cli_command": "docker logs -f --tail 100 my-nginx"
+        }
+    }
+
+    Error Responses:
+    - 400: Invalid parameters
+    - 404: Container not found
+    - 500: Docker error
+
+    CLI Equivalent:
+        docker logs my-nginx
+        docker logs --tail 100 my-nginx
+        docker logs --since 2025-01-31T00:00:00 my-nginx
+        docker logs -f my-nginx  # follow (not supported in this endpoint)
+
+    Educational Notes:
+        - Logs are from container stdout/stderr
+        - Logs persist even after container stops
+        - Use tail parameter to limit output for large logs
+        - Timestamps help with debugging and correlation
+    """
+    try:
+        # Parse query parameters
+        tail = request.args.get('tail', default='100', type=str)
+        timestamps = request.args.get('timestamps', default='false', type=str).lower() == 'true'
+        since = request.args.get('since', default=None, type=str)
+        until = request.args.get('until', default=None, type=str)
+        stdout = request.args.get('stdout', default='true', type=str).lower() == 'true'
+        stderr = request.args.get('stderr', default='true', type=str).lower() == 'true'
+
+        # Validate tail parameter
+        if tail == 'all':
+            tail_int = None
+        else:
+            try:
+                tail_int = int(tail)
+                if tail_int < 0:
+                    raise ValueError("Tail must be positive")
+                if tail_int > 10000:
+                    tail_int = 10000  # Cap at 10k lines
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid tail parameter. Use 'all' or a positive integer.",
+                    "error_type": "ValidationError"
+                }), 400
+
+        # Get Docker client
+        client = get_docker_client()
+
+        # Get container
+        try:
+            container = client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return jsonify({
+                "success": False,
+                "error": f"Container '{container_id}' not found",
+                "error_type": "NotFoundError"
+            }), 404
+
+        # Fetch logs
+        log_kwargs = {
+            'stdout': stdout,
+            'stderr': stderr,
+            'timestamps': timestamps
+        }
+
+        if tail_int is not None:
+            log_kwargs['tail'] = tail_int
+        if since:
+            log_kwargs['since'] = since
+        if until:
+            log_kwargs['until'] = until
+
+        logs = container.logs(**log_kwargs).decode('utf-8', errors='replace')
+
+        # Count lines
+        log_lines = logs.split('\n') if logs else []
+        line_count = len([line for line in log_lines if line.strip()])
+
+        # Build CLI command equivalent
+        cli_command = f"docker logs"
+        if timestamps:
+            cli_command += " --timestamps"
+        if tail_int:
+            cli_command += f" --tail {tail_int}"
+        elif tail == 'all':
+            cli_command += " --tail all"
+        if since:
+            cli_command += f" --since {since}"
+        if until:
+            cli_command += f" --until {until}"
+        cli_command += f" {container.name}"
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "logs": logs,
+                "container_id": container.id,
+                "container_name": container.name,
+                "line_count": line_count,
+                "truncated": tail_int is not None and line_count >= tail_int,
+                "cli_command": cli_command
+            }
+        }), 200
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching logs for {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/update', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def update_container_image(container_id: str):
+    """
+    Pull the latest image and recreate the container with the same config.
+
+    POST /api/containers/<id>/update
+
+    Stops the running container, pulls the latest image for its current
+    repository:tag, removes the old container, and recreates it with the
+    same configuration (ports, volumes, env vars, restart policy, labels).
+    The new container is started automatically.  An UpdateHistory record
+    is written on success or failure.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123...",
+            "container_name": "my-nginx",
+            "old_image": "nginx:latest",
+            "new_image": "nginx:latest",
+            "status": "updated"
+        },
+        "message": "Container 'my-nginx' updated successfully"
+    }
+
+    Error Responses:
+    - 404: Container not found
+    - 500: Update failed (pull error, recreate error)
+
+    CLI Equivalent:
+        docker pull nginx:latest
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:latest
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.update_container_image(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' updated successfully"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to update container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error updating container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/rollback', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def rollback_container(container_id: str):
+    """
+    Rollback a container to the image it had before its last update.
+
+    POST /api/containers/<id>/rollback
+
+    Looks up the most recent successful UpdateHistory entry for this
+    container, stops and removes the current container, and recreates
+    it using the previous image.  The old image must still be available
+    locally (not pruned).
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123...",
+            "container_name": "my-nginx",
+            "rolled_back_to": "nginx:1.24",
+            "status": "rolled_back"
+        },
+        "message": "Container 'my-nginx' rolled back to nginx:1.24"
+    }
+
+    Error Responses:
+    - 404: Container not found or no update history
+    - 500: Rollback failed (old image missing, recreate error)
+
+    CLI Equivalent:
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:1.24
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.rollback_container(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' rolled back to {result.get('rolled_back_to', 'previous image')}"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to rollback container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error rolling back container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/retag', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def retag_container(container_id: str):
+    """
+    Change a managed container's image tag and recreate it.
+
+    POST /api/containers/<id>/retag
+    Body: { "tag": "1.29" }
+
+    Pulls repo:new_tag, stops and removes the current container, then
+    recreates it with identical config but the new image.  An UpdateHistory
+    record is written so rollback back to the old tag works automatically.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123…",
+            "name": "my-nginx",
+            "old_image": "nginx:1.28",
+            "new_image": "nginx:1.29",
+            "status": "success"
+        },
+        "message": "Container 'my-nginx' retagged nginx:1.28 → nginx:1.29"
+    }
+
+    Error Responses:
+    - 400: Missing or empty "tag" field
+    - 404: Container not found
+    - 500: Pull or recreate failed
+
+    CLI Equivalent:
+        docker pull nginx:1.29
+        docker stop my-nginx && docker rm my-nginx
+        docker run [same flags] --name my-nginx nginx:1.29
+    """
+    data = request.get_json(silent=True) or {}
+    tag = data.get('tag', '').strip()
+    if not tag:
+        return jsonify({
+            "success": False,
+            "error": "Missing or empty 'tag' field",
+            "error_type": "ValidationError"
+        }), 400
+
+    try:
+        with ContainerManager() as manager:
+            result = manager.retag_container(container_id, tag)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Container '{result.get('name', container_id)}' retagged {result.get('old_image')} → {result.get('new_image')}"
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to retag container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error retagging container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/update-all', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def update_all_containers():
+    """
+    Update all managed containers that have newer images available.
+
+    POST /api/containers/update-all
+
+    Iterates through all managed containers, checks whether their image
+    has update_available == True in the images table, and calls
+    update_container_image() for each.  Results for each container are
+    collected and returned regardless of individual success/failure.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "updated": [...],
+            "failed": [...],
+            "skipped": [...],
+            "total": 5
+        },
+        "message": "Bulk update complete: 2 updated, 1 failed, 2 skipped"
+    }
+    """
+    try:
+        from backend.models.image import Image
+
+        db = SessionLocal()
+        try:
+            # Get all managed containers
+            all_containers = db.query(Container).all()
+
+            # Build a set of images that have updates available
+            images_with_updates = set()
+            for img in db.query(Image).filter(Image.update_available == True).all():
+                images_with_updates.add(f"{img.repository}:{img.tag}")
+        finally:
+            db.close()
+
+        updated = []
+        failed = []
+        skipped = []
+
+        with ContainerManager() as manager:
+            for container in all_containers:
+                image_key = container.image_name if container.image_name else ''
+                if image_key not in images_with_updates:
+                    skipped.append({
+                        'name': container.name,
+                        'reason': 'no update available'
+                    })
+                    continue
+
+                try:
+                    result = manager.update_container_image(container.name)
+                    updated.append({
+                        'name': container.name,
+                        'old_image': result.get('old_image'),
+                        'new_image': result.get('new_image')
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to update {container.name}: {e}")
+                    failed.append({
+                        'name': container.name,
+                        'error': str(e)
+                    })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "updated": updated,
+                "failed": failed,
+                "skipped": skipped,
+                "total": len(all_containers)
+            },
+            "message": f"Bulk update complete: {len(updated)} updated, {len(failed)} failed, {len(skipped)} skipped"
+        }), 200
+
+    except Exception as e:
+        logger.exception("Unexpected error in bulk update")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/history', methods=['GET'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def get_container_history(container_id: str):
+    """
+    Get update/rollback history for a container.
+
+    GET /api/containers/<id>/history
+
+    Returns all UpdateHistory records for the given container, ordered
+    newest first.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": [
+            {
+                "id": 1,
+                "container_name": "my-nginx",
+                "old_image": "nginx:1.24",
+                "new_image": "nginx:latest",
+                "status": "success",
+                "updated_at": "2026-02-03T12:00:00"
+            }
+        ],
+        "count": 1
+    }
+    """
+    try:
+        from backend.models.update_history import UpdateHistory
+
+        db = SessionLocal()
+        try:
+            history = db.query(UpdateHistory).filter(
+                (UpdateHistory.container_id == container_id) |
+                (UpdateHistory.container_name == container_id)
+            ).order_by(UpdateHistory.updated_at.desc()).all()
+
+            history_data = [h.to_dict() for h in history]
+        finally:
+            db.close()
+
+        return jsonify({
+            "success": True,
+            "data": history_data,
+            "count": len(history_data)
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Error fetching history for container {container_id}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/sync', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+def sync_containers():
+    """
+    Sync managed containers from Docker back into the database.
+
+    POST /api/containers/sync
+
+    Recovers containers that have com.dockermate.managed=true labels
+    but are missing from the database (e.g. after a database reset or
+    migration).  This is also called automatically at container startup
+    via docker-entrypoint.sh.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "recovered": 2,
+            "skipped": 3,
+            "recovered_containers": ["my-nginx", "my-redis"]
+        },
+        "message": "Recovered 2 managed containers"
+    }
+
+    CLI Equivalent:
+        docker ps --filter "label=com.dockermate.managed=true"
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.sync_managed_containers_to_database()
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": f"Recovered {result['recovered']} managed container(s)"
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Unexpected error syncing containers: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred during sync",
+            "error_type": "ServerError"
+        }), 500
+
+
+@containers_bp.route('/<container_id>/import', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def import_container(container_id: str):
+    """
+    Import an external (unmanaged) container into DockerMate.
+
+    POST /api/containers/<id>/import
+
+    Reads the container's current Docker config and writes a matching record
+    into the database.  The container itself is not modified — no labels are
+    added, no recreate happens.  After import the container gains the
+    MANAGED badge and all action buttons on the Containers page.
+
+    Note: imported containers are metadata-only and will NOT survive a DB
+    reset (no com.dockermate.managed label).  This matches the network
+    adopt pattern (FEAT-017).
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "abc123…",
+            "name": "my-app",
+            "image_name": "myimage:latest",
+            "state": "running",
+            "status": "imported"
+        },
+        "message": "Container 'my-app' imported successfully …"
+    }
+
+    Error Responses:
+    - 404: Container not found in Docker daemon
+    - 500: Already managed, or is the DockerMate container itself
+
+    CLI Equivalent:
+        # No CLI equivalent — this is a DockerMate-only operation
+    """
+    try:
+        with ContainerManager() as manager:
+            result = manager.import_container(container_id)
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": (
+                f"Container '{result.get('name', container_id)}' imported successfully. "
+                f"Note: imported containers won't survive a DB reset."
+            )
+        }), 200
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to import container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error importing container {container_id}: {e}")
         return jsonify({
             "success": False,
             "error": "An unexpected error occurred",

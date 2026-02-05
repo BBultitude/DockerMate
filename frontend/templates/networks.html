@@ -1,29 +1,1188 @@
 {% extends "base.html" %}
-
 {% block title %}Networks - DockerMate{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-slate-900">
-    <!-- Shared Navigation Bar -->
+<div class="min-h-screen bg-slate-900" x-data="networksComponent()" x-init="init()">
     {% include 'components/navbar.html' %}
-    
-    <!-- Main Content -->
+
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header -->
         <div class="flex justify-between items-center mb-8">
-            <h2 class="text-3xl font-bold text-white">Networks</h2>
-            <button class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition opacity-50 cursor-not-allowed" disabled>
-                + Create Network (Sprint 4)
+            <div>
+                <h2 class="text-3xl font-bold text-white">Networks</h2>
+                <p class="text-slate-400 mt-1">Manage Docker networks and IP address allocation</p>
+            </div>
+            <div class="flex gap-2">
+                <button @click="fetchDocs()"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-md transition">
+                    📄 Generate Docs
+                </button>
+                <button @click="showCreateModal = true"
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition">
+                    + Create Network
+                </button>
+            </div>
+        </div>
+
+        <!-- View Toggle -->
+        <div class="flex gap-1 mb-6">
+            <button @click="viewMode = 'list'"
+                    class="px-3 py-1.5 rounded text-sm transition"
+                    :class="viewMode === 'list' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                List
+            </button>
+            <button @click="switchToTopology()"
+                    class="px-3 py-1.5 rounded text-sm transition"
+                    :class="viewMode === 'topology' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                Topology
             </button>
         </div>
-        
-        <div class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+
+        <!-- Stats Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Total Networks</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="networks.length"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Managed</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="managedCount"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Oversized</p>
+                <p class="text-2xl font-bold mt-1" :class="oversizedCount > 0 ? 'text-yellow-400' : 'text-white'" x-text="oversizedCount"></p>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             LIST VIEW
+             ============================================================ -->
+        <div x-show="viewMode === 'list'">
+
+        <!-- Loading -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-slate-400 mt-4">Loading networks...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && filteredNetworks.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
             <div class="text-6xl mb-4">🌐</div>
-            <h3 class="text-2xl font-semibold text-white mb-2">Network Management & IPAM</h3>
-            <p class="text-slate-400 mb-4">Coming in Sprint 4</p>
-            <p class="text-slate-500 text-sm">
-                Hardware-aware network sizing, automatic IP allocation, and visual network maps
-            </p>
+            <h3 class="text-2xl font-semibold text-white mb-2">No Networks</h3>
+            <p class="text-slate-400 mb-4">Create your first Docker network to connect containers</p>
+            <button @click="showCreateModal = true"
+                    class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition">
+                + Create Network
+            </button>
+        </div>
+
+        <!-- Network List -->
+        <div x-show="!loading && filteredNetworks.length > 0" class="space-y-4">
+            <template x-for="network in filteredNetworks" :key="network.network_id">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-5">
+                    <!-- Network Header Row -->
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <h3 class="text-lg font-semibold text-white font-mono" x-text="network.name"></h3>
+                                <!-- Managed badge -->
+                                <span x-show="network.managed"
+                                      class="px-2 py-0.5 bg-green-900 text-green-300 rounded text-xs font-medium">
+                                    Managed
+                                </span>
+                                <!-- Unmanaged badge (non-default, not yet adopted) -->
+                                <span x-show="!network.managed && network.name !== 'bridge'"
+                                      class="px-2 py-0.5 bg-orange-900 text-orange-300 rounded text-xs font-medium">
+                                    Unmanaged
+                                </span>
+                                <!-- Default network badge -->
+                                <span x-show="network.name === 'bridge'"
+                                      class="px-2 py-0.5 bg-slate-600 text-slate-300 rounded text-xs font-medium">
+                                    Default
+                                </span>
+                                <!-- Oversized warning -->
+                                <span x-show="network.oversized"
+                                      class="px-2 py-0.5 bg-yellow-900 text-yellow-300 rounded text-xs font-medium">
+                                    ⚠ Oversized
+                                </span>
+                            </div>
+                            <!-- Meta line -->
+                            <div class="mt-2 flex items-center gap-4 flex-wrap text-sm text-slate-400">
+                                <span><span class="text-slate-500">Driver:</span> <span x-text="network.driver"></span></span>
+                                <span x-show="network.subnet"><span class="text-slate-500">Subnet:</span> <span class="font-mono" x-text="network.subnet"></span></span>
+                                <span x-show="network.gateway"><span class="text-slate-500">Gateway:</span> <span class="font-mono" x-text="network.gateway"></span></span>
+                                <span><span class="text-slate-500">Containers:</span> <span x-text="network.container_count"></span></span>
+                            </div>
+                            <!-- Purpose -->
+                            <p x-show="network.purpose" class="mt-1 text-slate-500 text-sm italic" x-text="network.purpose"></p>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-2 ml-4">
+                            <button @click="selectNetwork(network)"
+                                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-sm transition">
+                                Details
+                            </button>
+                            <!-- Adopt — shown for unmanaged, non-default networks -->
+                            <button x-show="!network.managed && network.name !== 'bridge'"
+                                    @click="adoptNetwork(network)"
+                                    class="px-3 py-1.5 bg-green-900 hover:bg-green-800 text-green-300 rounded text-sm transition">
+                                Adopt
+                            </button>
+                            <!-- Release — shown for managed, non-default networks -->
+                            <button x-show="network.managed && !['bridge','host','none'].includes(network.name)"
+                                    @click="releaseNetwork(network)"
+                                    class="px-3 py-1.5 bg-yellow-900 hover:bg-yellow-800 text-yellow-300 rounded text-sm transition">
+                                Release
+                            </button>
+                            <!-- Delete — shown for non-default networks; backend rejects if containers attached -->
+                            <button x-show="!['bridge','host','none'].includes(network.name)"
+                                    @click="confirmDelete(network)"
+                                    class="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-300 rounded text-sm transition">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Inline detail panel (collapsed by default, shown when selected) -->
+                    <div x-show="selectedNetwork && selectedNetwork.network_id === network.network_id"
+                         class="mt-4 pt-4 border-t border-slate-700 space-y-4">
+
+                        <!-- Default-network explanation (bridge only; host/none are excluded from this page) -->
+                        <div x-show="network.name === 'bridge'" class="bg-slate-700 rounded p-3">
+                            <p class="text-slate-300 text-sm">Bridge: The default isolated network. Containers get a private IP on a shared bridge; external access requires port mapping (-p).</p>
+                        </div>
+
+                        <!-- CLI equivalent command (managed / non-default networks only) -->
+                        <div x-show="selectedNetwork && selectedNetwork.docker_cli_create" class="bg-slate-700 rounded p-3">
+                            <p class="text-slate-500 text-xs mb-1">Equivalent CLI command</p>
+                            <p class="text-green-300 text-sm font-mono break-all" x-text="selectedNetwork ? selectedNetwork.docker_cli_create : ''"></p>
+                        </div>
+
+                        <!-- IP Utilisation bar (only when ipAllocations loaded for this network) -->
+                        <div x-show="ipAllocations && ipAllocations.network_id === network.network_id">
+                            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                <span>IP Utilisation</span>
+                                <span x-text="ipAllocations ? (ipAllocations.total_usable - ipAllocations.free_count) + ' used of ' + ipAllocations.total_usable + ' (' + ipAllocations.utilisation_pct + '%)' : ''"></span>
+                            </div>
+                            <div class="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden flex">
+                                <!-- Assigned (containers) -->
+                                <div class="h-full transition-all"
+                                     :class="{
+                                         'bg-green-500': ipAllocations && ipAllocations.utilisation_pct < 60,
+                                         'bg-yellow-500': ipAllocations && ipAllocations.utilisation_pct >= 60 && ipAllocations.utilisation_pct < 80,
+                                         'bg-red-500': ipAllocations && ipAllocations.utilisation_pct >= 80
+                                     }"
+                                     :style="'width: ' + (ipAllocations && ipAllocations.total_usable ? Math.round(ipAllocations.assigned_count / ipAllocations.total_usable * 100) : 0) + '%'"></div>
+                                <!-- Reserved -->
+                                <div class="h-full bg-blue-500 transition-all"
+                                     :style="'width: ' + (ipAllocations && ipAllocations.total_usable ? Math.round(ipAllocations.reserved_count / ipAllocations.total_usable * 100) : 0) + '%'"></div>
+                            </div>
+                            <!-- Bar legend -->
+                            <div class="flex gap-3 mt-1.5 text-xs text-slate-500">
+                                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-green-500"></span> Assigned</span>
+                                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-blue-500"></span> Reserved</span>
+                                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-slate-600"></span> Free</span>
+                            </div>
+                            <!-- Subnet summary row -->
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
+                                <span>Usable: <span class="text-slate-300" x-text="ipAllocations ? ipAllocations.first_usable : ''"></span> – <span class="text-slate-300" x-text="ipAllocations ? ipAllocations.last_usable : ''"></span></span>
+                                <span>Gateway: <span class="text-slate-300" x-text="ipAllocations ? ipAllocations.gateway : ''"></span></span>
+                                <span>Free: <span class="text-slate-300" x-text="ipAllocations ? ipAllocations.free_count : ''"></span></span>
+                                <span>Reserved: <span class="text-slate-300" x-text="ipAllocations ? ipAllocations.reserved_count : ''"></span></span>
+                            </div>
+                        </div>
+
+                        <!-- Connected containers -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <h4 class="text-sm font-medium text-slate-300">Connected Containers</h4>
+                                <button x-show="network.name !== 'bridge'"
+                                        @click="openConnectModal(network)"
+                                        class="text-xs px-2 py-0.5 bg-purple-700 hover:bg-purple-600 text-purple-200 rounded transition">
+                                    + Connect
+                                </button>
+                            </div>
+                            <div x-show="selectedNetwork && selectedNetwork.containers && selectedNetwork.containers.length > 0" class="space-y-1">
+                                <template x-for="c in (selectedNetwork && selectedNetwork.containers ? selectedNetwork.containers : [])" :key="c.container_id">
+                                    <div class="flex items-center justify-between bg-slate-700 rounded px-3 py-1.5">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-slate-200 text-sm font-mono" x-text="c.name"></span>
+                                            <span class="text-slate-500 text-xs font-mono" x-text="c.ipv4_address"></span>
+                                            <span x-show="c.managed === true" class="px-1.5 py-0.5 bg-blue-900 text-blue-300 rounded text-xs">Managed</span>
+                                            <span x-show="c.managed === false" class="px-1.5 py-0.5 bg-orange-900 text-orange-300 rounded text-xs">External</span>
+                                        </div>
+                                        <button x-show="network.name !== 'bridge'"
+                                                @click="disconnectContainer(network.network_id, c.container_id)"
+                                                class="text-red-400 hover:text-red-300 text-xs transition">Disconnect</button>
+                                    </div>
+                                </template>
+                            </div>
+                            <p x-show="!selectedNetwork || !selectedNetwork.containers || selectedNetwork.containers.length === 0"
+                               class="text-slate-500 text-sm italic">No containers connected</p>
+                        </div>
+
+                        <!-- Reserved IP ranges -->
+                        <div x-show="ipAllocations && ipAllocations.network_id === network.network_id">
+                            <div class="flex justify-between items-center mb-2">
+                                <h4 class="text-sm font-medium text-slate-300">Reserved Ranges</h4>
+                                <button @click="showReserveModal = network.network_id"
+                                        class="text-xs px-2 py-0.5 bg-purple-700 hover:bg-purple-600 text-purple-200 rounded transition">
+                                    + Reserve
+                                </button>
+                            </div>
+                            <!-- Reservation list -->
+                            <div x-show="ipAllocations && ipAllocations.reserved && ipAllocations.reserved.length > 0" class="space-y-1">
+                                <template x-for="res in (ipAllocations && ipAllocations.reserved ? ipAllocations.reserved : [])" :key="res.range_name || 'single'">
+                                    <div class="flex items-center justify-between bg-slate-700 rounded px-3 py-1.5">
+                                        <div>
+                                            <span class="text-slate-200 text-sm" x-text="res.range_name || 'Single IP'"></span>
+                                            <span class="text-slate-500 text-xs ml-2" x-text="res.ips[0] + (res.ips.length > 1 ? ' – ' + res.ips[res.ips.length-1] : '')"></span>
+                                            <span class="text-slate-600 text-xs ml-2" x-text="'(' + res.ips.length + ' IPs)'"></span>
+                                        </div>
+                                        <button @click="deleteReservation(network.network_id, res.range_name)"
+                                                class="text-red-400 hover:text-red-300 text-xs transition">Release</button>
+                                    </div>
+                                </template>
+                            </div>
+                            <p x-show="!ipAllocations || !ipAllocations.reserved || ipAllocations.reserved.length === 0"
+                               class="text-slate-500 text-sm italic">No reservations</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        </div><!-- end list view -->
+
+        <!-- ============================================================
+             TOPOLOGY VIEW  (visual graph: networks top row, containers bottom row, SVG edges)
+             ============================================================ -->
+        <div x-show="viewMode === 'topology'" class="space-y-3">
+            <!-- Loading -->
+            <div x-show="topologyLoading" class="text-center py-12">
+                <div class="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
+                <p class="text-slate-400 mt-3">Building topology...</p>
+            </div>
+
+            <!-- Visual topology map -->
+            <div x-show="!topologyLoading && topologyData.length > 0">
+                <p class="text-slate-500 text-sm mb-3">
+                    <span x-text="topologyData.length"></span> network(s) —
+                    <span x-text="topoContainerCount"></span> container(s)
+                </p>
+                <!-- SVG generated as string via x-html (Alpine x-for cannot run inside <svg>) -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 overflow-x-auto" x-html="topoSvgHtml"></div>
+
+                <!-- Legend -->
+                <div class="flex gap-4 mt-3 text-xs text-slate-400 flex-wrap">
+                    <span class="flex items-center gap-1.5">
+                        <span class="inline-block w-3 h-3 rounded-full bg-green-700"></span> Managed network
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="inline-block w-3 h-3 rounded-full bg-slate-500"></span> Unmanaged network
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="inline-block w-3 h-3 rounded-full border-2 border-slate-500 bg-slate-800"></span> Managed container
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="inline-block w-3 h-3 rounded-full border-2 border-orange-600 bg-slate-800"></span> External container
+                    </span>
+                    <span x-show="topologyData.some(n => n.oversized)" class="flex items-center gap-1.5">
+                        <span class="inline-block w-3 h-3 rounded-full border-2 border-dashed border-yellow-500"></span> Oversized
+                    </span>
+                </div>
+            </div>
+
+            <!-- Empty topology -->
+            <div x-show="!topologyLoading && topologyData.length === 0"
+                 class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+                <p class="text-slate-400">No networks to display</p>
+            </div>
+        </div><!-- end topology view -->
+
+        <!-- ============================================================
+             CREATE NETWORK MODAL
+             ============================================================ -->
+        <div x-show="showCreateModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div class="bg-slate-800 border border-slate-700 rounded-lg w-full max-w-lg mx-4 p-6 shadow-xl">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-semibold text-white">Create Network</h3>
+                    <button @click="showCreateModal = false" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                </div>
+
+                <!-- Form -->
+                <div class="space-y-4">
+                    <!-- Name -->
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Network Name <span class="text-red-400">*</span></label>
+                        <input x-model="createForm.name"
+                               type="text" placeholder="e.g. app-backend"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                    </div>
+
+                    <!-- Driver -->
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Driver</label>
+                        <select x-model="createForm.driver" @change="createForm.subnet = ''; createForm.subnetSize = ''; subnetValidation = null"
+                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
+                            <option value="bridge">bridge (default — isolated network)</option>
+                            <option value="host">host (shares host networking)</option>
+                            <option value="none">none (no networking)</option>
+                        </select>
+                    </div>
+
+                    <!-- Size picker (bridge networks only) -->
+                    <div x-show="createForm.driver === 'bridge'">
+                        <label class="block text-sm text-slate-300 mb-1">How many IPs do you need?</label>
+                        <select x-model="createForm.subnetSize" @change="applySubnetSize()"
+                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
+                            <option value="">— skip (let Docker decide) —</option>
+                            <option value="29">/29  — up to 5 containers</option>
+                            <option value="28">/28  — up to 13 containers</option>
+                            <option value="27">/27  — up to 29 containers</option>
+                            <option value="26">/26  — up to 61 containers</option>
+                            <option value="25">/25  — up to 125 containers</option>
+                            <option value="24">/24  — up to 253 containers</option>
+                        </select>
+                        <p class="text-slate-500 text-xs mt-1">Pick a size, or skip to let Docker choose the subnet.</p>
+                    </div>
+
+                    <!-- Network-number picker: which /N block within the free base? -->
+                    <div x-show="createForm.subnetSize && networkNumberOptions.length > 1">
+                        <label class="block text-sm text-slate-300 mb-1">Network address</label>
+                        <select x-model="createForm.networkBase" @change="applyNetworkBase()"
+                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
+                            <template x-for="opt in networkNumberOptions" :key="opt.value">
+                                <option :value="opt.value" x-text="opt.label"></option>
+                            </template>
+                        </select>
+                        <p class="text-slate-500 text-xs mt-1">Each block is an independent subnet starting at the shown address.</p>
+                    </div>
+
+                    <!-- Live preview: what the network will actually look like -->
+                    <div x-show="subnetPreview" class="bg-slate-700 rounded p-3 space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-200 text-sm font-semibold font-mono"
+                                  x-text="subnetPreview ? subnetPreview.network + '/' + (createForm.subnet.split('/')[1] || '') : ''"></span>
+                            <!-- Warn if entered IP isn't a valid network boundary -->
+                            <span x-show="subnetPreview && !subnetPreview.isValidBase"
+                                  class="text-yellow-400 text-xs">
+                                rounded to <span class="font-mono" x-text="subnetPreview ? subnetPreview.network : ''"></span>
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs">
+                            <span class="text-slate-500">Network address:</span>
+                            <span class="text-slate-300 font-mono" x-text="subnetPreview ? subnetPreview.network : ''"></span>
+                            <span class="text-slate-500">Gateway (auto):</span>
+                            <span class="text-slate-300 font-mono" x-text="subnetPreview ? subnetPreview.gateway : ''"></span>
+                            <span class="text-slate-500">First usable IP:</span>
+                            <span class="text-slate-300 font-mono" x-text="subnetPreview ? subnetPreview.first : ''"></span>
+                            <span class="text-slate-500">Last usable IP:</span>
+                            <span class="text-slate-300 font-mono" x-text="subnetPreview ? subnetPreview.last : ''"></span>
+                            <span class="text-slate-500">Broadcast:</span>
+                            <span class="text-slate-300 font-mono" x-text="subnetPreview ? subnetPreview.broadcast : ''"></span>
+                        </div>
+                        <p class="text-purple-300 text-xs font-medium pt-1.5 border-t border-slate-600"
+                           x-text="subnetPreview ? subnetPreview.containerIPs + ' IPs available for your containers' : ''"></p>
+                    </div>
+
+                    <!-- Manual CIDR override (shown for bridge; auto-filled by size picker, editable) -->
+                    <div x-show="createForm.driver === 'bridge'">
+                        <label class="block text-sm text-slate-300 mb-1">
+                            Subnet (CIDR)
+                            <span x-show="createForm.subnetSize" class="text-slate-500 font-normal text-xs">— auto-filled, edit if needed</span>
+                            <span x-show="!createForm.subnetSize" class="text-slate-500 font-normal text-xs">— or type a custom CIDR here</span>
+                        </label>
+                        <input x-model="createForm.subnet"
+                               @input.debounce.500ms="validateSubnet()"
+                               type="text" placeholder="e.g. 172.20.0.0/24"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                               :class="subnetValidation && !subnetValidation.valid ? 'border-red-500' : ''">
+                        <p x-show="subnetValidation && !subnetValidation.valid"
+                           class="text-red-400 text-xs mt-1" x-text="subnetValidation ? subnetValidation.reason : ''"></p>
+                        <p x-show="subnetValidation && subnetValidation.valid"
+                           class="text-green-400 text-xs mt-1">Subnet is valid</p>
+                    </div>
+
+                    <!-- Gateway — only shown when user typed a custom CIDR (size picker handles it automatically) -->
+                    <div x-show="createForm.subnet && !createForm.subnetSize">
+                        <label class="block text-sm text-slate-300 mb-1">Gateway <span class="text-slate-500 font-normal text-xs">— leave empty for auto</span></label>
+                        <input x-model="createForm.gateway"
+                               type="text" placeholder="e.g. 172.20.0.1"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                    </div>
+
+                    <!-- Purpose -->
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Purpose / Description</label>
+                        <input x-model="createForm.purpose"
+                               type="text" placeholder="What is this network for?"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <!-- Modal footer -->
+                <div class="flex justify-end gap-3 mt-6">
+                    <button @click="showCreateModal = false"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition">
+                        Cancel
+                    </button>
+                    <button @click="createNetwork()"
+                            :disabled="creating || !createForm.name.trim()"
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded transition">
+                        <span x-show="!creating">Create Network</span>
+                        <span x-show="creating">Creating...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             DELETE CONFIRMATION MODAL
+             ============================================================ -->
+        <div x-show="networkToDelete"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div class="bg-slate-800 border border-slate-700 rounded-lg w-full max-w-md mx-4 p-6 shadow-xl">
+                <h3 class="text-xl font-semibold text-white mb-2">Delete Network</h3>
+                <p class="text-slate-400 mb-1">Are you sure you want to delete:</p>
+                <p class="text-white font-mono font-semibold mb-4" x-text="networkToDelete ? networkToDelete.name : ''"></p>
+                <p x-show="networkToDelete && networkToDelete.container_count > 0"
+                   class="text-yellow-400 text-sm mb-4">
+                    ⚠ This network has <span x-text="networkToDelete ? networkToDelete.container_count : 0"></span> container(s) attached.
+                    Disconnect them first.
+                </p>
+                <div class="flex justify-end gap-3">
+                    <button @click="networkToDelete = null"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition">
+                        Cancel
+                    </button>
+                    <button @click="deleteNetwork()"
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             RESERVE IP RANGE MODAL
+             ============================================================ -->
+        <div x-show="showReserveModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div class="bg-slate-800 border border-slate-700 rounded-lg w-full max-w-md mx-4 p-6 shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-white">Reserve IP Range</h3>
+                    <button @click="showReserveModal = null" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Range Name <span class="text-red-400">*</span></label>
+                        <input x-model="reserveForm.range_name"
+                               type="text" placeholder="e.g. Web services"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="block text-sm text-slate-300 mb-1">Start IP <span class="text-red-400">*</span></label>
+                            <input x-model="reserveForm.start_ip"
+                                   type="text" placeholder="e.g. 172.20.0.10"
+                                   class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-sm text-slate-300 mb-1">End IP <span class="text-red-400">*</span></label>
+                            <input x-model="reserveForm.end_ip"
+                                   type="text" placeholder="e.g. 172.20.0.19"
+                                   class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">Description</label>
+                        <input x-model="reserveForm.description"
+                               type="text" placeholder="What are these IPs for?"
+                               class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-5">
+                    <button @click="showReserveModal = null"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition">Cancel</button>
+                    <button @click="submitReservation()"
+                            :disabled="reserving || !reserveForm.range_name.trim() || !reserveForm.start_ip.trim() || !reserveForm.end_ip.trim()"
+                            class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded transition">
+                        <span x-show="!reserving">Reserve</span>
+                        <span x-show="reserving">Reserving...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             CONNECT CONTAINER MODAL
+             ============================================================ -->
+        <div x-show="showConnectModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div class="bg-slate-800 border border-slate-700 rounded-lg w-full max-w-md mx-4 p-6 shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-white">Connect Container</h3>
+                    <button @click="showConnectModal = null" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                </div>
+                <p class="text-slate-400 text-sm mb-3">
+                    Pick a container to add to <span class="text-white font-mono" x-text="showConnectModal ? showConnectModal.name : ''"></span>
+                </p>
+
+                <div x-show="connectLoading" class="text-center py-6 text-slate-500 text-sm">Loading containers…</div>
+
+                <div x-show="!connectLoading && availableToConnect.length > 0" class="max-h-56 overflow-y-auto space-y-1.5">
+                    <template x-for="c in availableToConnect" :key="c.container_id">
+                        <button @click="connectContainer(c.container_id)"
+                                class="w-full text-left flex items-center gap-3 bg-slate-700 hover:bg-slate-600 rounded px-3 py-2 transition">
+                            <span class="text-slate-200 text-sm font-mono" x-text="c.name"></span>
+                            <span :class="{
+                                'bg-green-900 text-green-300': c.state === 'running',
+                                'bg-red-900 text-red-300': c.state === 'exited',
+                                'bg-slate-600 text-slate-300': !['running','exited'].includes(c.state)
+                            }" class="text-xs px-1.5 py-0.5 rounded" x-text="c.state"></span>
+                            <span x-show="c.managed === false" class="text-xs px-1.5 py-0.5 rounded bg-orange-900 text-orange-300">External</span>
+                        </button>
+                    </template>
+                </div>
+
+                <p x-show="!connectLoading && availableToConnect.length === 0"
+                   class="text-slate-500 text-sm italic">No containers available to connect</p>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             NETWORK DOCS MODAL
+             ============================================================ -->
+        <div x-show="showDocsModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+            <div class="bg-slate-800 border border-slate-700 rounded-lg w-full max-w-3xl mx-4 shadow-xl flex flex-col" style="max-height: 85vh;">
+                <div class="flex justify-between items-center p-5 border-b border-slate-700">
+                    <h3 class="text-lg font-semibold text-white">Network Documentation</h3>
+                    <div class="flex gap-2">
+                        <button @click="copyDocs()"
+                                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-sm transition">
+                            <span x-show="!docsCopied">Copy Markdown</span>
+                            <span x-show="docsCopied">Copied!</span>
+                        </button>
+                        <button @click="showDocsModal = false" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                    </div>
+                </div>
+                <!-- Scrollable markdown content -->
+                <div class="overflow-y-auto p-5">
+                    <pre class="text-slate-300 text-sm whitespace-pre-wrap font-mono leading-relaxed" x-text="docsMarkdown"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             TOAST
+             ============================================================ -->
+        <div x-show="toast.show"
+             class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-lg shadow-lg transition-all duration-300"
+             :class="{
+                 'bg-green-600': toast.type === 'success',
+                 'bg-red-600':   toast.type === 'error',
+                 'bg-blue-600':  toast.type === 'info'
+             }">
+            <p class="text-white" x-text="toast.message"></p>
         </div>
     </main>
 </div>
+
+<!-- ================================================================
+     Alpine.js Component
+     ================================================================ -->
+<script>
+function networksComponent() {
+    return {
+        // State
+        networks: [],
+        loading: true,
+        selectedNetwork: null,        // expanded detail view
+        recommendation: null,
+
+        // Create modal
+        showCreateModal: false,
+        creating: false,
+        createForm: { name: '', driver: 'bridge', subnet: '', gateway: '', purpose: '', subnetSize: '', networkBase: '' },
+        subnetValidation: null,
+
+        // Delete modal
+        networkToDelete: null,
+
+        // Connect-container modal
+        showConnectModal: null,        // network object when open
+        allContainers: [],             // fetched from /api/containers
+        connectLoading: false,
+
+        // IP allocations (loaded when detail panel opens)
+        ipAllocations: null,
+
+        // Reserve modal
+        showReserveModal: null,   // set to network_id to open
+        reserving: false,
+        reserveForm: { range_name: '', start_ip: '', end_ip: '', description: '' },
+
+        // Topology view
+        viewMode: 'list',              // 'list' | 'topology'
+        topologyLoading: false,
+        topologyData: [],              // enriched network list with containers
+
+        // Toast
+        toast: { show: false, message: '', type: 'info' },
+
+        // Docs modal
+        showDocsModal: false,
+        docsMarkdown: '',
+        docsCopied: false,
+
+        // ---- computed ----
+        get managedCount() {
+            return this.networks.filter(n => n.managed).length;
+        },
+        get oversizedCount() {
+            return this.networks.filter(n => n.oversized).length;
+        },
+        get filteredNetworks() {
+            // host and none excluded: no IP assignment possible on those networks
+            return this.networks.filter(n => !['host', 'none'].includes(n.name));
+        },
+
+        // ---- connect-container modal ----
+        get availableToConnect() {
+            if (!this.showConnectModal) return [];
+            // Use selectedNetwork (detail-level) which has the containers list
+            const currentIds = new Set(
+                (this.selectedNetwork && this.selectedNetwork.network_id === this.showConnectModal.network_id
+                    ? this.selectedNetwork.containers || []
+                    : []
+                ).map(c => c.container_id)
+            );
+            return this.allContainers.filter(c => !currentIds.has(c.container_id));
+        },
+
+        // ---- create-form helpers ----
+        // Subnet live-preview: client-side CIDR math (no server round-trip)
+        get subnetPreview() {
+            const subnet = this.createForm.subnet;
+            if (!subnet || !subnet.includes('/')) return null;
+            const [ipStr, prefixStr] = subnet.split('/');
+            const prefix = parseInt(prefixStr);
+            if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+            const parts = ipStr.split('.').map(Number);
+            if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) return null;
+
+            const ipInt  = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+            const mask   = prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0;
+            const invMask = (~mask) >>> 0;
+            const netInt = (ipInt & mask) >>> 0;
+            const bcastInt = (netInt | invMask) >>> 0;
+
+            const toIp = n => [(n>>>24)&0xFF, (n>>>16)&0xFF, (n>>>8)&0xFF, n&0xFF].join('.');
+
+            const network   = toIp(netInt);
+            const broadcast = toIp(bcastInt);
+            const gateway   = toIp((netInt + 1) >>> 0);
+            const first     = toIp((netInt + 2) >>> 0);   // first container IP (after gateway)
+            const last      = toIp((bcastInt - 1) >>> 0); // last before broadcast
+            const containerIPs = Math.max(0, (1 << (32 - prefix)) - 3); // total − network − broadcast − gateway
+
+            return { network, broadcast, gateway, first, last, containerIPs, isValidBase: network === ipStr };
+        },
+
+        // Valid network-number offsets for the chosen prefix within the free base
+        get networkNumberOptions() {
+            const size = parseInt(this.createForm.subnetSize);
+            if (!size || size > 30 || size < 24) return [];
+            if (!this.recommendation) return [];
+
+            const baseIp = this.recommendation.small.split('/')[0]; // e.g. '172.20.0.0'
+            const parts  = baseIp.split('.').map(Number);           // [172,20,0,0]
+
+            if (size === 24) {
+                // Each /24 differs in the 3rd octet; show first 10
+                const opts = [];
+                for (let i = 0; i < 10; i++) {
+                    opts.push({ label: parts[0]+'.'+parts[1]+'.'+i+'.0', value: parts[0]+'.'+parts[1]+'.'+i+'.0' });
+                }
+                return opts;
+            }
+            // /25 – /30: offsets step through the 4th octet
+            const step   = 1 << (32 - size);   // e.g. /28 → 16
+            const base3  = parts[0]+'.'+parts[1]+'.'+parts[2];
+            const opts   = [];
+            for (let i = 0; i < 256; i += step) {
+                opts.push({ label: base3+'.'+i, value: base3+'.'+i });
+            }
+            return opts;
+        },
+
+        // ---- topology SVG (string-based, injected via x-html) ----
+        get topoContainerCount() {
+            const seen = new Set();
+            this.topologyData.forEach(net => {
+                (net.containers || []).forEach(c => seen.add(c.container_id));
+            });
+            return seen.size;
+        },
+        get topoSvgHtml() {
+            const nets = this.topologyData;
+            if (nets.length === 0) return '';
+
+            // Deduplicate containers across networks
+            const seenC = {};
+            nets.forEach(net => {
+                (net.containers || []).forEach(c => {
+                    if (!seenC[c.container_id]) seenC[c.container_id] = { ...c };
+                });
+            });
+            const containers = Object.values(seenC);
+
+            // Layout math
+            const items = Math.max(nets.length, containers.length);
+            const w     = Math.max(800, items * 140);
+            const netSp = w / (nets.length + 1);
+            const netNodes = nets.map((n, i) => ({ ...n, cx: netSp * (i + 1) }));
+
+            const cSp    = containers.length ? w / (containers.length + 1) : w;
+            const cNodes = containers.map((c, i) => ({ ...c, cx: cSp * (i + 1) }));
+            const cMap   = {};
+            cNodes.forEach(c => { cMap[c.container_id] = c; });
+
+            const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+            let s = `<svg viewBox="0 0 ${w} 380" class="w-full" style="min-width:${Math.min(w,600)}px">`;
+            s += '<defs><marker id="dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4"><circle cx="5" cy="5" r="4" fill="rgba(148,163,184,0.5)"/></marker></defs>';
+
+            // Edges (drawn first so nodes paint on top)
+            netNodes.forEach(net => {
+                (net.containers || []).forEach(c => {
+                    const t = cMap[c.container_id];
+                    if (t) s += `<line x1="${net.cx}" y1="106" x2="${t.cx}" y2="234" stroke="rgba(148,163,184,0.25)" stroke-width="2" marker-start="url(#dot)" marker-end="url(#dot)"/>`;
+                });
+            });
+
+            // Network nodes (top row, cy=70)
+            netNodes.forEach(net => {
+                const label = net.name.length > 10 ? esc(net.name.slice(0,9)) + '…' : esc(net.name);
+                if (net.oversized) s += `<circle cx="${net.cx}" cy="70" r="44" fill="none" stroke="#ca8a04" stroke-width="2.5" stroke-dasharray="6 3"/>`;
+                s += `<circle cx="${net.cx}" cy="70" r="36" fill="${net.managed ? '#15803d' : '#475569'}" stroke="#1e293b" stroke-width="3"/>`;
+                s += `<text x="${net.cx}" y="68" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="white" font-family="ui-monospace,monospace" font-weight="600">${label}</text>`;
+                s += `<text x="${net.cx}" y="120" text-anchor="middle" font-size="9" fill="#64748b" font-family="ui-monospace,monospace">${esc(net.subnet || 'no subnet')}</text>`;
+            });
+
+            // Divider
+            s += `<line x1="0" y1="155" x2="${w}" y2="155" stroke="rgba(71,85,105,0.3)" stroke-width="1" stroke-dasharray="4 6"/>`;
+
+            // Container nodes (bottom row, cy=260) — blue stroke = managed, orange = external
+            if (cNodes.length > 0) {
+                cNodes.forEach(c => {
+                    const label = c.name.length > 11 ? esc(c.name.slice(0,10)) + '…' : esc(c.name);
+                    const stroke = c.managed === false ? '#c2410c' : '#475569';
+                    s += `<circle cx="${c.cx}" cy="260" r="26" fill="#1e293b" stroke="${stroke}" stroke-width="2"/>`;
+                    s += `<text x="${c.cx}" y="257" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#e2e8f0" font-family="ui-monospace,monospace">${label}</text>`;
+                    s += `<text x="${c.cx}" y="270" text-anchor="middle" dominant-baseline="middle" font-size="8" fill="#64748b" font-family="ui-monospace,monospace">${esc(c.ipv4_address || '')}</text>`;
+                });
+            } else {
+                s += `<text x="${w/2}" y="250" text-anchor="middle" font-size="13" fill="#64748b" font-style="italic">No containers attached</text>`;
+            }
+
+            s += '</svg>';
+            return s;
+        },
+
+        // ---- lifecycle ----
+        async init() {
+            await Promise.all([this.loadNetworks(), this.loadRecommendation()]);
+        },
+
+        // ---- data loading ----
+        async loadNetworks() {
+            this.loading = true;
+            try {
+                const res = await fetch('/api/networks');
+                const data = await res.json();
+                if (data.success) {
+                    this.networks = data.data;
+                } else {
+                    this.showToast('Failed to load networks: ' + data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to load networks: ' + e.message, 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadRecommendation() {
+            try {
+                const res = await fetch('/api/networks/recommend');
+                const data = await res.json();
+                if (data.success) {
+                    this.recommendation = data.data;
+                }
+            } catch (e) {
+                // non-fatal
+            }
+        },
+
+        // ---- detail toggle ----
+        async selectNetwork(network) {
+            // If already selected, collapse
+            if (this.selectedNetwork && this.selectedNetwork.network_id === network.network_id) {
+                this.selectedNetwork = null;
+                this.ipAllocations = null;
+                return;
+            }
+            try {
+                // Always fetch detail; only fetch /ips when the network has a subnet
+                const detailRes = await fetch('/api/networks/' + network.network_id);
+                const detail = await detailRes.json();
+                if (detail.success) {
+                    this.selectedNetwork = detail.data;
+                }
+                if (network.subnet) {
+                    const ipsRes = await fetch('/api/networks/' + network.network_id + '/ips');
+                    const ips = await ipsRes.json();
+                    if (ips.success) {
+                        this.ipAllocations = ips.data;
+                    } else {
+                        this.ipAllocations = null;
+                    }
+                } else {
+                    this.ipAllocations = null;
+                }
+            } catch (e) {
+                this.showToast('Failed to load network details', 'error');
+            }
+        },
+
+        // ---- create ----
+        applySubnetSize() {
+            if (!this.createForm.subnetSize) {
+                this.createForm.subnet = '';
+                this.createForm.networkBase = '';
+                this.subnetValidation = null;
+                return;
+            }
+            const opts = this.networkNumberOptions;
+            if (opts.length > 0) {
+                this.createForm.networkBase = opts[0].value;
+                this.createForm.subnet = opts[0].value + '/' + this.createForm.subnetSize;
+            } else if (this.recommendation) {
+                // /24 or larger: use recommendation base directly
+                const baseIp = this.recommendation.small.split('/')[0];
+                this.createForm.subnet = baseIp.split('.').slice(0,3).join('.') + '.0/' + this.createForm.subnetSize;
+            }
+            this.validateSubnet();
+        },
+
+        applyNetworkBase() {
+            if (this.createForm.networkBase && this.createForm.subnetSize) {
+                this.createForm.subnet = this.createForm.networkBase + '/' + this.createForm.subnetSize;
+                this.validateSubnet();
+            }
+        },
+
+        async validateSubnet() {
+            if (!this.createForm.subnet.trim()) {
+                this.subnetValidation = null;
+                return;
+            }
+            try {
+                const res = await fetch('/api/networks/validate-subnet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subnet: this.createForm.subnet })
+                });
+                this.subnetValidation = await res.json();
+            } catch (e) {
+                this.subnetValidation = { valid: false, reason: 'Validation request failed' };
+            }
+        },
+
+        async createNetwork() {
+            if (!this.createForm.name.trim()) return;
+            // Block if subnet was entered but validation failed
+            if (this.createForm.subnet && this.subnetValidation && !this.subnetValidation.valid) {
+                this.showToast('Fix subnet validation errors first', 'error');
+                return;
+            }
+
+            this.creating = true;
+            try {
+                const res = await fetch('/api/networks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name:    this.createForm.name.trim(),
+                        driver:  this.createForm.driver,
+                        subnet:  this.createForm.subnet || null,
+                        gateway: this.createForm.gateway || null,
+                        purpose: this.createForm.purpose || null
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Network '${data.name}' created`, 'success');
+                    this.showCreateModal = false;
+                    this.createForm = { name: '', driver: 'bridge', subnet: '', gateway: '', purpose: '', subnetSize: '', networkBase: '' };
+                    this.subnetValidation = null;
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to create network: ' + e.message, 'error');
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        // ---- delete ----
+        confirmDelete(network) {
+            this.networkToDelete = network;
+        },
+
+        async deleteNetwork() {
+            if (!this.networkToDelete) return;
+            const id = this.networkToDelete.network_id;
+            const name = this.networkToDelete.name;
+            this.networkToDelete = null;
+
+            try {
+                const res = await fetch('/api/networks/' + id, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Network '${name}' deleted`, 'success');
+                    // Clear selection if it was the deleted network
+                    if (this.selectedNetwork && this.selectedNetwork.network_id === id) {
+                        this.selectedNetwork = null;
+                    }
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to delete network: ' + e.message, 'error');
+            }
+        },
+
+        // ---- adopt / release (FEAT-017) ----
+        async adoptNetwork(network) {
+            try {
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to adopt network: ' + e.message, 'error');
+            }
+        },
+
+        async releaseNetwork(network) {
+            try {
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    if (this.selectedNetwork && this.selectedNetwork.network_id === network.network_id) {
+                        this.selectedNetwork = null;
+                    }
+                    await this.loadNetworks();
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to release network: ' + e.message, 'error');
+            }
+        },
+
+        // ---- connect / disconnect containers ----
+        async openConnectModal(network) {
+            this.showConnectModal = network;
+            this.connectLoading = true;
+            try {
+                const res = await fetch('/api/containers?show_all=true');
+                const data = await res.json();
+                this.allContainers = data.success ? data.data : [];
+            } catch (e) {
+                this.allContainers = [];
+            } finally {
+                this.connectLoading = false;
+            }
+        },
+
+        async connectContainer(containerId) {
+            if (!this.showConnectModal) return;
+            const netId = this.showConnectModal.network_id;
+            try {
+                const res = await fetch('/api/networks/' + netId + '/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ container_id: containerId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Connected '${data.container_name}'`, 'success');
+                    this.showConnectModal = null;
+                    // Refresh detail panel so the new container appears
+                    if (this.selectedNetwork) {
+                        const detailRes = await fetch('/api/networks/' + this.selectedNetwork.network_id);
+                        const detail = await detailRes.json();
+                        if (detail.success) this.selectedNetwork = detail.data;
+                    }
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to connect: ' + e.message, 'error');
+            }
+        },
+
+        async disconnectContainer(networkId, containerId) {
+            try {
+                const res = await fetch('/api/networks/' + networkId + '/connect/' + containerId, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Disconnected '${data.container_name}'`, 'success');
+                    // Refresh detail panel
+                    if (this.selectedNetwork) {
+                        const detailRes = await fetch('/api/networks/' + this.selectedNetwork.network_id);
+                        const detail = await detailRes.json();
+                        if (detail.success) this.selectedNetwork = detail.data;
+                    }
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to disconnect: ' + e.message, 'error');
+            }
+        },
+
+        // ---- topology ----
+        async switchToTopology() {
+            this.viewMode = 'topology';
+            this.topologyLoading = true;
+            try {
+                const promises = this.filteredNetworks.map(n =>
+                    fetch('/api/networks/' + n.network_id)
+                        .then(r => r.json())
+                        .then(d => d.success ? d.data : null)
+                        .catch(() => null)
+                );
+                const details = await Promise.all(promises);
+                // Merge oversized flag before filtering so indices stay aligned
+                this.topologyData = details
+                    .map((d, i) => d !== null ? { ...d, oversized: this.filteredNetworks[i]?.oversized || false } : null)
+                    .filter(d => d !== null);
+            } catch (e) {
+                this.showToast('Failed to load topology: ' + e.message, 'error');
+            } finally {
+                this.topologyLoading = false;
+            }
+        },
+
+        // ---- IP reservations ----
+        async submitReservation() {
+            if (!this.showReserveModal) return;
+            this.reserving = true;
+            try {
+                const res = await fetch('/api/networks/' + this.showReserveModal + '/reserve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        range_name:  this.reserveForm.range_name.trim(),
+                        start_ip:    this.reserveForm.start_ip.trim(),
+                        end_ip:      this.reserveForm.end_ip.trim(),
+                        description: this.reserveForm.description.trim() || null,
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Reserved ${data.count} IP(s) as "${data.range_name}"`, 'success');
+                    this.showReserveModal = null;
+                    this.reserveForm = { range_name: '', start_ip: '', end_ip: '', description: '' };
+                    // Refresh IP allocations in the open detail panel
+                    if (this.selectedNetwork) {
+                        const ipsRes = await fetch('/api/networks/' + this.selectedNetwork.network_id + '/ips');
+                        const ips = await ipsRes.json();
+                        if (ips.success) this.ipAllocations = ips.data;
+                    }
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to reserve IPs: ' + e.message, 'error');
+            } finally {
+                this.reserving = false;
+            }
+        },
+
+        async deleteReservation(networkId, rangeName) {
+            try {
+                const res = await fetch(
+                    '/api/networks/' + networkId + '/reserve/' + encodeURIComponent(rangeName),
+                    { method: 'DELETE' }
+                );
+                const data = await res.json();
+                if (data.success) {
+                    this.showToast(`Released "${rangeName}" (${data.ips_released} IPs)`, 'success');
+                    // Refresh IP allocations
+                    if (this.ipAllocations && this.ipAllocations.network_id === networkId) {
+                        const ipsRes = await fetch('/api/networks/' + networkId + '/ips');
+                        const ips = await ipsRes.json();
+                        if (ips.success) this.ipAllocations = ips.data;
+                    }
+                } else {
+                    this.showToast(data.error, 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to release reservation: ' + e.message, 'error');
+            }
+        },
+
+        // ---- docs ----
+        async fetchDocs() {
+            try {
+                const res = await fetch('/api/networks/docs');
+                const data = await res.json();
+                if (data.success) {
+                    this.docsMarkdown = data.markdown;
+                    this.showDocsModal = true;
+                } else {
+                    this.showToast(data.error || 'Failed to generate docs', 'error');
+                }
+            } catch (e) {
+                this.showToast('Failed to fetch docs: ' + e.message, 'error');
+            }
+        },
+
+        async copyDocs() {
+            try {
+                await navigator.clipboard.writeText(this.docsMarkdown);
+                this.docsCopied = true;
+                setTimeout(() => { this.docsCopied = false; }, 2000);
+            } catch (e) {
+                this.showToast('Clipboard write failed: ' + e.message, 'error');
+            }
+        },
+
+        // ---- toast ----
+        showToast(message, type = 'info') {
+            this.toast.message = message;
+            this.toast.type = type;
+            this.toast.show = true;
+            setTimeout(() => { this.toast.show = false; }, 4000);
+        }
+    };
+}
+</script>
 {% endblock %}

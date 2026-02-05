@@ -34,7 +34,12 @@ app.secret_key = os.urandom(24)
 
 # Configuration
 app.config['DATABASE_PATH'] = os.getenv('DATABASE_PATH', 'data/dockermate.db')
-app.config['TESTING'] = True  # Disable HTTPS redirect
+app.config['TESTING'] = True          # Disable HTTPS redirect
+app.config['RATELIMIT_ENABLED'] = True  # Flask-Limiter disables itself when TESTING; re-enable
+
+# Initialise rate-limiter (extensions.py creates the Limiter instance)
+from backend.extensions import limiter
+limiter.init_app(app)
 
 # Import and register authentication blueprint
 from backend.api.auth import auth_bp
@@ -48,8 +53,23 @@ app.register_blueprint(system_bp)
 from backend.api.containers import containers_bp
 app.register_blueprint(containers_bp)
 
+# Import and register images blueprint (Sprint 3)
+from backend.api.images import images_bp
+app.register_blueprint(images_bp)
+
+# Import and register networks blueprint (Sprint 4)
+from backend.api.networks import networks_bp
+app.register_blueprint(networks_bp)
+
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info, is_authenticated
+
+# Start background scheduler once.
+# In debug mode Flask spawns a reloader child (WERKZEUG_RUN_MAIN=true) — only
+# start there to avoid a duplicate.  Outside debug mode the guard is skipped.
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    from backend.services.scheduler import start_scheduler
+    start_scheduler()
 
 # ========================================
 # Health Check Endpoint
@@ -124,6 +144,14 @@ def networks():
     return render_template('networks.html', session=session_info)
 
 
+@app.route('/health')
+@require_auth()
+def health():
+    """Health & Alerts detail page"""
+    session_info = get_current_session_info()
+    return render_template('health.html', session=session_info)
+
+
 @app.route('/settings')
 @require_auth()
 def settings():
@@ -142,6 +170,16 @@ def logout():
 # ========================================
 # Error Handlers
 # ========================================
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    """Handle rate-limit (429) errors from Flask-Limiter"""
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": "Too many requests. Please try again later.",
+        "retry_after": error.retry_after if hasattr(error, 'retry_after') else None
+    }), 429
+
 
 @app.errorhandler(404)
 def not_found(error):

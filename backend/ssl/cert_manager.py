@@ -68,12 +68,62 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from datetime import datetime, timedelta
 import socket
+import struct
 import os
 import ipaddress
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_host_ips() -> List[str]:
+    """
+    Detect the host machine's routable IP addresses from inside a container.
+
+    Order of priority:
+        1. DOCKERMATE_HOST_IP env var  (explicit, most reliable)
+        2. Default gateway from /proc/1/net/route  (Docker bridge host-side IP)
+        3. host.docker.internal  (Docker Desktop / BuildKit)
+
+    Returns a de-duplicated list; may be empty if none are reachable.
+    """
+    seen: set = set()
+    ips: List[str] = []
+
+    def _add(ip_str: str) -> None:
+        try:
+            normalized = str(ipaddress.IPv4Address(ip_str))
+            if normalized not in seen:
+                seen.add(normalized)
+                ips.append(normalized)
+        except (ValueError, TypeError):
+            pass
+
+    # 1. Explicit override
+    env_ip = os.environ.get('DOCKERMATE_HOST_IP', '').strip()
+    if env_ip:
+        _add(env_ip)
+
+    # 2. Default gateway from routing table (Linux only)
+    try:
+        with open('/proc/1/net/route') as fh:
+            for line in fh.readlines()[1:]:
+                fields = line.strip().split()
+                if len(fields) >= 3 and fields[1] == '00000000':  # default route
+                    gw_int = int(fields[2], 16)
+                    _add(socket.inet_ntoa(struct.pack('<I', gw_int)))
+                    break
+    except Exception:
+        pass
+
+    # 3. host.docker.internal (Docker Desktop / BuildKit)
+    try:
+        _add(socket.gethostbyname('host.docker.internal'))
+    except Exception:
+        pass
+
+    return ips
 
 
 class CertificateManager:
@@ -183,13 +233,28 @@ class CertificateManager:
                 x509.DNSName('localhost'),
                 x509.DNSName('dockermate'),  # Common Docker hostname
             ]
-            
-            # Add IP addresses
-            try:
-                san_list.append(x509.IPAddress(ipaddress.IPv4Address(local_ip)))
-                san_list.append(x509.IPAddress(ipaddress.IPv4Address('127.0.0.1')))
-            except ValueError as e:
-                logger.warning(f"Invalid IP address format: {e}")
+
+            # Collect all IPs, deduplicated
+            added_ips: set = set()
+
+            def _add_ip(ip_str: str) -> None:
+                try:
+                    addr = ipaddress.IPv4Address(ip_str)
+                    if str(addr) not in added_ips:
+                        added_ips.add(str(addr))
+                        san_list.append(x509.IPAddress(addr))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Skipping invalid IP {ip_str!r}: {e}")
+
+            _add_ip('127.0.0.1')
+            _add_ip(local_ip)           # container's own bridge IP
+
+            # Host machine IPs (gateway / env var / host.docker.internal)
+            host_ips = _detect_host_ips()
+            for hip in host_ips:
+                _add_ip(hip)
+            if host_ips:
+                logger.info(f"  Host IPs added to SANs: {host_ips}")
             
             # Create certificate
             logger.info("Creating certificate...")
@@ -240,12 +305,13 @@ class CertificateManager:
                 'expires_at': not_valid_after,
                 'issued_at': not_valid_before,
                 'hostname': hostname,
-                'ip_address': local_ip
+                'ip_address': local_ip,
+                'san_ips': list(added_ips),
             }
-            
+
             logger.info(f"Certificate generated successfully")
             logger.info(f"  Hostname: {hostname}")
-            logger.info(f"  IP: {local_ip}")
+            logger.info(f"  SANs (IPs): {list(added_ips)}")
             logger.info(f"  Expires: {not_valid_after.strftime('%Y-%m-%d')}")
             
             return result

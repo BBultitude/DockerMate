@@ -30,25 +30,25 @@
     </div>
     
     <!-- Delete Confirmation Modal -->
-    <div x-show="deleteModal.show" 
+    <div x-show="deleteModal.show"
          x-cloak
          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
          @click.self="closeDeleteModal()">
         <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
             <h3 class="text-xl font-bold text-white mb-4">Confirm Delete</h3>
             <p class="text-slate-300 mb-6">
-                Are you sure you want to delete container 
+                Are you sure you want to delete container
                 <strong class="text-white" x-text="deleteModal.containerName"></strong>?
                 <span x-show="deleteModal.isRunning" class="text-yellow-400 block mt-2">
                     ⚠️ Container is currently running and will be force-removed.
                 </span>
             </p>
             <div class="flex justify-end space-x-3">
-                <button @click="closeDeleteModal()" 
+                <button @click="closeDeleteModal()"
                         class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
                     Cancel
                 </button>
-                <button @click="confirmDelete()" 
+                <button @click="confirmDelete()"
                         :disabled="deleteModal.loading"
                         class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition">
                     <span x-show="!deleteModal.loading">Delete</span>
@@ -57,7 +57,131 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Retag Modal (FEAT-013) -->
+    <div x-show="retagModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="retagModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Retag Container</h3>
+            <p class="text-slate-400 text-sm mb-1">Container: <strong class="text-white" x-text="retagModal.container?.name"></strong></p>
+            <p class="text-slate-400 text-sm mb-4">Current image: <code class="text-indigo-300" x-text="retagModal.currentImage"></code></p>
+
+            <label class="block text-slate-300 text-sm font-medium mb-1">New tag</label>
+            <input type="text"
+                   x-model="retagModal.newTag"
+                   placeholder="e.g. 1.29, latest"
+                   class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 mb-2">
+
+            <div x-show="retagModal.error" class="text-red-400 text-sm mb-2" x-text="retagModal.error"></div>
+
+            <div class="flex justify-end space-x-3 mt-4">
+                <button @click="retagModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="submitRetag()"
+                        :disabled="retagModal.loading || !retagModal.newTag.trim()"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition">
+                    <span x-show="!retagModal.loading">Retag & Redeploy</span>
+                    <span x-show="retagModal.loading">Retagging...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Operations Confirmation Modal -->
+    <div x-show="bulkModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="!bulkModal.loading && closeBulkModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-slate-700 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-xl font-bold text-white mb-4">
+                <span x-text="bulkModal.completed ? 'Bulk Operation Results' : 'Confirm Bulk Operation'"></span>
+            </h3>
+
+            <!-- Confirmation View -->
+            <div x-show="!bulkModal.completed">
+                <p class="text-slate-300 mb-4">
+                    Are you sure you want to <strong class="text-white" x-text="bulkModal.operationLabel"></strong>
+                    <strong class="text-white" x-text="selectedContainers.length"></strong> container(s)?
+                </p>
+
+                <!-- Warning for delete operation with running containers -->
+                <div x-show="bulkModal.operation === 'delete' && containers.filter(c => selectedContainers.includes(c.name) && c.state === 'running').length > 0"
+                     class="bg-yellow-900 border border-yellow-700 text-yellow-200 px-4 py-3 rounded mb-4">
+                    <p class="font-medium">⚠️ Warning</p>
+                    <p class="text-sm mt-1">
+                        <span x-text="containers.filter(c => selectedContainers.includes(c.name) && c.state === 'running').length"></span>
+                        running container(s) will be force-removed.
+                    </p>
+                </div>
+
+                <!-- Container List -->
+                <div class="bg-slate-900 rounded p-4 mb-6 max-h-60 overflow-y-auto">
+                    <template x-for="containerName in selectedContainers" :key="containerName">
+                        <div class="flex items-center justify-between text-white font-mono text-sm py-1">
+                            <span x-text="containerName"></span>
+                            <span x-show="containers.find(c => c.name === containerName)?.state === 'running'"
+                                  class="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded">
+                                RUNNING
+                            </span>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button @click="closeBulkModal()"
+                            :disabled="bulkModal.loading"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-md transition">
+                        Cancel
+                    </button>
+                    <button @click="executeBulkOperation()"
+                            :disabled="bulkModal.loading"
+                            :class="{
+                                'bg-green-600 hover:bg-green-700': bulkModal.operation === 'start',
+                                'bg-yellow-600 hover:bg-yellow-700': bulkModal.operation === 'stop',
+                                'bg-blue-600 hover:bg-blue-700': bulkModal.operation === 'restart',
+                                'bg-red-600 hover:bg-red-700': bulkModal.operation === 'delete'
+                            }"
+                            class="px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition">
+                        <span x-show="!bulkModal.loading" x-text="'Confirm ' + bulkModal.operationLabel"></span>
+                        <span x-show="bulkModal.loading">Processing...</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results View -->
+            <div x-show="bulkModal.completed">
+                <div class="space-y-2 mb-6 max-h-96 overflow-y-auto">
+                    <template x-for="result in bulkModal.results" :key="result.container">
+                        <div :class="{
+                            'bg-green-900 border-green-700': result.success,
+                            'bg-red-900 border-red-700': !result.success
+                        }" class="border rounded p-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-white font-mono text-sm" x-text="result.container"></span>
+                                <span x-show="result.success" class="text-green-300">✓</span>
+                                <span x-show="!result.success" class="text-red-300">✗</span>
+                            </div>
+                            <p x-show="result.message" class="text-xs mt-1"
+                               :class="result.success ? 'text-green-300' : 'text-red-300'"
+                               x-text="result.message"></p>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="flex justify-end">
+                    <button @click="closeBulkModal()"
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Container Details Modal -->
     <div x-show="detailsModal.show" 
          x-cloak
@@ -86,7 +210,7 @@
                                 'bg-red-900 text-red-300': detailsModal.container?.state === 'exited',
                                 'bg-yellow-900 text-yellow-300': detailsModal.container?.state === 'paused',
                                 'bg-gray-700 text-gray-300': !['running', 'exited', 'paused'].includes(detailsModal.container?.state)
-                            }" class="px-2 py-1 rounded text-sm font-medium" x-text="detailsModal.container?.state"></span>
+                            }" class="px-2 py-1 rounded text-sm font-medium uppercase" x-text="detailsModal.container?.state"></span>
                         </div>
                     </div>
                     <div>
@@ -110,12 +234,33 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- Resource Limits -->
+                <div x-show="detailsModal.container?.cpu_limit || detailsModal.container?.memory_limit">
+                    <label class="text-slate-400 text-sm">Resource Limits</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div x-show="detailsModal.container?.cpu_limit">
+                                <span class="text-slate-400 text-xs">CPU Limit:</span>
+                                <div class="text-white font-mono text-sm">
+                                    <span x-text="detailsModal.container?.cpu_limit"></span> cores
+                                </div>
+                            </div>
+                            <div x-show="detailsModal.container?.memory_limit">
+                                <span class="text-slate-400 text-xs">Memory Limit:</span>
+                                <div class="text-white font-mono text-sm">
+                                    <span x-text="Math.round(detailsModal.container?.memory_limit / (1024 * 1024))"></span> MB
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Ports -->
                 <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
                     <label class="text-slate-400 text-sm">Port Mappings</label>
                     <div class="mt-1 bg-slate-900 rounded p-3 space-y-1">
-                        <template x-for="port in detailsModal.container?.ports" :key="port.host">
+                        <template x-for="(port, index) in detailsModal.container?.ports" :key="`port-${index}`">
                             <div class="text-white font-mono text-sm">
                                 <span class="text-blue-400" x-text="port.host"></span>
                                 <span class="text-slate-500"> → </span>
@@ -125,12 +270,12 @@
                         </template>
                     </div>
                 </div>
-                
+
                 <!-- Environment Variables -->
                 <div x-show="detailsModal.container?.env_vars && detailsModal.container.env_vars.length > 0">
                     <label class="text-slate-400 text-sm">Environment Variables</label>
                     <div class="mt-1 bg-slate-900 rounded p-3 max-h-40 overflow-y-auto">
-                        <template x-for="env in detailsModal.container?.env_vars" :key="env">
+                        <template x-for="(env, index) in detailsModal.container?.env_vars" :key="`env-${index}`">
                             <div class="text-white font-mono text-sm" x-text="env"></div>
                         </template>
                     </div>
@@ -140,8 +285,8 @@
                 <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
                     <label class="text-slate-400 text-sm">Volume Mounts</label>
                     <div class="mt-1 bg-slate-900 rounded p-3">
-                        <template x-for="volume in detailsModal.container?.volumes" :key="volume">
-                            <div class="text-white font-mono text-sm" x-text="volume"></div>
+                        <template x-for="(volume, index) in detailsModal.container?.volumes" :key="`volume-${index}`">
+                            <div class="text-white font-mono text-sm" x-text="volume.source + ':' + volume.destination + ':' + volume.mode"></div>
                         </template>
                     </div>
                 </div>
@@ -159,7 +304,115 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Logs Viewer Modal -->
+    <div x-show="logsModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"
+         @click.self="closeLogsModal()">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-6xl w-full border border-slate-700 max-h-[90vh] flex flex-col">
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h3 class="text-2xl font-bold text-white">Container Logs</h3>
+                    <p class="text-slate-400 text-sm mt-1">
+                        <span x-text="logsModal.containerName"></span>
+                        <span x-show="logsModal.containerId" class="text-slate-500 ml-2" x-text="`(${logsModal.containerId?.substring(0, 12)})`"></span>
+                    </p>
+                </div>
+                <button @click="closeLogsModal()" class="text-slate-400 hover:text-white text-2xl">✕</button>
+            </div>
+
+            <!-- Controls -->
+            <div class="bg-slate-900 rounded-lg p-4 mb-4 space-y-3">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <!-- Tail Lines -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Lines</label>
+                        <select x-model="logsModal.tail" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="100">Last 100</option>
+                            <option value="500">Last 500</option>
+                            <option value="1000">Last 1000</option>
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+
+                    <!-- Timestamps -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Timestamps</label>
+                        <select x-model="logsModal.timestamps" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="false">Hide</option>
+                            <option value="true">Show</option>
+                        </select>
+                    </div>
+
+                    <!-- Auto-refresh -->
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Auto-refresh</label>
+                        <select x-model="logsModal.autoRefresh" @change="toggleAutoRefresh()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="false">Off</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                        </select>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-end gap-2">
+                        <button @click="fetchLogs()" :disabled="logsModal.loading" class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded text-sm transition">
+                            <span x-show="!logsModal.loading">Refresh</span>
+                            <span x-show="logsModal.loading">...</span>
+                        </button>
+                        <button @click="downloadLogs()" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition" title="Download logs">
+                            ⬇
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                <div>
+                    <input type="text"
+                           x-model="logsModal.searchTerm"
+                           @input="filterLogs()"
+                           placeholder="🔍 Search logs..."
+                           class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm placeholder-slate-500">
+                </div>
+
+                <!-- Docker CLI Command -->
+                <div class="bg-slate-950 rounded p-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs text-slate-500">Docker CLI Equivalent:</span>
+                        <button @click="copyCliCommand()" class="text-xs text-blue-400 hover:text-blue-300">Copy</button>
+                    </div>
+                    <code class="text-xs text-green-400 font-mono" x-text="logsModal.cliCommand"></code>
+                </div>
+            </div>
+
+            <!-- Logs Display -->
+            <div class="flex-1 bg-slate-950 rounded-lg p-4 overflow-y-auto min-h-0 font-mono text-sm">
+                <div x-show="logsModal.loading" class="text-slate-500 text-center py-8">Loading logs...</div>
+                <div x-show="!logsModal.loading && logsModal.error" class="text-red-400 text-center py-8" x-text="logsModal.error"></div>
+                <div x-show="!logsModal.loading && !logsModal.error && !logsModal.filteredLogs" class="text-slate-500 text-center py-8">No logs available</div>
+                <pre x-show="!logsModal.loading && !logsModal.error && logsModal.filteredLogs"
+                     class="text-slate-300 whitespace-pre-wrap break-all overflow-x-auto"
+                     x-text="logsModal.filteredLogs"></pre>
+            </div>
+
+            <!-- Footer Stats -->
+            <div class="mt-4 text-xs text-slate-500 flex justify-between items-center">
+                <div>
+                    <span x-text="logsModal.lineCount"></span> lines
+                    <span x-show="logsModal.truncated" class="text-yellow-400 ml-2">(truncated)</span>
+                    <span x-show="logsModal.searchTerm" class="text-blue-400 ml-2">
+                        (filtered: <span x-text="logsModal.matchCount"></span> matches)
+                    </span>
+                </div>
+                <div x-show="logsModal.lastUpdated">
+                    Last updated: <span x-text="logsModal.lastUpdated"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Create Container Modal - MINIMAL SCROLL FIX -->
     <div x-show="createModal.show" 
          x-cloak
@@ -246,6 +499,19 @@
                             </select>
                             <p class="text-xs text-slate-500 mt-1">How Docker should handle container restarts</p>
                         </div>
+
+                        <!-- Network -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Network</label>
+                            <select x-model="createModal.formData.network"
+                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Default (bridge)</option>
+                                <template x-for="net in createModal.networks" :key="net.network_id">
+                                    <option :value="net.name" x-text="net.name + (net.subnet ? ' (' + net.subnet + ')' : '')"></option>
+                                </template>
+                            </select>
+                            <p class="text-xs text-slate-500 mt-1">Which network should this container join?</p>
+                        </div>
                     </div>
                 </div>
                 
@@ -269,29 +535,40 @@
                     
                     <div class="space-y-2">
                         <template x-for="(port, index) in createModal.formData.ports" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="port.container"
-                                       placeholder="80/tcp"
-                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">→</span>
-                                <input type="number" 
-                                       x-model="port.host"
-                                       min="1"
-                                       max="65535"
-                                       placeholder="8080"
-                                       :class="{'border-red-500': createModal.errors['port_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <button type="button" 
-                                        @click="removePort(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="number"
+                                           x-model="port.container"
+                                           min="1"
+                                           max="65535"
+                                           placeholder="80"
+                                           :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                           class="w-24 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <select x-model="port.protocol"
+                                            :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                            class="w-20 px-2 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="tcp">TCP</option>
+                                        <option value="udp">UDP</option>
+                                    </select>
+                                    <span class="text-slate-400">→</span>
+                                    <input type="number"
+                                           x-model="port.host"
+                                           min="1"
+                                           max="65535"
+                                           placeholder="8080"
+                                           :class="{'border-red-500': createModal.errors['port_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <button type="button"
+                                            @click="removePort(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['port_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['port_' + index]"></p>
                             </div>
                         </template>
                     </div>
-                    <p class="text-xs text-slate-500 mt-2">💡 Format: container_port/protocol → host_port (e.g., 80/tcp → 8080)</p>
+                    <p class="text-xs text-slate-500 mt-2">💡 Container port → Host port (e.g., 80/TCP → 8080)</p>
                 </div>
                 
                 <!-- Volume Mounts Section -->
@@ -314,28 +591,31 @@
                     
                     <div class="space-y-2">
                         <template x-for="(volume, index) in createModal.formData.volumes" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="volume.host"
-                                       placeholder="/host/path"
-                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">→</span>
-                                <input type="text" 
-                                       x-model="volume.container"
-                                       placeholder="/container/path"
-                                       :class="{'border-red-500': createModal.errors['volume_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <select x-model="volume.mode"
-                                        class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                    <option value="rw">Read-Write</option>
-                                    <option value="ro">Read-Only</option>
-                                </select>
-                                <button type="button" 
-                                        @click="removeVolume(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="text"
+                                           x-model="volume.host"
+                                           placeholder="/host/path"
+                                           :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <span class="text-slate-400">→</span>
+                                    <input type="text"
+                                           x-model="volume.container"
+                                           placeholder="/container/path"
+                                           :class="{'border-red-500': createModal.errors['volume_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <select x-model="volume.mode"
+                                            class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="rw">Read-Write</option>
+                                        <option value="ro">Read-Only</option>
+                                    </select>
+                                    <button type="button"
+                                            @click="removeVolume(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['volume_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['volume_' + index]"></p>
                             </div>
                         </template>
                     </div>
@@ -362,23 +642,26 @@
                     
                     <div class="space-y-2">
                         <template x-for="(envVar, index) in createModal.formData.env_vars" :key="index">
-                            <div class="flex items-center space-x-2">
-                                <input type="text" 
-                                       x-model="envVar.key"
-                                       placeholder="VARIABLE_NAME"
-                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <span class="text-slate-400">=</span>
-                                <input type="text" 
-                                       x-model="envVar.value"
-                                       placeholder="value"
-                                       :class="{'border-red-500': createModal.errors['env_' + index]}"
-                                       class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                                <button type="button" 
-                                        @click="removeEnvVar(index)"
-                                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
-                                    Remove
-                                </button>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <input type="text"
+                                           x-model="envVar.key"
+                                           placeholder="VARIABLE_NAME"
+                                           :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <span class="text-slate-400">=</span>
+                                    <input type="text"
+                                           x-model="envVar.value"
+                                           placeholder="value"
+                                           :class="{'border-red-500': createModal.errors['env_' + index]}"
+                                           class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <button type="button"
+                                            @click="removeEnvVar(index)"
+                                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition">
+                                        Remove
+                                    </button>
+                                </div>
+                                <p x-show="createModal.errors['env_' + index]" class="text-xs text-red-400 ml-1" x-text="createModal.errors['env_' + index]"></p>
                             </div>
                         </template>
                     </div>
@@ -472,68 +755,110 @@
                 <div class="bg-slate-800 px-4 py-2 rounded-lg border border-slate-700">
                     <div class="text-sm text-slate-400">Containers</div>
                     <div class="text-lg font-bold text-white">
-                        <span x-text="runningCount"></span> / <span x-text="hardwareProfile.max_containers || '--'"></span>
+                        <span x-text="containers.length"></span> / <span x-text="hardwareProfile.max_containers || '--'"></span>
                     </div>
                     <div class="text-xs text-slate-500" x-text="hardwareProfile.profile_name || 'Loading...'"></div>
                 </div>
-                
+
                 <!-- Create Button -->
                 <button @click="openCreateModal()"
-                        :disabled="runningCount >= (hardwareProfile.max_containers || 999)"
+                        :disabled="containers.length >= (hardwareProfile.max_containers || 999)"
                         class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        :title="runningCount >= (hardwareProfile.max_containers || 999) ? 'Hardware limit reached' : 'Create new container'">
+                        :title="containers.length >= (hardwareProfile.max_containers || 999) ? 'Hardware limit reached' : 'Create new container'">
                     <span class="mr-2">+</span> Create Container
                 </button>
             </div>
         </div>
-        
+
+        <!-- FEATURE-005: Show All Containers Toggle -->
+        <div class="mb-4 flex items-center gap-2">
+            <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
+                <input type="checkbox"
+                       x-model="showAllContainers"
+                       @change="loadContainers()"
+                       class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                <span>Show all Docker containers (including external & DockerMate)</span>
+            </label>
+            <span class="text-xs text-slate-500" x-show="showAllContainers">
+                (External containers can't be managed - no action buttons)
+            </span>
+        </div>
+
         <!-- Filters -->
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-4">
+                    <h3 class="text-lg font-semibold text-white">Filters</h3>
+                    <label x-show="filteredContainers.length > 0" class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
+                        <input type="checkbox"
+                               x-model="selectAll"
+                               @change="toggleSelectAll()"
+                               class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        <span>Select All (<span x-text="filteredContainers.filter(c => c.managed !== false).length"></span> managed)</span>
+                    </label>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-sm text-slate-400">
+                        Showing <span class="text-blue-400 font-semibold" x-text="filteredContainers.length"></span>
+                        of <span x-text="containers.length"></span> containers
+                    </span>
+                    <button @click="clearFilters()"
+                            x-show="filters.search || filters.status !== 'all' || filters.environment !== 'all' || filters.image !== 'all'"
+                            class="text-sm text-blue-400 hover:text-blue-300 underline">
+                        Clear all
+                    </button>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <!-- Search -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Search</label>
-                    <input type="text" 
-                           x-model="filters.search" 
+                    <input type="text"
+                           x-model="filters.search"
                            @input="applyFilters()"
-                           placeholder="Search by name or image..."
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                           placeholder="Name or image..."
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-                
+
                 <!-- Status Filter -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Status</label>
-                    <select x-model="filters.status" 
+                    <select x-model="filters.status"
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Statuses</option>
                         <option value="running">Running</option>
                         <option value="exited">Stopped</option>
                         <option value="paused">Paused</option>
+                        <option value="created">Created</option>
                     </select>
                 </div>
-                
+
                 <!-- Environment Filter -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Environment</label>
-                    <select x-model="filters.environment" 
+                    <select x-model="filters.environment"
                             @change="applyFilters()"
-                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Environments</option>
                         <option value="DEV">Development</option>
                         <option value="STG">Staging</option>
                         <option value="PROD">Production</option>
                     </select>
                 </div>
-                
-                <!-- Sync Button -->
-                <div class="flex items-end">
-                    <button @click="syncWithDocker()" 
-                            :disabled="syncLoading"
-                            class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white rounded transition">
-                        <span x-show="!syncLoading">🔄 Sync with Docker</span>
-                        <span x-show="syncLoading">⏳ Syncing...</span>
-                    </button>
+
+                <!-- Image Filter -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Image</label>
+                    <select x-model="filters.image"
+                            @change="applyFilters()"
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="all">All Images</option>
+                        <template x-for="image in availableImages" :key="image">
+                            <option :value="image" x-text="image"></option>
+                        </template>
+                    </select>
                 </div>
             </div>
         </div>
@@ -552,42 +877,104 @@
         </div>
         
         <!-- No Results from Filters -->
-        <div x-show="!loading && filteredContainers.length === 0 && containers.length > 0" 
+        <div x-show="!loading && filteredContainers.length === 0 && containers.length > 0"
              class="text-center py-12 bg-slate-800 rounded-lg border border-slate-700">
             <p class="text-slate-400 text-lg">No containers match your filters</p>
             <p class="text-slate-500 mt-2">Try adjusting your search or filter criteria</p>
         </div>
-        
+
+        <!-- Bulk Actions Toolbar -->
+        <div x-show="selectedContainers.length > 0 && !loading"
+             class="bg-blue-900 border border-blue-700 rounded-lg p-4 mb-4 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <span class="text-white font-medium">
+                    <span x-text="selectedContainers.length"></span> container(s) selected
+                </span>
+                <button @click="selectedContainers = []; selectAll = false"
+                        class="text-blue-300 hover:text-blue-100 text-sm underline">
+                    Clear selection
+                </button>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button @click="showBulkConfirmation('start')"
+                        class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition text-sm font-medium">
+                    ▶ Start All
+                </button>
+                <button @click="showBulkConfirmation('stop')"
+                        class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md transition text-sm font-medium">
+                    ⏸ Stop All
+                </button>
+                <button @click="showBulkConfirmation('restart')"
+                        class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition text-sm font-medium">
+                    🔄 Restart All
+                </button>
+                <button @click="showBulkConfirmation('delete')"
+                        class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition text-sm font-medium">
+                    🗑 Delete All
+                </button>
+            </div>
+        </div>
+
         <!-- Containers Grid -->
         <div x-show="!loading && filteredContainers.length > 0" class="space-y-4">
             <template x-for="container in filteredContainers" :key="container.name">
-                <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 transition">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 transition"
+                     :class="{'ring-2 ring-blue-500': selectedContainers.includes(container.name)}">
                     <div class="flex justify-between items-start mb-4">
-                        <!-- Container Info -->
-                        <div class="flex-1">
-                            <div class="flex items-center space-x-3">
-                                <h3 class="text-xl font-semibold text-white" x-text="container.name"></h3>
+                        <!-- Selection Checkbox -->
+                        <div class="flex items-start space-x-3 flex-1">
+                            <input type="checkbox"
+                                   :checked="selectedContainers.includes(container.name)"
+                                   @change="toggleSelect(container.name)"
+                                   :disabled="container.managed === false"
+                                   class="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                   :class="container.managed === false ? 'cursor-not-allowed' : 'cursor-pointer'"
+                                   :title="container.managed === false ? 'External containers cannot be selected for bulk operations' : 'Select container'">
+                            <!-- Container Info -->
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-3">
+                                    <h3 class="text-xl font-semibold text-white" x-text="container.name"></h3>
                                 <span :class="{
                                     'bg-green-900 text-green-300': container.state === 'running',
                                     'bg-red-900 text-red-300': container.state === 'exited',
                                     'bg-yellow-900 text-yellow-300': container.state === 'paused',
                                     'bg-gray-700 text-gray-300': !['running', 'exited', 'paused'].includes(container.state)
                                 }" class="px-2 py-1 rounded text-xs font-medium uppercase" x-text="container.state"></span>
-                                <span :class="{
+                                <span x-show="container.environment"
+                                      :class="{
                                     'bg-green-900 text-green-300': container.environment === 'DEV',
                                     'bg-yellow-900 text-yellow-300': container.environment === 'STG',
                                     'bg-red-900 text-red-300': container.environment === 'PROD'
                                 }" class="px-2 py-1 rounded text-xs font-medium" x-text="container.environment"></span>
+                                <!-- FEATURE-005: Managed/External Badge -->
+                                <span x-show="showAllContainers && container.managed === false"
+                                      class="px-2 py-1 rounded text-xs font-medium bg-orange-900 text-orange-300"
+                                      title="External container not managed by DockerMate">
+                                    EXTERNAL
+                                </span>
+                                <span x-show="showAllContainers && container.managed === true"
+                                      class="px-2 py-1 rounded text-xs font-medium bg-blue-900 text-blue-300"
+                                      title="Managed by DockerMate">
+                                    MANAGED
+                                </span>
                             </div>
-                            <p class="text-slate-400 mt-1 font-mono text-sm" x-text="container.image_name"></p>
-                            <p class="text-slate-500 text-xs mt-1">
-                                Created: <span x-text="formatDate(container.created_at)"></span>
-                            </p>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <p class="text-slate-400 font-mono text-sm" x-text="container.image_name"></p>
+                                    <span x-show="hasUpdate(container)"
+                                          class="px-2 py-0.5 bg-yellow-900 text-yellow-300 rounded text-xs font-medium">
+                                        UPDATE AVAILABLE
+                                    </span>
+                                </div>
+                                <p class="text-slate-500 text-xs mt-1">
+                                    Created: <span x-text="formatDate(container.created_at)"></span>
+                                </p>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- Container Actions -->
-                    <div class="flex flex-wrap gap-2">
+                    <!-- FEATURE-005: Only show actions for managed containers -->
+                    <div class="flex flex-wrap gap-2" x-show="container.managed !== false">
                         <!-- Start Button -->
                         <button x-show="container.state !== 'running'"
                                 @click="performAction(container.name, 'start')"
@@ -597,7 +984,7 @@
                             <span x-show="!actionLoading[container.name]">▶ Start</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
-                        
+
                         <!-- Stop Button -->
                         <button x-show="container.state === 'running'"
                                 @click="performAction(container.name, 'stop')"
@@ -607,7 +994,7 @@
                             <span x-show="!actionLoading[container.name]">⏸ Stop</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
-                        
+
                         <!-- Restart Button -->
                         <button x-show="container.state === 'running'"
                                 @click="performAction(container.name, 'restart')"
@@ -617,19 +1004,66 @@
                             <span x-show="!actionLoading[container.name]">🔄 Restart</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
-                        
+
                         <!-- Details Button -->
                         <button @click="showDetails(container)"
                                 class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition text-sm font-medium">
                             ℹ Details
                         </button>
-                        
+
+                        <!-- Logs Button -->
+                        <button @click="openLogsModal(container.container_id, container.name)"
+                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition text-sm font-medium"
+                                title="View container logs (docker logs)">
+                            📜 Logs
+                        </button>
+
+                        <!-- Sprint 3: Update Button (shown when image has update available) -->
+                        <button x-show="hasUpdate(container)"
+                                @click="updateContainer(container.name)"
+                                :disabled="actionLoading[container.name]"
+                                title="Pull latest image and recreate container"
+                                class="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">⬆ Update</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
+                        <!-- Sprint 3: Rollback Button — disabled when no update history exists -->
+                        <button @click="rollbackContainer(container.name)"
+                                :disabled="actionLoading[container.name] || !container.rollback_available"
+                                :title="container.rollback_available ? 'Rollback to previous image version' : 'No previous version to roll back to'"
+                                class="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">↩ Rollback</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
+                        <!-- FEAT-013: Retag Button -->
+                        <button @click="openRetagModal(container)"
+                                :disabled="actionLoading[container.name]"
+                                title="Change image tag and redeploy"
+                                class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">🏷 Retag</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
                         <!-- Delete Button -->
                         <button @click="showDeleteConfirmation(container.name, container.name)"
                                 :disabled="actionLoading[container.name]"
                                 title="Delete container (docker rm)"
                                 class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
                             <span x-show="!actionLoading[container.name]">🗑 Delete</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+                    </div>
+
+                    <!-- FEAT-012: Import button for external containers -->
+                    <div x-show="container.managed === false" class="mt-4 p-3 bg-orange-900/20 border border-orange-700 rounded text-sm text-orange-300 flex items-center justify-between">
+                        <span>ℹ️ External container — not managed by DockerMate.</span>
+                        <button @click="importContainer(container)"
+                                :disabled="actionLoading[container.name]"
+                                title="Import this container into DockerMate (metadata only)"
+                                class="ml-3 px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded text-sm font-medium whitespace-nowrap transition">
+                            <span x-show="!actionLoading[container.name]">⬇ Import</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
                     </div>
@@ -640,7 +1074,12 @@
         <!-- Auto-refresh Indicator -->
         <div x-show="!loading && containers.length > 0" class="mt-6 text-center">
             <p class="text-slate-500 text-sm">
-                🔄 Auto-refreshing every 10 seconds | Last updated: <span x-text="lastUpdated"></span>
+                <span x-show="selectedContainers.length === 0">
+                    🔄 Auto-refreshing every 10 seconds | Last updated: <span x-text="lastUpdated"></span>
+                </span>
+                <span x-show="selectedContainers.length > 0" class="text-yellow-400">
+                    ⏸ Auto-refresh paused (containers selected) | Last updated: <span x-text="lastUpdated"></span>
+                </span>
             </p>
         </div>
     </main>
@@ -666,19 +1105,40 @@ function containersComponent() {
         containers: [],
         filteredContainers: [],
         loading: false,
-        syncLoading: false,
         lastUpdated: 'Never',
         pollInterval: null,
         hardwareProfile: {},
         runningCount: 0,
         actionLoading: {},
+
+        // Bulk operations state
+        selectedContainers: [],
+        selectAll: false,
+        bulkModal: {
+            show: false,
+            operation: '',
+            operationLabel: '',
+            loading: false,
+            results: [],
+            completed: false
+        },
         
         // Filter state
         filters: {
             search: '',
             status: 'all',
-            environment: 'all'
+            environment: 'all',
+            image: 'all'
         },
+
+        // Show all containers toggle (FEATURE-005)
+        showAllContainers: true,
+
+        // Sprint 3: map of "repository:tag" -> update_available (from images API)
+        imagesUpdateMap: {},
+
+        // Computed filter options (populated from containers)
+        availableImages: [],
         
         // Toast notification state
         toast: {
@@ -711,6 +1171,7 @@ function containersComponent() {
             loading: false,
             errors: {},
             errorMessage: '',
+            networks: [],          // available networks for the dropdown
             formData: {
                 name: '',
                 image: '',
@@ -722,16 +1183,52 @@ function containersComponent() {
                 cpu_limit: null,
                 memory_limit: null,
                 auto_start: true,
-                pull_if_missing: true
+                pull_if_missing: true,
+                network: ''
             }
         },
-        
+
+        // Logs viewer modal state
+        logsModal: {
+            show: false,
+            loading: false,
+            error: null,
+            containerId: null,
+            containerName: '',
+            logs: '',
+            filteredLogs: '',
+            searchTerm: '',
+            tail: '100',
+            timestamps: 'false',
+            autoRefresh: 'false',
+            autoRefreshInterval: null,
+            lineCount: 0,
+            matchCount: 0,
+            truncated: false,
+            cliCommand: '',
+            lastUpdated: null
+        },
+
+        // Retag modal state (FEAT-013)
+        retagModal: {
+            show: false,
+            loading: false,
+            container: null,
+            currentImage: '',
+            newTag: '',
+            error: null
+        },
+
         /**
          * Initialize component
          */
         async init() {
-            await this.loadHardwareProfile();
-            await this.loadContainers();
+            this.loadFiltersFromURL();  // Load filters from URL first
+            await Promise.all([
+                this.loadHardwareProfile(),
+                this.loadContainers(),
+                this.loadImagesUpdateMap()
+            ]);
             this.startPolling();
         },
         
@@ -757,21 +1254,33 @@ function containersComponent() {
          */
         async loadContainers() {
             this.loading = true;
-            
+
             try {
-                const response = await fetch('/api/containers');
-                
+                // FEATURE-005: Add show_all parameter to fetch all Docker containers
+                const params = new URLSearchParams();
+                params.append('all', 'true');  // Always include stopped containers
+                params.append('show_all', this.showAllContainers);
+
+                const response = await fetch(`/api/containers?${params}`);
+
                 // TASK 7 FIX: Check HTTP status first
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     // TASK 7 FIX: Force reactivity with spread
                     this.containers = [...(data.data || [])];
+
+                    // UI_ISSUES FIX: Initialize actionLoading to false for each container
+                    this.containers.forEach(container => {
+                        this.actionLoading[container.name] = false;
+                    });
+
                     this.runningCount = this.containers.filter(c => c.state === 'running').length;
+                    this.updateAvailableImages();  // Populate image filter dropdown
                     this.applyFilters();
                     this.lastUpdated = new Date().toLocaleTimeString();
                 } else {
@@ -785,43 +1294,91 @@ function containersComponent() {
         },
         
         /**
-         * Sync database with Docker daemon state
-         * Educational: Reconciles DockerMate database with actual Docker state
-         * 
-         * NOTE: Sync endpoint not yet implemented - just refresh container list
-         */
-        async syncWithDocker() {
-            this.syncLoading = true;
-            
-            try {
-                // Sync endpoint not yet implemented, just refresh the list
-                await this.loadContainers();
-                this.showToast('Container list refreshed', 'success');
-            } catch (error) {
-                this.showToast('Refresh failed: ' + error.message, 'error');
-            } finally {
-                this.syncLoading = false;
-            }
-        },
-        
-        /**
          * Apply filters to container list
          */
         applyFilters() {
             this.filteredContainers = this.containers.filter(container => {
-                // Search filter
-                const searchMatch = this.filters.search === '' || 
-                    container.name.toLowerCase().includes(this.filters.search.toLowerCase()) ||
-                    container.image_name.toLowerCase().includes(this.filters.search.toLowerCase());
-                
+                const searchLower = this.filters.search.toLowerCase().trim();
+
+                // Search filter - match whole words or word starts, not substrings within words
+                let searchMatch = this.filters.search === '';
+                if (!searchMatch && searchLower) {
+                    const nameText = (container.name || '').toLowerCase();
+                    const imageText = (container.image_name || '').toLowerCase();
+
+                    // Split text into words (by spaces, hyphens, colons, slashes)
+                    const nameWords = nameText.split(/[\s\-:\/]+/);
+                    const imageWords = imageText.split(/[\s\-:\/]+/);
+
+                    // Match if any word starts with the search term OR exact substring match in name
+                    searchMatch = nameWords.some(word => word.startsWith(searchLower)) ||
+                                  imageWords.some(word => word.startsWith(searchLower)) ||
+                                  nameText === searchLower ||  // Exact match
+                                  nameText.includes(' ' + searchLower); // Word in the middle
+                }
+
                 // Status filter
                 const statusMatch = this.filters.status === 'all' || container.state === this.filters.status;
-                
+
                 // Environment filter
                 const envMatch = this.filters.environment === 'all' || container.environment === this.filters.environment;
-                
-                return searchMatch && statusMatch && envMatch;
+
+                // Image filter
+                const imageMatch = this.filters.image === 'all' || container.image_name === this.filters.image;
+
+                return searchMatch && statusMatch && envMatch && imageMatch;
             });
+
+            // Update URL with current filters
+            this.updateURLParams();
+        },
+
+        /**
+         * Clear all filters
+         */
+        clearFilters() {
+            this.filters = {
+                search: '',
+                status: 'all',
+                environment: 'all',
+                image: 'all'
+            };
+            this.applyFilters();
+        },
+
+        /**
+         * Extract unique images from containers for filter dropdown
+         */
+        updateAvailableImages() {
+            const uniqueImages = [...new Set(this.containers.map(c => c.image_name))];
+            this.availableImages = uniqueImages.sort();
+        },
+
+        /**
+         * Update URL query parameters with current filters
+         */
+        updateURLParams() {
+            const params = new URLSearchParams();
+
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.status !== 'all') params.set('status', this.filters.status);
+            if (this.filters.environment !== 'all') params.set('env', this.filters.environment);
+            if (this.filters.image !== 'all') params.set('image', this.filters.image);
+
+            const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+            window.history.replaceState({}, '', newURL);
+        },
+
+        /**
+         * Load filters from URL query parameters
+         */
+        loadFiltersFromURL() {
+            const params = new URLSearchParams(window.location.search);
+
+            this.filters.search = params.get('search') || '';
+            this.filters.status = params.get('status') || 'all';
+            this.filters.environment = params.get('env') || 'all';
+            this.filters.image = params.get('image') || 'all';
         },
         
         /**
@@ -829,45 +1386,54 @@ function containersComponent() {
          * Educational: Maps to Docker CLI commands
          */
         async performAction(containerId, action) {
+            // Set loading state
             this.actionLoading[containerId] = true;
-            
+
             try {
                 const response = await fetch(`/api/containers/${containerId}/${action}`, {
                     method: 'POST'
                 });
-                
+
                 // TASK 7 FIX: Check HTTP status
                 if (!response.ok) {
-                    const data = await response.json();
+                    const data = await response.json().catch(() => ({}));
                     throw new Error(data.error || `Failed to ${action} container`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     this.showToast(`Container ${action} successful`, 'success');
                     await this.loadContainers();
                 } else {
-                    this.showToast(`Failed to ${action} container: ${data.message}`, 'error');
+                    this.showToast(`Failed to ${action} container: ${data.message || 'Unknown error'}`, 'error');
                 }
             } catch (error) {
+                console.error(`performAction error (${action} ${containerId}):`, error);
                 this.showToast(`Failed to ${action} container: ${error.message}`, 'error');
             } finally {
-                // TASK 7 FIX: Delete property instead of setting false
-                delete this.actionLoading[containerId];
+                // Clear loading state - use Vue.delete equivalent for reactivity
+                this.actionLoading[containerId] = false;
             }
         },
         
         /**
-         * Start health check polling for a container (Task 7 Fix - Issue 4)
+         * Start health check polling for a container with exponential backoff
+         * Polling schedule: 3s, 5s, 8s, 12s, 15s, 20s... (max 10 attempts)
          */
         startHealthCheckPolling(containerName) {
             if (this.healthCheckPolling[containerName]) return;
-            
+
             const maxAttempts = 10;
             let attempts = 0;
             const startTime = Date.now();
-            
+
+            // Exponential backoff delays (in milliseconds)
+            const getNextDelay = (attemptNum) => {
+                const delays = [3000, 5000, 8000, 12000, 15000, 20000, 25000, 30000, 35000, 40000];
+                return delays[attemptNum] || 40000;  // Cap at 40s
+            };
+
             const checkHealth = async () => {
                 attempts++;
                 try {
@@ -876,19 +1442,19 @@ function containersComponent() {
                         this.stopHealthCheckPolling(containerName);
                         return;
                     }
-                    
+
                     const data = await response.json();
                     if (data.success) {
                         const health = data.data;
                         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                        
+
                         if (health.healthy && health.running) {
                             this.showToast(`✅ Container "${containerName}" is healthy (${elapsed}s)`, 'success');
                             this.stopHealthCheckPolling(containerName);
                             await this.loadContainers();
                             return;
                         }
-                        
+
                         if (!health.running || (health.exit_code && health.exit_code !== 0)) {
                             const errorMsg = health.error || `Exited with code ${health.exit_code}`;
                             this.showToast(`❌ Container "${containerName}" crashed: ${errorMsg}`, 'error');
@@ -896,28 +1462,46 @@ function containersComponent() {
                             await this.loadContainers();
                             return;
                         }
-                        
+
                         if (attempts >= maxAttempts) {
                             this.showToast(`⚠️ Container "${containerName}" health check timeout`, 'warning');
                             this.stopHealthCheckPolling(containerName);
                             await this.loadContainers();
+                            return;
                         }
+
+                        // Schedule next check with exponential backoff
+                        const nextDelay = getNextDelay(attempts);
+                        const timeoutId = setTimeout(checkHealth, nextDelay);
+                        this.healthCheckPolling[containerName].timeoutId = timeoutId;
                     }
                 } catch (error) {
-                    if (attempts >= maxAttempts) this.stopHealthCheckPolling(containerName);
+                    if (attempts >= maxAttempts) {
+                        this.stopHealthCheckPolling(containerName);
+                    } else {
+                        // Retry with exponential backoff
+                        const nextDelay = getNextDelay(attempts);
+                        const timeoutId = setTimeout(checkHealth, nextDelay);
+                        this.healthCheckPolling[containerName].timeoutId = timeoutId;
+                    }
                 }
             };
-            
-            checkHealth();
-            const intervalId = setInterval(checkHealth, 2000);
-            this.healthCheckPolling[containerName] = { intervalId, attempts, startTime };
+
+            // Store polling state and start first check after initial delay
+            this.healthCheckPolling[containerName] = { attempts, startTime, timeoutId: null };
             this.showToast(`🔍 Monitoring "${containerName}" health...`, 'info');
+
+            // Start first check after 3 seconds
+            const timeoutId = setTimeout(checkHealth, 3000);
+            this.healthCheckPolling[containerName].timeoutId = timeoutId;
         },
         
         stopHealthCheckPolling(containerName) {
             const polling = this.healthCheckPolling[containerName];
             if (polling) {
-                clearInterval(polling.intervalId);
+                if (polling.timeoutId) {
+                    clearTimeout(polling.timeoutId);
+                }
                 delete this.healthCheckPolling[containerName];
             }
         },
@@ -979,9 +1563,23 @@ function containersComponent() {
         /**
          * Show container details modal
          */
-        showDetails(container) {
+        async showDetails(container) {
+            // Show modal immediately with list data, then enrich with full
+            // detail (env_vars, volumes, cpu/memory limits) for managed containers.
             this.detailsModal.container = container;
             this.detailsModal.show = true;
+
+            if (container.managed) {
+                try {
+                    const r = await fetch(`/api/containers/${container.container_id}`);
+                    if (r.ok) {
+                        const d = await r.json();
+                        if (d.success) this.detailsModal.container = d.data;
+                    }
+                } catch (e) {
+                    console.error('showDetails fetch:', e);
+                }
+            }
         },
         
         /**
@@ -1008,11 +1606,24 @@ function containersComponent() {
                 cpu_limit: null,
                 memory_limit: null,
                 auto_start: true,
-                pull_if_missing: true
+                pull_if_missing: true,
+                network: ''
             };
             this.createModal.errors = {};
             this.createModal.errorMessage = '';
             this.createModal.show = true;
+            // Load available networks for the dropdown
+            this.loadNetworksForCreate();
+        },
+
+        async loadNetworksForCreate() {
+            try {
+                const res = await fetch('/api/networks');
+                const data = await res.json();
+                if (data.success) {
+                    this.createModal.networks = data.data.filter(n => n.driver === 'bridge');
+                }
+            } catch (e) { /* non-fatal */ }
         },
         
         /**
@@ -1028,7 +1639,8 @@ function containersComponent() {
         addPort() {
             this.createModal.formData.ports.push({
                 container: '',
-                host: ''
+                host: '',
+                protocol: 'tcp'  // Default to TCP
             });
         },
         
@@ -1098,10 +1710,10 @@ function containersComponent() {
                 if (hasAnyValue) {
                     if (!port.container) {
                         errors[`port_${index}`] = 'Container port is required';
-                    } else if (!port.container.includes('/')) {
-                        errors[`port_${index}`] = 'Container port must include protocol (e.g., 80/tcp)';
+                    } else if (port.container < 1 || port.container > 65535) {
+                        errors[`port_${index}`] = 'Container port must be between 1 and 65535';
                     }
-                    
+
                     if (!port.host) {
                         errors[`port_${index}`] = 'Host port is required';
                     } else if (port.host < 1 || port.host > 65535) {
@@ -1201,13 +1813,20 @@ function containersComponent() {
                     auto_start: this.createModal.formData.auto_start,
                     pull_if_missing: this.createModal.formData.pull_if_missing
                 };
-                
+
+                // Network selection
+                if (this.createModal.formData.network) {
+                    requestData.network = this.createModal.formData.network;
+                }
+
                 // Transform ports array to API format
                 if (this.createModal.formData.ports.length > 0) {
                     requestData.ports = {};
                     this.createModal.formData.ports.forEach(port => {
                         if (port.container && port.host) {
-                            requestData.ports[port.container] = parseInt(port.host);
+                            // Combine port number with protocol (e.g., "80/tcp")
+                            const portKey = `${port.container}/${port.protocol || 'tcp'}`;
+                            requestData.ports[portKey] = parseInt(port.host);
                         }
                     });
                 }
@@ -1239,10 +1858,12 @@ function containersComponent() {
                 if (this.createModal.formData.cpu_limit) {
                     requestData.cpu_limit = parseFloat(this.createModal.formData.cpu_limit);
                 }
-                
+
                 if (this.createModal.formData.memory_limit) {
-                    // Convert MB to bytes for API
-                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * 1024 * 1024;
+                    // Convert MB to bytes for API (backend expects bytes per API spec)
+                    // User enters MB in form → API receives bytes → Docker receives bytes
+                    const MB_TO_BYTES = 1024 * 1024;
+                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * MB_TO_BYTES;
                 }
                 
                 // Make API request
@@ -1271,10 +1892,9 @@ function containersComponent() {
                     await this.loadContainers();
                     
                     // TASK 7 FIX: Start health check polling if auto-start enabled
+                    // Polling starts with 3s delay and uses exponential backoff
                     if (this.createModal.formData.auto_start) {
-                        setTimeout(() => {
-                            this.startHealthCheckPolling(containerName);
-                        }, 2000);
+                        this.startHealthCheckPolling(containerName);
                     }
                 } else {
                     // Handle API validation errors
@@ -1313,37 +1933,186 @@ function containersComponent() {
             // Add ports
             if (container.ports && container.ports.length > 0) {
                 container.ports.forEach(port => {
-                    cmd += ` \\\n  -p ${port}`;
+                    // Format: host:container/protocol
+                    const portStr = `${port.host}:${port.container}/${port.protocol || 'tcp'}`;
+                    cmd += ` \\\n  -p ${portStr}`;
                 });
             }
-            
+
+            // Add CPU limit
+            if (container.cpu_limit) {
+                cmd += ` \\\n  --cpus="${container.cpu_limit}"`;
+            }
+
+            // Add memory limit
+            if (container.memory_limit) {
+                const memoryMB = Math.round(container.memory_limit / (1024 * 1024));
+                cmd += ` \\\n  --memory="${memoryMB}m"`;
+            }
+
             // Add environment variables
             if (container.env_vars && container.env_vars.length > 0) {
                 container.env_vars.forEach(env => {
                     cmd += ` \\\n  -e "${env}"`;
                 });
             }
-            
+
             // Add volumes
             if (container.volumes && container.volumes.length > 0) {
                 container.volumes.forEach(volume => {
-                    cmd += ` \\\n  -v ${volume}`;
+                    cmd += ` \\\n  -v ${volume.source}:${volume.destination}:${volume.mode}`;
                 });
             }
-            
+
             // Add labels
             if (container.labels) {
                 Object.entries(container.labels).forEach(([key, value]) => {
                     cmd += ` \\\n  --label ${key}=${value}`;
                 });
             }
-            
+
             // Add image
             cmd += ` \\\n  ${container.image_name}`;
-            
+
             return cmd;
         },
-        
+
+        /**
+         * Open logs viewer modal
+         */
+        openLogsModal(containerId, containerName) {
+            this.logsModal.containerId = containerId;
+            this.logsModal.containerName = containerName;
+            this.logsModal.show = true;
+            this.logsModal.error = null;
+            this.logsModal.searchTerm = '';
+            this.fetchLogs();
+        },
+
+        /**
+         * Close logs viewer modal
+         */
+        closeLogsModal() {
+            this.logsModal.show = false;
+            if (this.logsModal.autoRefreshInterval) {
+                clearInterval(this.logsModal.autoRefreshInterval);
+                this.logsModal.autoRefreshInterval = null;
+            }
+        },
+
+        /**
+         * Fetch container logs from API
+         */
+        async fetchLogs() {
+            this.logsModal.loading = true;
+            this.logsModal.error = null;
+
+            try {
+                const params = new URLSearchParams({
+                    tail: this.logsModal.tail,
+                    timestamps: this.logsModal.timestamps
+                });
+
+                const response = await fetch(`/api/containers/${this.logsModal.containerId}/logs?${params}`);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.logsModal.logs = data.data.logs;
+                    this.logsModal.filteredLogs = data.data.logs;
+                    this.logsModal.lineCount = data.data.line_count;
+                    this.logsModal.truncated = data.data.truncated;
+                    this.logsModal.cliCommand = data.data.cli_command;
+                    this.logsModal.lastUpdated = new Date().toLocaleTimeString();
+                    this.filterLogs(); // Apply search filter if any
+                } else {
+                    this.logsModal.error = data.error || 'Failed to fetch logs';
+                }
+            } catch (error) {
+                this.logsModal.error = error.message;
+            } finally {
+                this.logsModal.loading = false;
+            }
+        },
+
+        /**
+         * Filter logs based on search term
+         */
+        filterLogs() {
+            if (!this.logsModal.searchTerm || !this.logsModal.logs) {
+                this.logsModal.filteredLogs = this.logsModal.logs;
+                this.logsModal.matchCount = 0;
+                return;
+            }
+
+            const searchLower = this.logsModal.searchTerm.toLowerCase();
+            const lines = this.logsModal.logs.split('\n');
+            const matchedLines = lines.filter(line => line.toLowerCase().includes(searchLower));
+
+            this.logsModal.filteredLogs = matchedLines.join('\n');
+            this.logsModal.matchCount = matchedLines.length;
+        },
+
+        /**
+         * Download logs to file
+         */
+        downloadLogs() {
+            const logs = this.logsModal.filteredLogs || this.logsModal.logs;
+            if (!logs) {
+                this.showToast('No logs to download', 'warning');
+                return;
+            }
+
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            a.download = `${this.logsModal.containerName}_${timestamp}.log`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            this.showToast('Logs downloaded successfully', 'success');
+        },
+
+        /**
+         * Toggle auto-refresh for logs
+         */
+        toggleAutoRefresh() {
+            // Clear existing interval
+            if (this.logsModal.autoRefreshInterval) {
+                clearInterval(this.logsModal.autoRefreshInterval);
+                this.logsModal.autoRefreshInterval = null;
+            }
+
+            // Set new interval if enabled
+            if (this.logsModal.autoRefresh !== 'false') {
+                const intervalSeconds = parseInt(this.logsModal.autoRefresh);
+                this.logsModal.autoRefreshInterval = setInterval(() => {
+                    this.fetchLogs();
+                }, intervalSeconds * 1000);
+            }
+        },
+
+        /**
+         * Copy CLI command to clipboard
+         */
+        async copyCliCommand() {
+            try {
+                await navigator.clipboard.writeText(this.logsModal.cliCommand);
+                this.showToast('CLI command copied to clipboard', 'success');
+            } catch (error) {
+                this.showToast('Failed to copy to clipboard', 'error');
+            }
+        },
+
         /**
          * Format date for display
          */
@@ -1353,6 +2122,148 @@ function containersComponent() {
             return date.toLocaleString();
         },
         
+        /**
+         * Sprint 3: Load images and build a map of image name -> update_available
+         */
+        async loadImagesUpdateMap() {
+            try {
+                const response = await fetch('/api/images');
+                if (!response.ok) return;
+                const data = await response.json();
+                if (data.success) {
+                    const map = {};
+                    data.data.forEach(img => {
+                        const key = (img.repository || '') + ':' + (img.tag || '');
+                        map[key] = img.update_available || false;
+                    });
+                    this.imagesUpdateMap = map;
+                }
+            } catch (e) { console.error('loadImagesUpdateMap:', e); }
+        },
+
+        /**
+         * Sprint 3: Check if a container's image has an update available
+         */
+        hasUpdate(container) {
+            return this.imagesUpdateMap[container.image_name] === true;
+        },
+
+        /**
+         * Sprint 3: Update a container's image to the latest version
+         */
+        async updateContainer(containerName) {
+            this.actionLoading[containerName] = true;
+            try {
+                const response = await fetch(`/api/containers/${containerName}/update`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Container "${containerName}" updated successfully`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.showToast(`Update failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Update failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[containerName] = false;
+            }
+        },
+
+        /**
+         * Sprint 3: Rollback a container to its previous image
+         */
+        async rollbackContainer(containerName) {
+            this.actionLoading[containerName] = true;
+            try {
+                const response = await fetch(`/api/containers/${containerName}/rollback`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Container "${containerName}" rolled back to ${data.data?.rolled_back_to || 'previous image'}`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.showToast(`Rollback failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Rollback failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[containerName] = false;
+            }
+        },
+
+        /**
+         * FEAT-012: Import an external container into DockerMate
+         */
+        async importContainer(container) {
+            this.actionLoading[container.name] = true;
+            try {
+                const response = await fetch(`/api/containers/${container.container_id}/import`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message || `Container "${container.name}" imported successfully`, 'success');
+                    await this.loadContainers();
+                } else {
+                    this.showToast(`Import failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                this.showToast(`Import failed: ${error.message}`, 'error');
+            } finally {
+                this.actionLoading[container.name] = false;
+            }
+        },
+
+        /**
+         * FEAT-013: Open the retag modal for a managed container
+         */
+        openRetagModal(container) {
+            this.retagModal.container = container;
+            this.retagModal.currentImage = container.image_name || '';
+            this.retagModal.newTag = '';
+            this.retagModal.error = null;
+            this.retagModal.loading = false;
+            this.retagModal.show = true;
+        },
+
+        /**
+         * FEAT-013: Submit the retag request
+         */
+        async submitRetag() {
+            const tag = this.retagModal.newTag.trim();
+            if (!tag) {
+                this.retagModal.error = 'Please enter a new tag.';
+                return;
+            }
+            this.retagModal.loading = true;
+            this.retagModal.error = null;
+            try {
+                const response = await fetch(`/api/containers/${this.retagModal.container.name}/retag`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag: tag })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.retagModal.show = false;
+                    this.showToast(`Container "${this.retagModal.container.name}" retagged to ${data.data?.new_image || tag}`, 'success');
+                    await this.loadContainers();
+                    await this.loadImagesUpdateMap();
+                } else {
+                    this.retagModal.error = data.error || 'Retag failed';
+                }
+            } catch (error) {
+                this.retagModal.error = error.message;
+            } finally {
+                this.retagModal.loading = false;
+            }
+        },
+
         /**
          * Show toast notification
          */
@@ -1373,12 +2284,147 @@ function containersComponent() {
          */
         startPolling() {
             this.pollInterval = setInterval(() => {
-                if (!this.loading && !this.deleteModal.show && !this.detailsModal.show && !this.createModal.show) {
+                // Pause polling when any modal is open, bulk operation in progress, or containers are selected
+                if (!this.loading &&
+                    !this.deleteModal.show &&
+                    !this.detailsModal.show &&
+                    !this.createModal.show &&
+                    !this.bulkModal.show &&
+                    !this.retagModal.show &&
+                    this.selectedContainers.length === 0) {
                     this.loadContainers();
                 }
             }, 10000); // 10 seconds
         },
         
+        /**
+         * Toggle selection of a single container
+         */
+        toggleSelect(containerName) {
+            const index = this.selectedContainers.indexOf(containerName);
+            if (index > -1) {
+                this.selectedContainers.splice(index, 1);
+            } else {
+                this.selectedContainers.push(containerName);
+            }
+            // Update selectAll checkbox state
+            this.selectAll = this.selectedContainers.length === this.filteredContainers.length;
+        },
+
+        /**
+         * Toggle selection of all filtered containers
+         */
+        toggleSelectAll() {
+            if (this.selectAll) {
+                // Select all filtered containers (excluding external containers)
+                this.selectedContainers = this.filteredContainers
+                    .filter(c => c.managed !== false)  // Only managed containers
+                    .map(c => c.name);
+            } else {
+                // Deselect all
+                this.selectedContainers = [];
+            }
+        },
+
+        /**
+         * Show bulk operation confirmation modal
+         */
+        showBulkConfirmation(operation) {
+            const labels = {
+                'start': 'start',
+                'stop': 'stop',
+                'restart': 'restart',
+                'delete': 'delete'
+            };
+
+            this.bulkModal.operation = operation;
+            this.bulkModal.operationLabel = labels[operation];
+            this.bulkModal.completed = false;
+            this.bulkModal.results = [];
+            this.bulkModal.show = true;
+        },
+
+        /**
+         * Execute bulk operation on selected containers
+         */
+        async executeBulkOperation() {
+            this.bulkModal.loading = true;
+            this.bulkModal.results = [];
+
+            const operation = this.bulkModal.operation;
+            const endpoints = {
+                'start': (name) => `/api/containers/${name}/start`,
+                'stop': (name) => `/api/containers/${name}/stop`,
+                'restart': (name) => `/api/containers/${name}/restart`,
+                'delete': (name) => `/api/containers/${name}?force=true`  // Force delete even if running
+            };
+
+            const method = operation === 'delete' ? 'DELETE' : 'POST';
+
+            // Process each container sequentially
+            for (const containerName of this.selectedContainers) {
+                try {
+                    const response = await fetch(endpoints[operation](containerName), {
+                        method: method
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        this.bulkModal.results.push({
+                            container: containerName,
+                            success: true,
+                            message: data.message || `${operation} successful`
+                        });
+                    } else {
+                        this.bulkModal.results.push({
+                            container: containerName,
+                            success: false,
+                            message: data.error || data.message || `Failed to ${operation}`
+                        });
+                    }
+                } catch (error) {
+                    this.bulkModal.results.push({
+                        container: containerName,
+                        success: false,
+                        message: error.message
+                    });
+                }
+            }
+
+            // Show results
+            this.bulkModal.loading = false;
+            this.bulkModal.completed = true;
+
+            // Reload containers to reflect changes
+            await this.loadContainers();
+
+            // Clear selection
+            this.selectedContainers = [];
+            this.selectAll = false;
+
+            // Show summary toast
+            const successCount = this.bulkModal.results.filter(r => r.success).length;
+            const totalCount = this.bulkModal.results.length;
+            if (successCount === totalCount) {
+                this.showToast(`Successfully ${this.bulkModal.operationLabel}ed ${successCount} container(s)`, 'success');
+            } else if (successCount > 0) {
+                this.showToast(`${successCount} of ${totalCount} operations succeeded`, 'warning');
+            } else {
+                this.showToast(`All operations failed`, 'error');
+            }
+        },
+
+        /**
+         * Close bulk operation modal
+         */
+        closeBulkModal() {
+            this.bulkModal.show = false;
+            this.bulkModal.loading = false;
+            this.bulkModal.completed = false;
+            this.bulkModal.results = [];
+        },
+
         /**
          * Cleanup on component destroy
          */

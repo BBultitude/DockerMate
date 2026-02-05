@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Health - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-slate-900" x-data="healthPage()">
+    {% include 'components/navbar.html' %}
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-white">Health & Alerts</h2>
+            <span class="text-xs text-slate-500" x-text="'Last checked: ' + lastChecked"></span>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="loading" class="text-center py-16 text-slate-400">Loading…</div>
+
+        <div x-show="!loading">
+            <!-- Stats row -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <!-- Overall status -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <p class="text-slate-400 text-sm">Overall Status</p>
+                    <p class="text-xl font-bold mt-1"
+                       :class="status === 'healthy' ? 'text-green-400' : status === 'warning' ? 'text-yellow-400' : 'text-red-400'"
+                       x-text="status.charAt(0).toUpperCase() + status.slice(1)"></p>
+                </div>
+                <!-- Warning count -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <p class="text-slate-400 text-sm">Warnings</p>
+                    <p class="text-xl font-bold mt-1"
+                       :class="warnings.length > 0 ? 'text-yellow-400' : 'text-green-400'"
+                       x-text="warnings.length"></p>
+                </div>
+                <!-- Checks passing -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <p class="text-slate-400 text-sm">Checks Passing</p>
+                    <p class="text-xl font-bold text-green-400 mt-1" x-text="okCount + ' / ' + totalChecks"></p>
+                </div>
+                <!-- Last checked -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <p class="text-slate-400 text-sm">Last Checked</p>
+                    <p class="text-sm text-slate-300 mt-2" x-text="lastChecked"></p>
+                </div>
+            </div>
+
+            <!-- Per-domain detail cards -->
+            <div class="space-y-4">
+                <template x-for="domain in domains" :key="domain.key">
+                    <div class="bg-slate-800 rounded-lg border border-slate-700 p-5">
+                        <!-- Header -->
+                        <div class="flex items-center gap-3 mb-3">
+                            <span :class="domain.status === 'ok' ? 'text-green-400' : domain.status === 'warning' ? 'text-yellow-400' : 'text-red-400'">●</span>
+                            <h3 class="text-lg font-semibold text-white" x-text="domain.label"></h3>
+                            <span class="text-xs px-2 py-0.5 rounded-full"
+                                  :class="domain.status === 'ok'      ? 'bg-green-900  text-green-300'  :
+                                          domain.status === 'warning' ? 'bg-yellow-900 text-yellow-300' :
+                                                                        'bg-red-900    text-red-300'"
+                                  x-text="domain.status.charAt(0).toUpperCase() + domain.status.slice(1)"></span>
+                        </div>
+
+                        <!-- Warnings for this domain -->
+                        <div x-show="domain.warnings.length > 0">
+                            <template x-for="w in domain.warnings" :key="w.message">
+                                <div class="flex items-start gap-2 py-2 border-b border-slate-700 last:border-0">
+                                    <span class="text-yellow-400 text-sm mt-0.5">⚠</span>
+                                    <div>
+                                        <p class="text-sm text-slate-300" x-text="w.message"></p>
+                                        <!-- Actionable link to relevant page -->
+                                        <a x-show="w.domain === 'containers'"  href="/containers" class="text-xs text-blue-400 hover:underline">→ View Containers</a>
+                                        <a x-show="w.domain === 'images'"      href="/images"     class="text-xs text-blue-400 hover:underline">→ View Images</a>
+                                        <a x-show="w.domain === 'networks'"    href="/networks"   class="text-xs text-blue-400 hover:underline">→ View Networks</a>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- All-clear -->
+                        <div x-show="domain.warnings.length === 0" class="text-sm text-green-400">
+                            All checks passing
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function healthPage() {
+    return {
+        loading: true,
+        status: 'healthy',
+        checks: {},
+        warnings: [],
+        lastChecked: '',
+
+        // --- computed ---
+        get okCount() {
+            return Object.values(this.checks).filter(v => v === 'ok').length;
+        },
+        get totalChecks() {
+            return Object.keys(this.checks).length;
+        },
+        get domains() {
+            const labels = {
+                containers:     'Containers',
+                images:         'Images',
+                networks:       'Networks',
+                dockermate:     'DockerMate',
+                infrastructure: 'Infrastructure (Docker + DB)'
+            };
+
+            // Resource domains rendered individually
+            const resourceKeys = ['containers', 'images', 'networks', 'dockermate'];
+            const result = [];
+            for (const key of resourceKeys) {
+                if (this.checks[key] !== undefined) {
+                    result.push({
+                        key:      key,
+                        label:    labels[key],
+                        status:   this.checks[key],
+                        warnings: this.warnings.filter(w => w.domain === key)
+                    });
+                }
+            }
+
+            // Infrastructure: merge docker + database into one card
+            if (this.checks.docker !== undefined || this.checks.database !== undefined) {
+                const dStatus = this.checks.docker || 'ok';
+                const dbStatus = this.checks.database || 'ok';
+                const infraStatus = (dStatus === 'error' || dbStatus === 'error')  ? 'error'   :
+                                    (dStatus === 'warning' || dbStatus === 'warning') ? 'warning' : 'ok';
+                result.push({
+                    key:      'infrastructure',
+                    label:    labels.infrastructure,
+                    status:   infraStatus,
+                    warnings: this.warnings.filter(w => w.domain === 'infrastructure')
+                });
+            }
+
+            return result;
+        },
+
+        // --- lifecycle ---
+        async init() {
+            await this.loadHealth();
+            setInterval(() => this.loadHealth(), 10000);
+        },
+
+        async loadHealth() {
+            try {
+                const r = await fetch('/api/system/health');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.success) {
+                    this.status   = d.status;
+                    this.checks   = d.checks;
+                    this.warnings = d.warnings || [];
+                    this.lastChecked = new Date().toLocaleTimeString();
+                }
+            } catch (e) {
+                console.error('healthPage loadHealth:', e);
+            }
+            this.loading = false;
+        }
+    };
+}
+</script>
+{% endblock %}

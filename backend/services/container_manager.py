@@ -162,7 +162,8 @@ class ContainerManager:
         auto_start: bool = True,
         pull_if_missing: bool = True,
         cpu_limit: Optional[float] = None,
-        memory_limit: Optional[int] = None
+        memory_limit: Optional[int] = None,
+        network: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a new container with validation and optional auto-start.
@@ -252,11 +253,19 @@ class ContainerManager:
             pass  # Good - name is unique
         
         # Step 5: Prepare container configuration
+        # Add DockerMate management labels
+        docker_labels = labels or {}
+        docker_labels['com.dockermate.managed'] = 'true'
+        docker_labels['com.dockermate.version'] = '0.1.0'
+        docker_labels['com.dockermate.created_at'] = datetime.now().isoformat()
+        if environment:
+            docker_labels['com.dockermate.environment'] = environment
+
         container_config = {
             'name': name,
             'image': image,
             'detach': True,
-            'labels': labels or {},
+            'labels': docker_labels,
             'environment': env_vars or {},
         }
         
@@ -281,7 +290,10 @@ class ContainerManager:
         if memory_limit:
             # Memory limit in bytes
             container_config['mem_limit'] = memory_limit
-        
+
+        if network:
+            container_config['network'] = network
+
         # Step 6: Create container
         try:
             docker_container = client.containers.create(**container_config)
@@ -364,23 +376,25 @@ class ContainerManager:
             - Shows how to calculate available resources
         """
         host_config = self._get_host_config()
-        
+
         if cpu_limit:
-            max_cpu = host_config.max_container_cpu_cores
+            # Use total system CPU cores as the limit
+            max_cpu = host_config.cpu_cores
             if cpu_limit > max_cpu:
                 raise ValidationError(
-                    f"CPU limit {cpu_limit} cores exceeds maximum {max_cpu} cores "
-                    f"allowed by hardware profile '{host_config.profile}'"
+                    f"CPU limit {cpu_limit} cores exceeds system total of {max_cpu} cores "
+                    f"(hardware profile: '{host_config.profile_name}')"
                 )
-        
+
         if memory_limit:
-            max_memory = host_config.max_container_memory_mb * 1024 * 1024  # Convert MB to bytes
+            # Convert total RAM from GB to bytes
+            max_memory = int(host_config.ram_gb * 1024 * 1024 * 1024)  # GB to bytes
             if memory_limit > max_memory:
                 memory_mb = memory_limit / (1024 * 1024)
-                max_mb = host_config.max_container_memory_mb
+                max_mb = int(host_config.ram_gb * 1024)  # GB to MB
                 raise ValidationError(
-                    f"Memory limit {memory_mb:.0f}MB exceeds maximum {max_mb}MB "
-                    f"allowed by hardware profile '{host_config.profile}'"
+                    f"Memory limit {memory_mb:.0f}MB exceeds system total of {max_mb}MB "
+                    f"(hardware profile: '{host_config.profile_name}')"
                 )
     
     def _build_restart_policy(self, policy: str) -> Dict[str, Any]:
@@ -539,14 +553,28 @@ class ContainerManager:
         # TASK 7 FIX: Extract port mappings from Docker
         ports_list = []
         port_bindings = network_settings.get('Ports', {})
+        seen_ports = set()  # Track to avoid IPv4/IPv6 duplicates
+
         for container_port, host_bindings in port_bindings.items():
             if host_bindings:
+                # Parse protocol from container_port (e.g., "80/tcp" -> port=80, protocol=tcp)
+                port_parts = container_port.split('/')
+                port_num = port_parts[0]
+                protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
+
                 for binding in host_bindings:
-                    ports_list.append({
-                        'container': container_port,
-                        'host': binding.get('HostPort', ''),
-                        'host_ip': binding.get('HostIp', '0.0.0.0')
-                    })
+                    host_port = binding.get('HostPort', '')
+                    # Create unique key to avoid duplicates (IPv4 and IPv6 both map to same port)
+                    port_key = f"{port_num}/{protocol}:{host_port}"
+
+                    if port_key not in seen_ports:
+                        seen_ports.add(port_key)
+                        ports_list.append({
+                            'container': port_num,  # Just the port number
+                            'host': host_port,
+                            'protocol': protocol,  # Protocol as separate field
+                            'host_ip': binding.get('HostIp', '0.0.0.0')
+                        })
         
         # TASK 7 FIX: Extract volume mounts from Docker
         volumes_list = []
@@ -561,7 +589,13 @@ class ContainerManager:
         
         # TASK 7 FIX: Extract environment variables from Docker
         env_vars_list = config.get('Env', [])
-        
+
+        # Extract resource limits from Docker
+        host_config = attrs.get('HostConfig', {})
+        nano_cpus = host_config.get('NanoCpus', 0)
+        cpu_limit = nano_cpus / 1e9 if nano_cpus else None  # Convert nano CPUs to cores
+        memory_limit = host_config.get('Memory', 0) or None  # Bytes
+
         # Check if container already exists in database
         existing = self.db.query(Container).filter(
             Container.container_id == docker_container.id
@@ -576,6 +610,8 @@ class ContainerManager:
                 'RestartPolicy', {}
             ).get('Name', 'no')
             existing.ports_json = json.dumps(ports_list)  # TASK 7 FIX: Store ports
+            existing.cpu_limit = cpu_limit  # Store resource limits
+            existing.memory_limit = memory_limit
             existing.updated_at = datetime.utcnow()
             
             # Update timestamps based on state
@@ -616,6 +652,8 @@ class ContainerManager:
                     'RestartPolicy', {}
                 ).get('Name', 'no'),
                 ports_json=json.dumps(ports_list),  # TASK 7 FIX: Store ports
+                cpu_limit=cpu_limit,  # Store resource limits
+                memory_limit=memory_limit,
                 auto_start=False,  # Will be set by API if needed
                 created_at=created_at
             )
@@ -752,11 +790,275 @@ class ContainerManager:
                 result.append(container.to_dict())
         
         return result
-    
+
+    def list_all_docker_containers(
+        self,
+        all: bool = True,
+        environment: Optional[str] = None,
+        managed_only: bool = False,
+        unmanaged_only: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        List ALL containers from Docker daemon, not just DockerMate-managed.
+
+        FEATURE-005: Shows both managed and external containers with distinction.
+
+        This method queries Docker directly for all containers and cross-references
+        with the database to identify which are managed by DockerMate.
+
+        DockerMate's own container is shown as EXTERNAL (no action buttons) which
+        protects it from accidental damage while keeping UI simple (KISS principle).
+
+        Args:
+            all: If True, include stopped containers (default: True)
+            environment: Filter by environment tag (only for managed containers)
+            managed_only: If True, only show DockerMate-managed containers
+            unmanaged_only: If True, only show external containers
+
+        Returns:
+            list: List of container dictionaries with 'managed' flag
+
+        Educational:
+            - Queries Docker daemon for all containers on host
+            - Cross-references with database to identify managed containers
+            - DockerMate container appears as external (protected from actions)
+            - Shows both managed and external containers with distinction
+            - CLI equivalent: docker ps -a
+        """
+        logger.debug(f"Listing all Docker containers: all={all}, env={environment}")
+
+        client = get_docker_client()
+
+        # Get all containers from Docker daemon
+        docker_containers = client.containers.list(all=all)
+
+        # Get managed container IDs from database
+        managed_ids = {c.container_id for c in self.db.query(Container).all()}
+
+        # Bulk-fetch container names that have at least one successful update
+        # (used to set rollback_available flag without N+1 queries)
+        from backend.models.update_history import UpdateHistory
+        rollbackable_names = {
+            row.container_name for row in
+            self.db.query(UpdateHistory.container_name)
+            .filter(UpdateHistory.status == 'success')
+            .distinct()
+        }
+
+        result = []
+        for docker_container in docker_containers:
+            # KISS: Show ALL containers including DockerMate
+            # DockerMate will appear as external (no action buttons = protected)
+
+            container_id = docker_container.id
+            is_managed = container_id in managed_ids
+
+            # Apply managed/unmanaged filter
+            if managed_only and not is_managed:
+                continue
+            if unmanaged_only and is_managed:
+                continue
+
+            # Build basic container data
+            attrs = docker_container.attrs
+            config = attrs.get('Config', {})
+
+            container_data = {
+                'container_id': container_id,
+                'name': docker_container.name,
+                'image_name': config.get('Image', ''),
+                'state': docker_container.status,
+                'managed': is_managed,
+                'created_at': attrs.get('Created', ''),
+                'labels': docker_container.labels or {}
+            }
+
+            # If managed, augment with database metadata
+            if is_managed:
+                db_container = self.db.query(Container).filter_by(
+                    container_id=container_id
+                ).first()
+                if db_container:
+                    container_data['environment'] = db_container.environment
+                    container_data['ports_json'] = db_container.ports_json
+                    container_data['db_id'] = db_container.id
+                    container_data['rollback_available'] = db_container.name in rollbackable_names
+
+                    # Parse ports from JSON
+                    try:
+                        container_data['ports'] = json.loads(db_container.ports_json or '[]')
+                    except:
+                        container_data['ports'] = []
+            else:
+                # For unmanaged containers, extract ports from Docker directly
+                network_settings = attrs.get('NetworkSettings', {})
+                ports_list = []
+                port_bindings = network_settings.get('Ports', {})
+                seen_ports = set()
+
+                for container_port, host_bindings in port_bindings.items():
+                    if host_bindings:
+                        port_parts = container_port.split('/')
+                        port_num = port_parts[0]
+                        protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
+
+                        for binding in host_bindings:
+                            host_port = binding.get('HostPort', '')
+                            port_key = f"{port_num}/{protocol}:{host_port}"
+
+                            if port_key not in seen_ports:
+                                seen_ports.add(port_key)
+                                ports_list.append({
+                                    'container': port_num,
+                                    'host': host_port,
+                                    'protocol': protocol,
+                                    'host_ip': binding.get('HostIp', '0.0.0.0')
+                                })
+
+                container_data['ports'] = ports_list
+                container_data['environment'] = None
+
+            # Apply environment filter (only for managed containers)
+            # External containers (is_managed=False) are not filtered by environment
+            if environment and is_managed and container_data.get('environment') != environment:
+                continue
+
+            result.append(container_data)
+
+        return result
+
+    def sync_managed_containers_to_database(self) -> Dict[str, Any]:
+        """
+        Sync containers with DockerMate labels to database.
+
+        CRITICAL: Recovers managed containers after database reset/migration.
+        Searches for containers with 'com.dockermate.managed=true' label
+        that are not in the database and adds them.
+
+        This solves the issue where:
+        - Database is reset/migrated
+        - Previously managed containers still exist in Docker
+        - But they're not in the database anymore
+        - So they appear as "external" instead of "managed"
+
+        Returns:
+            dict: Sync results with counts of recovered containers
+
+        Educational:
+            - Docker labels persist with containers
+            - Database can be recreated from Docker labels
+            - Critical for upgrades/migrations
+            - CLI equivalent: docker ps --filter "label=com.dockermate.managed=true"
+        """
+        logger.info("Starting container sync to database...")
+
+        client = get_docker_client()
+        docker_containers = client.containers.list(all=True)
+
+        # Get existing container IDs from database
+        existing_ids = {c.container_id for c in self.db.query(Container).all()}
+
+        recovered = []
+        skipped = []
+
+        for docker_container in docker_containers:
+            container_id = docker_container.id
+            labels = docker_container.labels or {}
+
+            # Skip if already in database
+            if container_id in existing_ids:
+                continue
+
+            # Check if this container was managed by DockerMate
+            if labels.get('com.dockermate.managed') == 'true':
+                logger.info(f"Recovering managed container: {docker_container.name}")
+
+                # Extract environment from labels if available
+                environment = labels.get('com.dockermate.environment')
+
+                # Sync to database
+                container_data = self._sync_database_state(docker_container, environment)
+                recovered.append(container_data)
+            else:
+                skipped.append(docker_container.name)
+
+        logger.info(f"Sync complete: {len(recovered)} containers recovered, {len(skipped)} external containers skipped")
+
+        return {
+            'recovered': len(recovered),
+            'skipped': len(skipped),
+            'recovered_containers': [c['name'] for c in recovered]
+        }
+
+    # =========================================================================
+    # IMPORT OPERATION  (FEAT-012)
+    # =========================================================================
+
+    @docker_operation
+    def import_container(self, container_id: str) -> Dict[str, Any]:
+        """
+        Import an unmanaged (external) container into DockerMate by writing
+        its current Docker state into the database.  No Docker-side changes
+        are made — the container keeps running exactly as it was.
+
+        Note: imported containers are metadata-only.  They will NOT survive
+        a DB reset because they lack the com.dockermate.managed label.  This
+        matches the network adopt pattern (FEAT-017).
+
+        Args:
+            container_id: Full Docker container ID (short IDs are not accepted
+                          to avoid ambiguity with containers whose names look
+                          like hex strings).
+
+        Returns:
+            dict: { container_id, name, image_name, state, status: 'imported' }
+
+        Raises:
+            ContainerNotFoundError: ID not in Docker daemon.
+            ContainerOperationError: container is the DockerMate app itself,
+                or is already managed (already in the DB).
+        """
+        # 1. Reject if already managed (already in DB)
+        existing = self.db.query(Container).filter(
+            Container.container_id == container_id
+        ).first()
+        if existing:
+            raise ContainerOperationError(
+                f"Container '{container_id}' is already managed by DockerMate"
+            )
+
+        # 2. Fetch from Docker
+        client = get_docker_client()
+        try:
+            docker_container = client.containers.get(container_id)
+        except NotFound:
+            raise ContainerNotFoundError(
+                f"Container '{container_id}' not found in Docker daemon"
+            )
+
+        # 3. Reject DockerMate's own container
+        name = docker_container.name.lstrip('/')
+        if name in ('dockermate', 'dockermate-dev', 'dockermate-prod'):
+            raise ContainerOperationError(
+                "Cannot import the DockerMate container itself"
+            )
+
+        # 4. Sync into DB (creates a new Container row with full metadata)
+        container_data = self._sync_database_state(docker_container)
+
+        logger.info(f"Imported external container: {name} ({container_id[:12]}…)")
+        return {
+            'container_id': docker_container.id,
+            'name':         name,
+            'image_name':   container_data.get('image_name', ''),
+            'state':        container_data.get('state', ''),
+            'status':       'imported'
+        }
+
     # =========================================================================
     # UPDATE OPERATION
     # =========================================================================
-    
+
     def update_container(self, name_or_id: str, **kwargs) -> Dict[str, Any]:
         """
         Update container (Phase 1: labels only).
@@ -824,9 +1126,451 @@ class ContainerManager:
             raise ContainerOperationError(f"Failed to update container: {e.explanation}")
     
     # =========================================================================
+    # IMAGE-UPDATE OPERATION  (Sprint 3 — Phase 2)
+    # =========================================================================
+
+    @docker_operation
+    def update_container_image(self, name_or_id: str) -> Dict[str, Any]:
+        """
+        Pull the latest image for a managed container and recreate it.
+
+        Steps:
+            1. Read current container config from Docker (ports, volumes, env,
+               restart policy, labels).
+            2. Pull the new image (same repository:tag).
+            3. Stop the running container.
+            4. Remove the old container (keeps volumes unless explicitly pruned).
+            5. Recreate with identical config but the freshly-pulled image.
+            6. Start the new container.
+            7. Write an UpdateHistory record.
+
+        The old image is intentionally NOT removed — it stays around so that
+        rollback can recreate from it if needed.
+
+        Returns:
+            dict with keys: container_id, name, old_image, new_image, status
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        # --- resolve container from DB (skip removed/dead entries) ---
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        client = get_docker_client()
+
+        # --- read live config from Docker ---
+        try:
+            old_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
+
+        attrs   = old_docker.attrs
+        config  = attrs.get('Config', {})
+        host    = attrs.get('HostConfig', {})
+        old_image_name = config.get('Image', db_container.image_name)
+
+        # extract everything we need to recreate
+        env_vars      = config.get('Env') or []
+        labels        = config.get('Labels') or {}
+        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus     = host.get('NanoCpus', 0)
+        memory        = host.get('Memory', 0)
+
+        # ports: Docker returns {container_port/proto: [{HostIp, HostPort}]}
+        port_bindings = {}
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        for cport, bindings in network_ports.items():
+            if bindings:
+                port_bindings[cport] = bindings
+
+        # volumes
+        binds = host.get('Binds') or []
+
+        # --- pull latest ---
+        logger.info(f"Pulling latest {old_image_name} for update…")
+        try:
+            if ':' in old_image_name:
+                repo, tag = old_image_name.rsplit(':', 1)
+            else:
+                repo, tag = old_image_name, 'latest'
+            new_image_obj = client.images.pull(repo, tag=tag)
+            new_digest = new_image_obj.attrs.get('RepoDigests', [None])[0]
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Pull failed: {e.explanation}")
+
+        # --- stop & remove old container ---
+        try:
+            if old_docker.status == 'running':
+                old_docker.stop(timeout=10)
+            old_docker.remove()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+
+        # --- recreate ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       old_image_name,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
+
+        # --- sync DB ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # --- history record ---
+        old_digest_str = None
+        try:
+            old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
+            old_digest_str = old_digests[0] if old_digests else None
+        except Exception:
+            pass
+        self._record_update_history(
+            db_container, old_image_name, old_image_name,
+            old_digest=old_digest_str,
+            new_digest=new_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' updated successfully")
+        return {
+            'container_id': new_docker.id,
+            'name':         db_container.name,
+            'old_image':    old_image_name,
+            'new_image':    old_image_name,
+            'status':       'success'
+        }
+
+    # =========================================================================
+    # RETAG OPERATION  (FEAT-013)
+    # =========================================================================
+
+    @docker_operation
+    def retag_container(self, name_or_id: str, new_tag: str) -> Dict[str, Any]:
+        """
+        Change a managed container's image tag and recreate it.
+
+        The recreate flow is identical to update_container_image(): read live
+        config → pull new image → stop/remove → recreate → sync → history.
+        The only difference is that the pull target is ``repo:new_tag``
+        instead of the current ``repo:current_tag``.
+
+        An UpdateHistory record is written with old_image=repo:old_tag and
+        new_image=repo:new_tag, so the existing rollback flow works with
+        zero changes.
+
+        Args:
+            name_or_id: Container name or DB container_id.
+            new_tag: The tag to switch to (e.g. "1.29", "latest").
+
+        Returns:
+            dict: { container_id, name, old_image, new_image, status }
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        # --- resolve from DB ---
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        client = get_docker_client()
+
+        # --- read live config ---
+        try:
+            old_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
+
+        attrs   = old_docker.attrs
+        config  = attrs.get('Config', {})
+        host    = attrs.get('HostConfig', {})
+        old_image_name = config.get('Image', db_container.image_name)
+
+        # Parse repo from current image
+        if ':' in old_image_name:
+            repo, old_tag = old_image_name.rsplit(':', 1)
+        else:
+            repo, old_tag = old_image_name, 'latest'
+
+        new_image_name = f"{repo}:{new_tag}"
+
+        # extract recreate config (same block as update_container_image)
+        env_vars      = config.get('Env') or []
+        labels        = config.get('Labels') or {}
+        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus     = host.get('NanoCpus', 0)
+        memory        = host.get('Memory', 0)
+
+        port_bindings = {}
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        for cport, bindings in network_ports.items():
+            if bindings:
+                port_bindings[cport] = bindings
+
+        binds = host.get('Binds') or []
+
+        # --- pull new tag ---
+        logger.info(f"Pulling {new_image_name} for retag…")
+        try:
+            new_image_obj = client.images.pull(repo, tag=new_tag)
+            new_digest = new_image_obj.attrs.get('RepoDigests', [None])[0]
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Pull failed: {e.explanation}")
+
+        # --- stop & remove old ---
+        try:
+            if old_docker.status == 'running':
+                old_docker.stop(timeout=10)
+            old_docker.remove()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+
+        # --- recreate with new image ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       new_image_name,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
+            raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
+
+        # --- sync DB ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # --- history record ---
+        old_digest_str = None
+        try:
+            old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
+            old_digest_str = old_digests[0] if old_digests else None
+        except Exception:
+            pass
+        self._record_update_history(
+            db_container, old_image_name, new_image_name,
+            old_digest=old_digest_str,
+            new_digest=new_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' retagged {old_image_name} → {new_image_name}")
+        return {
+            'container_id': new_docker.id,
+            'name':         db_container.name,
+            'old_image':    old_image_name,
+            'new_image':    new_image_name,
+            'status':       'success'
+        }
+
+    # =========================================================================
+    # ROLLBACK OPERATION  (Sprint 3)
+    # =========================================================================
+
+    @docker_operation
+    def rollback_container(self, name_or_id: str) -> Dict[str, Any]:
+        """
+        Rollback a container to the image it had before its last update.
+
+        Looks up the most recent successful UpdateHistory entry for this
+        container and recreates it with old_image.  The current container
+        is stopped and removed first (same as update flow).
+
+        Returns:
+            dict with keys: container_id, name, rolled_back_to, status
+
+        Raises:
+            ContainerNotFoundError | ContainerOperationError | ValidationError
+        """
+        from backend.models.update_history import UpdateHistory
+
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        # Find the last successful update to know what old_image was
+        history = (
+            self.db.query(UpdateHistory)
+            .filter(UpdateHistory.container_name == db_container.name)
+            .filter(UpdateHistory.status == 'success')
+            .order_by(UpdateHistory.updated_at.desc())
+            .first()
+        )
+        if not history:
+            raise ValidationError(f"No update history found for '{db_container.name}' — nothing to roll back")
+
+        target_image = history.old_image
+        client = get_docker_client()
+
+        # Verify the old image is still locally available
+        try:
+            client.images.get(target_image)
+        except NotFound:
+            raise ContainerOperationError(
+                f"Rollback image '{target_image}' no longer exists locally. "
+                f"Cannot roll back."
+            )
+
+        # --- read live config ---
+        try:
+            current_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not in Docker daemon")
+
+        attrs  = current_docker.attrs
+        config = attrs.get('Config', {})
+        host   = attrs.get('HostConfig', {})
+
+        env_vars     = config.get('Env') or []
+        labels       = config.get('Labels') or {}
+        restart_name = host.get('RestartPolicy', {}).get('Name', 'no')
+        nano_cpus    = host.get('NanoCpus', 0)
+        memory       = host.get('Memory', 0)
+        binds        = host.get('Binds') or []
+        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
+        port_bindings = {k: v for k, v in network_ports.items() if v}
+
+        current_image = config.get('Image', db_container.image_name)
+
+        # --- stop & remove ---
+        try:
+            if current_docker.status == 'running':
+                current_docker.stop(timeout=10)
+            current_docker.remove()
+        except APIError as e:
+            raise ContainerOperationError(f"Failed to remove current container: {e.explanation}")
+
+        # --- recreate with old image ---
+        create_kwargs = {
+            'name':        db_container.name,
+            'image':       target_image,
+            'detach':      True,
+            'environment': env_vars,
+            'labels':      labels,
+        }
+        if port_bindings:
+            create_kwargs['ports'] = port_bindings
+        if binds:
+            create_kwargs['volumes'] = binds
+        if restart_name and restart_name != 'no':
+            create_kwargs['restart_policy'] = {'Name': restart_name}
+        if nano_cpus:
+            create_kwargs['cpu_nano_cpus'] = nano_cpus
+        if memory:
+            create_kwargs['mem_limit'] = memory
+
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+            new_docker.start()
+        except APIError as e:
+            raise ContainerOperationError(f"Rollback recreate failed: {e.explanation}")
+
+        # --- sync + history ---
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # Mark the original update history entry as rolled_back
+        history.status = 'rolled_back'
+        self.db.commit()
+
+        # Write a new history record for the rollback itself
+        self._record_update_history(
+            db_container, current_image, target_image,
+            old_digest=history.new_digest,
+            new_digest=history.old_digest,
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' rolled back to {target_image}")
+        return {
+            'container_id':   new_docker.id,
+            'name':           db_container.name,
+            'rolled_back_to': target_image,
+            'status':         'success'
+        }
+
+    # =========================================================================
+    # HELPER: record update history
+    # =========================================================================
+
+    def _record_update_history(self, db_container, old_image: str, new_image: str,
+                               old_digest: str = None, new_digest: str = None,
+                               status: str = 'success', error: str = None):
+        """Write a single UpdateHistory row."""
+        from backend.models.update_history import UpdateHistory
+        record = UpdateHistory(
+            container_id=db_container.container_id,
+            container_name=db_container.name,
+            old_image=old_image,
+            new_image=new_image,
+            old_digest=old_digest,
+            new_digest=new_digest,
+            status=status,
+            error_message=error
+        )
+        self.db.add(record)
+        self.db.commit()
+
+    # =========================================================================
     # DELETE OPERATION
     # =========================================================================
-    
+
     @docker_operation
     def delete_container(
         self,

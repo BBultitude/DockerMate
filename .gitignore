@@ -64,6 +64,11 @@ venv.bak/
 .venv/
 
 # ============================================
+# Claude Code
+# ============================================
+.claude/
+
+# ============================================
 # IDEs and Editors
 # ============================================
 # VSCode
@@ -175,6 +180,7 @@ temp/
 # ============================================
 # Keep the verification scripts, but ignore their outputs if any
 verification_results.txt
+INSTRUCTIONS.md
 
 # ============================================
 # Documentation Build Artifacts
@@ -194,6 +200,7 @@ secrets/
 # API keys or sensitive config (should use environment variables instead)
 api_keys.txt
 config_local.py
+cookies.txt
 
 # ============================================
 # Backup Files
