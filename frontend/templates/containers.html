@@ -770,20 +770,6 @@
             </div>
         </div>
 
-        <!-- FEATURE-005: Show All Containers Toggle -->
-        <div class="mb-4 flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
-                <input type="checkbox"
-                       x-model="showAllContainers"
-                       @change="loadContainers()"
-                       class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                <span>Show all Docker containers (including external & DockerMate)</span>
-            </label>
-            <span class="text-xs text-slate-500" x-show="showAllContainers">
-                (External containers can't be managed - no action buttons)
-            </span>
-        </div>
-
         <!-- Filters -->
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-6">
             <div class="flex items-center justify-between mb-3">
@@ -803,14 +789,14 @@
                         of <span x-text="containers.length"></span> containers
                     </span>
                     <button @click="clearFilters()"
-                            x-show="filters.search || filters.status !== 'all' || filters.environment !== 'all' || filters.image !== 'all'"
+                            x-show="filters.search || filters.status !== 'all' || filters.environment !== 'all' || filters.image !== 'all' || filters.managedStatus !== 'all'"
                             class="text-sm text-blue-400 hover:text-blue-300 underline">
                         Clear all
                     </button>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <!-- Search -->
                 <div>
                     <label class="block text-sm text-slate-400 mb-1">Search</label>
@@ -858,6 +844,18 @@
                         <template x-for="image in availableImages" :key="image">
                             <option :value="image" x-text="image"></option>
                         </template>
+                    </select>
+                </div>
+
+                <!-- Managed Status Filter (UI-008) -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Managed Status</label>
+                    <select x-model="filters.managedStatus"
+                            @change="applyFilters()"
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="all">All Containers</option>
+                        <option value="managed">Managed</option>
+                        <option value="external">External</option>
                     </select>
                 </div>
             </div>
@@ -946,13 +944,13 @@
                                     'bg-yellow-900 text-yellow-300': container.environment === 'STG',
                                     'bg-red-900 text-red-300': container.environment === 'PROD'
                                 }" class="px-2 py-1 rounded text-xs font-medium" x-text="container.environment"></span>
-                                <!-- FEATURE-005: Managed/External Badge -->
-                                <span x-show="showAllContainers && container.managed === false"
+                                <!-- UI-008: Managed/External Badge (always visible) -->
+                                <span x-show="container.managed === false"
                                       class="px-2 py-1 rounded text-xs font-medium bg-orange-900 text-orange-300"
                                       title="External container not managed by DockerMate">
                                     EXTERNAL
                                 </span>
-                                <span x-show="showAllContainers && container.managed === true"
+                                <span x-show="container.managed === true"
                                       class="px-2 py-1 rounded text-xs font-medium bg-blue-900 text-blue-300"
                                       title="Managed by DockerMate">
                                     MANAGED
@@ -1128,11 +1126,9 @@ function containersComponent() {
             search: '',
             status: 'all',
             environment: 'all',
-            image: 'all'
+            image: 'all',
+            managedStatus: 'all'  // UI-008: all / managed / external
         },
-
-        // Show all containers toggle (FEATURE-005)
-        showAllContainers: true,
 
         // Sprint 3: map of "repository:tag" -> update_available (from images API)
         imagesUpdateMap: {},
@@ -1256,10 +1252,10 @@ function containersComponent() {
             this.loading = true;
 
             try {
-                // FEATURE-005: Add show_all parameter to fetch all Docker containers
+                // UI-008: Always fetch all Docker containers (managed + external)
                 const params = new URLSearchParams();
                 params.append('all', 'true');  // Always include stopped containers
-                params.append('show_all', this.showAllContainers);
+                params.append('show_all', 'true');  // Always show all containers
 
                 const response = await fetch(`/api/containers?${params}`);
 
@@ -1326,7 +1322,15 @@ function containersComponent() {
                 // Image filter
                 const imageMatch = this.filters.image === 'all' || container.image_name === this.filters.image;
 
-                return searchMatch && statusMatch && envMatch && imageMatch;
+                // Managed status filter (UI-008)
+                let managedMatch = true;
+                if (this.filters.managedStatus === 'managed') {
+                    managedMatch = container.managed === true;
+                } else if (this.filters.managedStatus === 'external') {
+                    managedMatch = container.managed === false;
+                }
+
+                return searchMatch && statusMatch && envMatch && imageMatch && managedMatch;
             });
 
             // Update URL with current filters
@@ -1341,7 +1345,8 @@ function containersComponent() {
                 search: '',
                 status: 'all',
                 environment: 'all',
-                image: 'all'
+                image: 'all',
+                managedStatus: 'all'
             };
             this.applyFilters();
         },
@@ -1364,6 +1369,7 @@ function containersComponent() {
             if (this.filters.status !== 'all') params.set('status', this.filters.status);
             if (this.filters.environment !== 'all') params.set('env', this.filters.environment);
             if (this.filters.image !== 'all') params.set('image', this.filters.image);
+            if (this.filters.managedStatus !== 'all') params.set('managed', this.filters.managedStatus);
 
             const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
             window.history.replaceState({}, '', newURL);
@@ -1379,6 +1385,7 @@ function containersComponent() {
             this.filters.status = params.get('status') || 'all';
             this.filters.environment = params.get('env') || 'all';
             this.filters.image = params.get('image') || 'all';
+            this.filters.managedStatus = params.get('managed') || 'all';
         },
         
         /**

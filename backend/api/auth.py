@@ -166,11 +166,17 @@ def login():
             # samesite: Strict CSRF protection
             max_age = 604800 if remember_me else 28800  # 7 days or 8 hours
             
+            # Conditionally set secure flag based on app mode
+            # In production (HTTPS): secure=True
+            # In testing (HTTP): secure=False to avoid browser rejection
+            from flask import current_app
+            secure_cookie = current_app.config.get('DOCKERMATE_SSL_MODE', 'self-signed') != 'disabled'
+
             response.set_cookie(
                 'session',
                 session_token,
                 httponly=True,
-                secure=True,  # HTTPS only
+                secure=secure_cookie,  # HTTPS only in production
                 samesite='Strict',
                 max_age=max_age
             )

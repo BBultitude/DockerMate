@@ -101,7 +101,7 @@ echo ""
 echo "======================================================================"
 echo "Starting Flask Application"
 echo "======================================================================"
-echo "Access DockerMate at: http://localhost:5000"
+echo "Access DockerMate at: https://localhost:5000"
 echo ""
 echo "Default Credentials:"
 echo "  Username: admin"
@@ -112,4 +112,4 @@ echo "======================================================================"
 echo ""
 
 # Start Flask application
-exec python3 app_dev.py
+exec python3 app.py

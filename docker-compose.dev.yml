@@ -15,7 +15,7 @@ services:
       # Mount source code for live development
       - ./backend:/app/backend
       - ./frontend:/app/frontend
-      - ./app_dev.py:/app/app_dev.py
+      - ./app.py:/app/app.py
       - ./manage.py:/app/manage.py
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
@@ -29,7 +29,7 @@ services:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - DATABASE_PATH=/app/data/dockermate.db
-      - DOCKERMATE_SSL_MODE=disabled  # HTTP for development
+      - DOCKERMATE_SSL_MODE=self-signed  # HTTPS for production-style testing
       - PYTHONUNBUFFERED=1  # See logs immediately
     restart: unless-stopped
     networks:

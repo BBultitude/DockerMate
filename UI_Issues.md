@@ -116,3 +116,37 @@ Both spots now format the volume as the standard Docker `source:destination:mode
 - All action buttons (Start/Stop/Restart/Delete) are now fully functional
 - Container details modal now fetches full data (env_vars, volumes, limits) for managed containers
 - Network adopt/release lifecycle fully functional including for compose-generated networks
+
+## Sprint 5 New Features (UI Patterns)
+
+### FEAT-012: Import Unmanaged Containers
+**UI Pattern:** Inline action button within info banner
+- **Location:** External container info bar (orange banner, bottom of card)
+- **Button Style:** `bg-blue-600` — primary action for import operation
+- **Loading State:** Button text changes to "⏳" while `actionLoading[container.name]` is true
+- **Toast Messages:** Success toast includes warning that import won't survive DB reset (metadata-only)
+- **Disabled State:** Button disabled via `actionLoading` during the import operation
+- **No Modal:** Import is a one-click operation (no confirmation required)
+
+**Edge Cases Handled:**
+- Already-managed containers: Backend rejects with error toast
+- DockerMate's own container: Backend rejects to prevent self-import
+- After import: Container card refreshes and gains MANAGED badge + all action buttons appear
+
+### FEAT-013: Retag & Redeploy
+**UI Pattern:** Modal-based form with validation
+- **Trigger:** Retag button (indigo `bg-indigo-600`) on managed container cards, between Rollback and Delete
+- **Modal:** `retagModal` with container name, current image display, and new tag text input
+- **Validation:** Submit button disabled when tag field is empty (`:disabled="retagModal.loading || !retagModal.newTag.trim()"`)
+- **Error Display:** Inline error message (`retagModal.error`) shown below input field in red
+- **Loading State:** Button text changes "Retag & Redeploy" → "Retagging..." while loading
+- **Success:** Modal closes, toast shows old_image → new_image transition, containers list refreshes
+
+**Edge Cases Handled:**
+- Empty tag validation: Frontend prevents submission, inline error shown
+- Pull failure: Backend returns error, modal stays open with error message
+- Recreate failure: Backend returns error, UpdateHistory marked as failed
+- Auto-refresh pause: Polling guard includes `!this.retagModal.show` to prevent list refresh during modal interaction
+
+**Polling Guard Note:**
+The `startPolling()` function now checks for `retagModal.show` alongside other modals (`deleteModal`, `createModal`, `bulkModal`, `detailsModal`). This prevents the container list from refreshing mid-retag, which would close the modal unexpectedly.
