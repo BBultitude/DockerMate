@@ -22,7 +22,11 @@ services:
     environment:
       # Timezone
       - TZ=UTC
-      
+
+      # Data directory (optional - defaults to /app/data)
+      # Change this if you want to customize storage paths
+      # - DOCKERMATE_DATA_DIR=/app/data
+
       # Initial setup (optional - wizard prompts if not set)
       # WARNING: Remove after first setup for security
       # - DOCKERMATE_INITIAL_PASSWORD=YourSecurePassword123

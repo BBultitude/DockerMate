@@ -74,6 +74,14 @@ import ipaddress
 import logging
 from typing import Dict, List, Optional
 
+# Import Config for centralized paths
+try:
+    from config import Config
+    DEFAULT_SSL_DIR = Config.SSL_DIR
+except ImportError:
+    # Fallback for standalone testing
+    DEFAULT_SSL_DIR = '/app/data/ssl'
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,7 +157,7 @@ class CertificateManager:
     
     @staticmethod
     def generate_self_signed_cert(
-        output_dir: str = '/app/data/ssl',
+        output_dir: str = None,
         hostname: Optional[str] = None,
         organization: str = 'DockerMate',
         country: str = 'US'
@@ -185,6 +193,10 @@ class CertificateManager:
             >>> print(f"Certificate: {result['cert_path']}")
             >>> print(f"Expires: {result['expires_at']}")
         """
+        # Use default SSL directory if not specified
+        if output_dir is None:
+            output_dir = DEFAULT_SSL_DIR
+
         try:
             # Create output directory if needed
             os.makedirs(output_dir, exist_ok=True)
@@ -324,7 +336,7 @@ class CertificateManager:
     def import_custom_certificate(
         cert_file_path: str,
         key_file_path: str,
-        output_dir: str = '/app/data/ssl',
+        output_dir: str = None,
         cert_filename: str = 'custom_cert.pem',
         key_filename: str = 'custom_key.pem'
     ) -> Dict[str, any]:
@@ -389,6 +401,10 @@ class CertificateManager:
         - Original uploaded files should be deleted after import
         - Certificate is validated before copying
         """
+        # Use default SSL directory if not specified
+        if output_dir is None:
+            output_dir = DEFAULT_SSL_DIR
+
         errors = []
         warnings = []
         

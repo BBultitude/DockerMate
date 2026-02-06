@@ -44,10 +44,13 @@ logger = logging.getLogger(__name__)
 # Database Configuration
 # =============================================================================
 
-# Database file path - can be overridden via environment variable
-# Default: /app/data/dockermate.db (in Docker container)
-# For development: /tmp/dockermate.db
-DATABASE_PATH = os.getenv('DATABASE_PATH', '/tmp/dockermate.db')
+# Import Config for centralized configuration
+try:
+    from config import Config
+    DATABASE_PATH = Config.DATABASE_PATH
+except ImportError:
+    # Fallback for standalone testing
+    DATABASE_PATH = os.getenv('DATABASE_PATH', '/tmp/dockermate.db')
 
 # Construct SQLite connection string
 # Format: sqlite:///path/to/database.db

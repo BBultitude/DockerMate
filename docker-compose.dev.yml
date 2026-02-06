@@ -28,7 +28,7 @@ services:
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
-      - DATABASE_PATH=/app/data/dockermate.db
+      - DOCKERMATE_DATA_DIR=/app/data  # Data directory (database, SSL certs, backups)
       - DOCKERMATE_SSL_MODE=self-signed  # HTTPS for production-style testing
       - PYTHONUNBUFFERED=1  # See logs immediately
     restart: unless-stopped

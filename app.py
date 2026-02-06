@@ -21,6 +21,7 @@ Design Philosophy:
 from flask import Flask, redirect, request, jsonify, render_template
 from backend.models.database import init_db
 from backend.ssl.cert_manager import CertificateManager
+from config import Config
 import ssl
 import os
 import logging
@@ -39,9 +40,8 @@ app = Flask(__name__,
 app.secret_key = os.urandom(24)
 
 # Configuration
-from backend.models.database import DATABASE_PATH
-app.config['DATABASE_PATH'] = DATABASE_PATH
-app.config['SSL_MODE'] = os.getenv('DOCKERMATE_SSL_MODE', 'self-signed')
+app.config['DATABASE_PATH'] = Config.DATABASE_PATH
+app.config['SSL_MODE'] = Config.SSL_MODE
 
 ## Import and register authentication blueprint
 from backend.api.auth import auth_bp
@@ -102,8 +102,8 @@ def create_ssl_context():
     - Browser will show warning (one-time security exception needed)
     - For public-facing deployments, use Let's Encrypt instead
     """
-    cert_path = '/app/data/ssl/cert.pem'
-    key_path = '/app/data/ssl/key.pem'
+    cert_path = os.path.join(Config.SSL_DIR, 'cert.pem')
+    key_path = os.path.join(Config.SSL_DIR, 'key.pem')
     
     # Generate cert if doesn't exist
     if not os.path.exists(cert_path):
@@ -382,6 +382,15 @@ def internal_error(error):
 # ========================================
 
 if __name__ == '__main__':
+    # Ensure all required directories exist
+    logger.info("Ensuring required directories exist...")
+    try:
+        Config.ensure_directories()
+        logger.info("✓ Directories created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create directories: {e}")
+        raise
+
     # Initialize database
     logger.info("Initializing database...")
     try:
@@ -392,7 +401,7 @@ if __name__ == '__main__':
         raise
     
     # Check if setup is complete
-    setup_complete = os.path.exists('/app/data/setup_complete')
+    setup_complete = os.path.exists(os.path.join(Config.DATA_DIR, 'setup_complete'))
     
     if not setup_complete:
         logger.warning("First time setup - running HTTP for initial config")

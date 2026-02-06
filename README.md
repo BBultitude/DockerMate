@@ -184,6 +184,7 @@ docker-compose logs
 ## 📖 Documentation
 
 - **[DESIGN.md](DESIGN.md)** - Complete technical design specification
+- **[STORAGE_CONFIGURATION.md](docs/STORAGE_CONFIGURATION.md)** - Customizing data storage paths
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute to the project
 - **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current development status
 
