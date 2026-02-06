@@ -1267,12 +1267,60 @@ function containersComponent() {
                 const data = await response.json();
 
                 if (data.success) {
-                    // TASK 7 FIX: Force reactivity with spread
-                    this.containers = [...(data.data || [])];
+                    // UI-007: Intelligent merge to prevent full re-render and scroll loss
+                    const newContainers = data.data || [];
 
-                    // UI_ISSUES FIX: Initialize actionLoading to false for each container
-                    this.containers.forEach(container => {
-                        this.actionLoading[container.name] = false;
+                    // Create maps for efficient lookup
+                    const oldMap = new Map(this.containers.map(c => [c.container_id, c]));
+                    const newMap = new Map(newContainers.map(c => [c.container_id, c]));
+
+                    // Update existing containers in-place (Alpine.js detects changes)
+                    this.containers.forEach((container, index) => {
+                        const newData = newMap.get(container.container_id);
+                        if (newData) {
+                            // Container still exists - update ALL properties to keep in sync
+                            // Use Object.assign to batch updates and reduce reactivity overhead
+                            const oldKeys = Object.keys(container);
+                            const newKeys = Object.keys(newData);
+
+                            // Check if anything actually changed before updating
+                            let hasChanges = oldKeys.length !== newKeys.length;
+                            if (!hasChanges) {
+                                for (const key of newKeys) {
+                                    if (key === 'ports') {
+                                        // Special handling for ports array
+                                        if (JSON.stringify(container[key]) !== JSON.stringify(newData[key])) {
+                                            hasChanges = true;
+                                            break;
+                                        }
+                                    } else if (container[key] !== newData[key]) {
+                                        hasChanges = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Only update if there are actual changes
+                            if (hasChanges) {
+                                Object.assign(container, newData);
+                            }
+                        }
+                    });
+
+                    // Remove deleted containers
+                    for (let i = this.containers.length - 1; i >= 0; i--) {
+                        if (!newMap.has(this.containers[i].container_id)) {
+                            this.containers.splice(i, 1);
+                        }
+                    }
+
+                    // Add new containers
+                    newContainers.forEach(newContainer => {
+                        if (!oldMap.has(newContainer.container_id)) {
+                            this.containers.push(newContainer);
+                            // Initialize actionLoading for new container
+                            this.actionLoading[newContainer.name] = false;
+                        }
                     });
 
                     this.runningCount = this.containers.filter(c => c.state === 'running').length;
@@ -1291,9 +1339,11 @@ function containersComponent() {
         
         /**
          * Apply filters to container list
+         * UI-007: Uses intelligent merge to prevent DOM flicker
          */
         applyFilters() {
-            this.filteredContainers = this.containers.filter(container => {
+            // Helper function to check if a container matches current filters
+            const matchesFilters = (container) => {
                 const searchLower = this.filters.search.toLowerCase().trim();
 
                 // Search filter - match whole words or word starts, not substrings within words
@@ -1331,6 +1381,27 @@ function containersComponent() {
                 }
 
                 return searchMatch && statusMatch && envMatch && imageMatch && managedMatch;
+            };
+
+            // Calculate what should be visible
+            const shouldBeVisible = this.containers.filter(matchesFilters);
+
+            // Create maps for efficient lookup
+            const currentMap = new Map(this.filteredContainers.map(c => [c.container_id, c]));
+            const newMap = new Map(shouldBeVisible.map(c => [c.container_id, c]));
+
+            // Remove containers that no longer match filters (reverse loop for safe removal)
+            for (let i = this.filteredContainers.length - 1; i >= 0; i--) {
+                if (!newMap.has(this.filteredContainers[i].container_id)) {
+                    this.filteredContainers.splice(i, 1);
+                }
+            }
+
+            // Add new containers that now match filters
+            shouldBeVisible.forEach(container => {
+                if (!currentMap.has(container.container_id)) {
+                    this.filteredContainers.push(container);
+                }
             });
 
             // Update URL with current filters
@@ -1398,7 +1469,8 @@ function containersComponent() {
 
             try {
                 const response = await fetch(`/api/containers/${containerId}/${action}`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: getCSRFHeaders()
                 });
 
                 // TASK 7 FIX: Check HTTP status
@@ -1549,7 +1621,8 @@ function containersComponent() {
             
             try {
                 const response = await fetch(`/api/containers/${this.deleteModal.containerId}?force=true`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: getCSRFHeaders()
                 });
                 const data = await response.json();
                 
@@ -1877,7 +1950,8 @@ function containersComponent() {
                 const response = await fetch('/api/containers', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
                     },
                     body: JSON.stringify(requestData)
                 });
@@ -2162,7 +2236,8 @@ function containersComponent() {
             this.actionLoading[containerName] = true;
             try {
                 const response = await fetch(`/api/containers/${containerName}/update`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: getCSRFHeaders()
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -2186,7 +2261,8 @@ function containersComponent() {
             this.actionLoading[containerName] = true;
             try {
                 const response = await fetch(`/api/containers/${containerName}/rollback`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: getCSRFHeaders()
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -2210,7 +2286,8 @@ function containersComponent() {
             this.actionLoading[container.name] = true;
             try {
                 const response = await fetch(`/api/containers/${container.container_id}/import`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: getCSRFHeaders()
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -2252,7 +2329,10 @@ function containersComponent() {
             try {
                 const response = await fetch(`/api/containers/${this.retagModal.container.name}/retag`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
                     body: JSON.stringify({ tag: tag })
                 });
                 const data = await response.json();

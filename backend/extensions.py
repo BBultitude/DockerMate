@@ -7,10 +7,14 @@ in app.py to avoid circular imports.
 
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
 
 limiter = Limiter(
     key_func=get_remote_address,
 )
+
+# CSRF protection for all state-changing requests (SECURITY-003)
+csrf = CSRFProtect()
 
 # Shared counter for container/network mutation operations.
 # All POST/PATCH/DELETE endpoints on the containers and networks blueprints

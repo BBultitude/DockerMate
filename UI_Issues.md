@@ -110,12 +110,58 @@ Both spots now format the volume as the standard Docker `source:destination:mode
 
 ---
 
+---
+
+### Issue 7: Container Refresh Flicker ⚠️ PARTIAL
+**Status:** PARTIAL (Scroll fixed, visual flicker deferred)
+**Reported:** February 6, 2026 (Sprint 5 Phase 1)
+
+**Root Cause:**
+`loadContainers()` replaces entire array every 10s causing full re-render, scroll position lost, and visual flicker.
+
+**Fix Applied:**
+- Implemented intelligent merge in `loadContainers()` and `applyFilters()`
+- Scroll position now preserved by comparing old vs new containers by `container_id`
+- Only changed items updated in place
+- Filters reapplied without losing scroll position
+
+**Remaining Issue:**
+Visual flicker still present (DOM elements briefly flash during update). Deferred to later sprint as it requires deeper Alpine.js optimization (keyed rendering strategy or virtual DOM approach).
+
+**Files Modified:**
+- `frontend/templates/containers.html` (loadContainers, applyFilters methods)
+
+---
+
+### Issue 8: Managed/Unmanaged Filter ✅ FIXED
+**Status:** RESOLVED
+**Reported:** February 6, 2026 (Sprint 5 Phase 1)
+
+**Root Cause:**
+"Show all Docker containers" checkbox was outdated pattern after FEAT-012 (import) and FEAT-017 (adopt) made managed/external distinction more important. No way to filter by managed status.
+
+**Fix Applied:**
+- Replaced "Show all" checkbox with "Managed Status" dropdown filter
+- Options: All / Managed / External
+- Default to "All" (preserves existing behavior)
+- Expanded filter grid from 4 to 5 columns to accommodate new filter
+- Added `filters.managedStatus` to `applyFilters()` logic
+- MANAGED/EXTERNAL badges now always visible (no longer dependent on "show all" toggle)
+- URL persistence works with new filter
+
+**Files Modified:**
+- `frontend/templates/containers.html` (filter UI, applyFilters logic)
+
+---
+
 ## Notes
 - All UI issues from initial reports have been resolved
 - Test containers show proper port mappings without duplicates
 - All action buttons (Start/Stop/Restart/Delete) are now fully functional
 - Container details modal now fetches full data (env_vars, volumes, limits) for managed containers
 - Network adopt/release lifecycle fully functional including for compose-generated networks
+- Managed/unmanaged filtering now integrated with always-visible badges
+- Scroll position preserved during container list refresh (visual flicker remains as known limitation)
 
 ## Sprint 5 New Features (UI Patterns)
 

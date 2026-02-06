@@ -1,8 +1,8 @@
 # DockerMate - Known Issues Tracker
 
 **Created:** January 31, 2026
-**Last Updated:** February 5, 2026 (Sprint 5 in progress)
-**Current Sprint:** Sprint 5 — SEC-001, FIX-002, FEAT-017, FEAT-019 delivered; UI bug fixes applied
+**Last Updated:** February 6, 2026 (Sprint 5 Phase 1 complete)
+**Current Sprint:** Sprint 5 — Phase 1 security & features delivered (SECURITY-003, SECURITY-001, FEAT-012, FEAT-013, UI-007, UI-008); production mode transition complete
 
 This document tracks all known issues identified during development. Issues are categorized by priority and can be checked off as they're resolved.
 
@@ -12,7 +12,7 @@ This document tracks all known issues identified during development. Issues are 
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Authentication/Security | 0 | 0 | 4 | 2 | 6 |
+| Authentication/Security | 0 | 0 | 2 | 2 | 4 |
 | Frontend Issues | 0 | 0 | 1 | 1 | 2 |
 | Backend API | 0 | 0 | 4 | 0 | 4 |
 | Database/Models | 0 | 0 | 4 | 0 | 4 |
@@ -24,7 +24,7 @@ This document tracks all known issues identified during development. Issues are 
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | Missing Features | 0 | 0 | 4 | 0 | 4 |
 | Network | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **0** | **0** | **35** | **12** | **47** |
+| **TOTAL** | **0** | **0** | **33** | **12** | **45** |
 
 **Recently Resolved (Sprint 3-4):** NETWORK-001 (oversized false-positive on empty networks), FEATURE-005 (show all containers), FEATURE-006 (real-time dashboard), FEATURE-002 (container sync), FEATURE-001 (system health checks)
 **Previously Resolved:** 7 issues (Sprint 2 Task 7), PROJECT_STATUS.md created (Sprint 2 Task 8)
@@ -32,7 +32,8 @@ This document tracks all known issues identified during development. Issues are 
 **New (Sprint 4):** FEATURE-007 (health page stub + dashboard health card incomplete)
 **Resolved (Sprint 4):** NETWORK-001 (recommended subnets flagged as oversized — fixed)
 **Resolved (Sprint 5 — Feb 5):** NETWORK-002, NETWORK-003, SSL-001 (previous session); FEATURE-007 (full health page + expanded API — SEC-001 rate limiting, FIX-002 password reset CLI, FEAT-017 adopt/release networks, FEAT-019 health page); FEATURE-004 (password reset — now `manage.py reset-password`); SECURITY-004 (password reset workflow — implemented via manage.py); UI-003 (rollback button clickable with no history — `rollback_available` flag); UI-004 (Release/Delete hidden for adopted dockermate network — overly broad name filter removed); UI-005 (env vars missing from container details — showDetails now fetches full detail); UI-006 (volumes rendered as [object Object] — fixed to source:destination:mode)
-**Total Open Issues:** 38
+**Resolved (Sprint 5 — Feb 6):** SECURITY-001 (session cookie secure flag — renamed to 'auth_session', explicit path), SECURITY-003 (CSRF token validation — 21 operations protected)
+**Total Open Issues:** 36
 
 ---
 
@@ -444,20 +445,16 @@ Create `PROJECT_STATUS.MD` with:
 
 ---
 
-### SECURITY-001: Session Cookie Security in Development ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `backend/api/auth.py:171-173`
+### SECURITY-001: Session Cookie Security in Development ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** `backend/api/auth.py`, `backend/auth/middleware.py`
+**Resolved:** February 6, 2026 (Sprint 5 Phase 1)
 
-**Issue:**
-Cookie set with `secure=True` unconditionally, even in development
-
-**Impact:**
-Browsers reject secure cookies over HTTP in testing mode
-
-**Fix Required:**
-```python
-secure = not app.config.get('TESTING')
-```
+**Resolution:**
+- Session cookie renamed from 'session' to 'auth_session' (avoids Flask session conflict)
+- Added explicit `path='/'` to cookie
+- Updated all references in auth.py and middleware.py
+- Production mode (`app.py`) now enforces secure flag correctly
 
 ---
 
@@ -473,15 +470,22 @@ Setup could be exposed over plain HTTP
 
 ---
 
-### SECURITY-003: Missing CSRF Token Validation ⚠️ MEDIUM
-**Status:** 🔴 OPEN
-**Location:** `backend/api/containers.py` (POST/DELETE endpoints)
+### SECURITY-003: Missing CSRF Token Validation ✅ RESOLVED
+**Status:** ✅ RESOLVED
+**Location:** All mutation endpoints across frontend templates
+**Resolved:** February 6, 2026 (Sprint 5 Phase 1)
 
-**Issue:**
-No CSRF token validation on API endpoints
-
-**Note:**
-README says "SameSite=Strict cookies prevent CSRF" but explicit validation is better
+**Resolution:**
+- Flask-WTF CSRFProtect enabled in `backend/extensions.py`
+- CSRF token meta tag added to `base.html`
+- Created `getCSRFToken()` and `getCSRFHeaders()` helper functions
+- Updated 21 mutation operations across 5 templates:
+  - containers.html (12 operations: create, start, stop, restart, delete, update-all, update, rollback, import, retag, bulk-delete, sync)
+  - images.html (4 operations: pull, tag, delete, check-updates)
+  - networks.html (3 operations: create, delete, adopt/release)
+  - settings.html (1 operation: save settings)
+  - setup.html (1 operation: initial setup)
+- All POST/DELETE/PATCH requests now include X-CSRFToken header
 
 ---
 
@@ -831,11 +835,11 @@ These can be fixed quickly with high impact:
 - Issues Remaining: 44
 
 **Sprint 5 (current):**
-- Issues Resolved: 6 (FEATURE-007, FEATURE-004, SECURITY-004, UI-003, UI-004, UI-005, UI-006)
+- Issues Resolved: 8 (FEATURE-007, FEATURE-004, SECURITY-004, SECURITY-001, SECURITY-003, UI-003, UI-004, UI-005, UI-006)
 - New issues identified: 4 (UI-003 through UI-006 — all resolved same session)
-- Issues Remaining: 38
+- Issues Remaining: 36
 
 ---
 
-**Last Scan:** February 5, 2026
+**Last Scan:** February 6, 2026
 **Next Review:** Sprint 5 completion

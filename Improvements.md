@@ -137,7 +137,7 @@ This document tracks all planned improvements, features, fixes, refactors, secur
 **Priority:** Medium
 **Effort:** 4-6 hours
 **Sprint:** 5
-**Status:** ✅ COMPLETE (Feb 5, 2026)
+**Status:** ✅ COMPLETE (Feb 6, 2026)
 **Description:**
 External (unmanaged) containers are visible on the Containers page when "Show all Docker containers" is toggled, but cannot be managed through DockerMate. This feature adds two paths to get them under DockerMate control:
 
@@ -159,7 +159,7 @@ External (unmanaged) containers are visible on the Containers page when "Show al
 **Priority:** Medium
 **Effort:** 3-4 hours
 **Sprint:** 5
-**Status:** ✅ COMPLETE (Feb 5, 2026)
+**Status:** ✅ COMPLETE (Feb 6, 2026)
 **Description:**
 The current update flow (`POST /api/containers/<id>/update`) pulls the same `repository:tag` the container was created with. If a container was deliberately pinned to `nginx:1.28`, update will only ever pull `nginx:1.28` — it will never jump to `1.29` or `latest`. This is correct default behaviour, but there is no way to *change* the tag without deleting and manually recreating the container.
 
@@ -588,10 +588,34 @@ health_status = {
 
 ---
 
-### SEC-003: Audit Logging
-**Priority:** Medium  
-**Effort:** 3-4 hours  
-**Sprint:** 5 (System Administration)  
+### SEC-003: CSRF Token Validation ✅ COMPLETE (Feb 6, 2026)
+**Priority:** High
+**Effort:** 3-4 hours
+**Sprint:** 5 (System Administration)
+**Status:** ✅ COMPLETE
+**Description:**
+- Add CSRF token validation to all mutation operations
+- Protect against cross-site request forgery attacks
+- Implement Flask-WTF CSRFProtect
+- Add token to all forms and AJAX requests
+**Resolution:**
+- Flask-WTF CSRFProtect enabled in `backend/extensions.py`
+- CSRF token meta tag added to `base.html`
+- Created `getCSRFToken()` and `getCSRFHeaders()` helper functions
+- Updated 21 mutation operations across 5 templates:
+  - containers.html (12 operations)
+  - images.html (4 operations)
+  - networks.html (3 operations)
+  - settings.html (1 operation)
+  - setup.html (1 operation)
+- All POST/DELETE/PATCH requests now include X-CSRFToken header
+
+---
+
+### SEC-004: Audit Logging
+**Priority:** Medium
+**Effort:** 3-4 hours
+**Sprint:** 5 (System Administration)
 **Description:**
 - Log all sensitive operations:
   - Login/logout events
@@ -604,10 +628,10 @@ health_status = {
 
 ---
 
-### SEC-004: Docker Socket Security
-**Priority:** High  
-**Effort:** 1-2 hours  
-**Sprint:** 5 (System Administration)  
+### SEC-005: Docker Socket Security
+**Priority:** High
+**Effort:** 1-2 hours
+**Sprint:** 5 (System Administration)
 **Description:**
 - Document risks of mounting `/var/run/docker.sock`
 - Add warning in installation docs
@@ -987,6 +1011,7 @@ Flask-Limiter added to `requirements.txt`. Limiter instance + shared mutation sc
 ---
 
 ## VERSION HISTORY
+- **v2.0** (2026-02-06): Sprint 5 Phase 1 complete — FEAT-012 (import unmanaged containers), FEAT-013 (retag & redeploy), SECURITY-003 (CSRF token validation - 21 operations protected), SECURITY-001 (session cookie secure flag + rename to 'auth_session'), UI-007 (container refresh flicker - scroll preserved), UI-008 (managed/unmanaged filter); production mode transition (app_dev.py deleted, now using app.py with full HTTPS); PROJECT_STATUS, KNOWN_ISSUES, UI_Issues, SPRINT_COMPLETION_AUDIT, Improvements updated
 - **v1.9** (2026-02-05): Sprint 5 complete — SEC-001 (rate limiting), FIX-002 (password reset CLI), FEAT-017 (adopt/release networks), FEAT-019 (full health page + expanded health API); 4 UI bugs fixed (rollback button, network Release/Delete visibility, container detail env vars, volume mount display); PROJECT_STATUS, KNOWN_ISSUES, UI_Issues, Improvements updated
 - **v1.8** (2026-02-04): Sprint 4 complete — NETWORK-001 fixed, Task 4 (IP reservations), Task 6 (topology view), Task 7 (auto-generated docs) all delivered; PROJECT_STATUS and KNOWN_ISSUES updated
 - **v1.7** (2026-02-03): Backlog additions — FEAT-016 (expanded subnet picker), FEAT-017 (adopt unmanaged networks), FEAT-018 (IP allocation detail view), FEAT-019 (full health page + dashboard health expansion); NETWORK-001 bug confirmed and detailed

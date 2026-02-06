@@ -173,11 +173,12 @@ def login():
             secure_cookie = current_app.config.get('DOCKERMATE_SSL_MODE', 'self-signed') != 'disabled'
 
             response.set_cookie(
-                'session',
+                'auth_session',  # Use unique name to avoid Flask session conflict
                 session_token,
                 httponly=True,
                 secure=secure_cookie,  # HTTPS only in production
                 samesite='Strict',
+                path='/',  # Ensure cookie is sent with all requests
                 max_age=max_age
             )
             

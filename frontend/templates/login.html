@@ -78,12 +78,13 @@ function loginPage() {
         async login() {
             this.errorMessage = '';
             this.loading = true;
-            
+
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
                     },
                     body: JSON.stringify({
                         password: this.password,

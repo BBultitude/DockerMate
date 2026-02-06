@@ -164,6 +164,7 @@ function settingsPage() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
                     },
                     body: JSON.stringify({
                         current_password: this.passwordForm.current_password,

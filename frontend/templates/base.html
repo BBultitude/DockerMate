@@ -3,13 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}DockerMate{% endblock %}</title>
-    
+
     <!-- Tailwind CSS (CDN for simplicity) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Alpine.js for reactivity -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- CSRF Token Helper (SECURITY-003) -->
+    <script>
+        // Global helper to get CSRF token for fetch requests
+        function getCSRFToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        }
+
+        // Global helper to create headers with CSRF token
+        function getCSRFHeaders(additionalHeaders = {}) {
+            return {
+                'X-CSRFToken': getCSRFToken(),
+                ...additionalHeaders
+            };
+        }
+    </script>
     
     <style>
         /* Dark mode by default for home labs */

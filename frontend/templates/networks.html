@@ -895,7 +895,10 @@ function networksComponent() {
             try {
                 const res = await fetch('/api/networks/validate-subnet', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
                     body: JSON.stringify({ subnet: this.createForm.subnet })
                 });
                 this.subnetValidation = await res.json();
@@ -916,7 +919,10 @@ function networksComponent() {
             try {
                 const res = await fetch('/api/networks', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
                     body: JSON.stringify({
                         name:    this.createForm.name.trim(),
                         driver:  this.createForm.driver,
@@ -954,7 +960,10 @@ function networksComponent() {
             this.networkToDelete = null;
 
             try {
-                const res = await fetch('/api/networks/' + id, { method: 'DELETE' });
+                const res = await fetch('/api/networks/' + id, {
+                    method: 'DELETE',
+                    headers: getCSRFHeaders()
+                });
                 const data = await res.json();
                 if (data.success) {
                     this.showToast(`Network '${name}' deleted`, 'success');
@@ -974,7 +983,10 @@ function networksComponent() {
         // ---- adopt / release (FEAT-017) ----
         async adoptNetwork(network) {
             try {
-                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'POST' });
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', {
+                    method: 'POST',
+                    headers: getCSRFHeaders()
+                });
                 const data = await res.json();
                 if (data.success) {
                     this.showToast(data.message, 'success');
@@ -989,7 +1001,10 @@ function networksComponent() {
 
         async releaseNetwork(network) {
             try {
-                const res = await fetch('/api/networks/' + network.network_id + '/adopt', { method: 'DELETE' });
+                const res = await fetch('/api/networks/' + network.network_id + '/adopt', {
+                    method: 'DELETE',
+                    headers: getCSRFHeaders()
+                });
                 const data = await res.json();
                 if (data.success) {
                     this.showToast(data.message, 'success');
@@ -1026,7 +1041,10 @@ function networksComponent() {
             try {
                 const res = await fetch('/api/networks/' + netId + '/connect', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
                     body: JSON.stringify({ container_id: containerId })
                 });
                 const data = await res.json();
@@ -1049,7 +1067,10 @@ function networksComponent() {
 
         async disconnectContainer(networkId, containerId) {
             try {
-                const res = await fetch('/api/networks/' + networkId + '/connect/' + containerId, { method: 'DELETE' });
+                const res = await fetch('/api/networks/' + networkId + '/connect/' + containerId, {
+                    method: 'DELETE',
+                    headers: getCSRFHeaders()
+                });
                 const data = await res.json();
                 if (data.success) {
                     this.showToast(`Disconnected '${data.container_name}'`, 'success');
@@ -1097,7 +1118,10 @@ function networksComponent() {
             try {
                 const res = await fetch('/api/networks/' + this.showReserveModal + '/reserve', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
                     body: JSON.stringify({
                         range_name:  this.reserveForm.range_name.trim(),
                         start_ip:    this.reserveForm.start_ip.trim(),
@@ -1130,7 +1154,10 @@ function networksComponent() {
             try {
                 const res = await fetch(
                     '/api/networks/' + networkId + '/reserve/' + encodeURIComponent(rangeName),
-                    { method: 'DELETE' }
+                    {
+                        method: 'DELETE',
+                        headers: getCSRFHeaders()
+                    }
                 );
                 const data = await res.json();
                 if (data.success) {

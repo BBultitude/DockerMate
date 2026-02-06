@@ -227,6 +227,7 @@ DockerMate requires access to `/var/run/docker.sock` to manage containers. This 
 
 DockerMate runs with HTTPS by default:
 - Self-signed certificates generated automatically
+- Certificates include host IP addresses for LAN access
 - Let's Encrypt support available (requires public domain)
 - HTTP automatically redirects to HTTPS
 
@@ -238,6 +239,8 @@ DockerMate uses a **perimeter security model** optimized for trusted home lab ne
 
 - ✅ **UI routes protected**: All HTML pages require authentication (`@require_auth()`)
 - ✅ **HTTPS everywhere**: TLS 1.2+ encryption for all traffic
+- ✅ **CSRF protection**: All mutation operations protected with CSRF tokens
+- ✅ **Rate limiting**: Login attempts and mutation operations rate-limited
 - ⚠️ **API routes unprotected**: REST APIs trust same-origin requests (no session validation)
 
 **Why This Architecture?**
@@ -252,6 +255,8 @@ DockerMate uses a **perimeter security model** optimized for trusted home lab ne
 - ⚠️ **REQUIRED**: VPN for remote access (WireGuard/OpenVPN recommended)
 - ✅ HTTPS prevents network sniffing on local network
 - ✅ SameSite=Strict cookies prevent CSRF attacks
+- ✅ Flask-WTF CSRF tokens on all mutation operations
+- ✅ Rate limiting on authentication and API mutations
 
 **This Design is NOT Suitable For:**
 - ❌ Multi-user environments

@@ -82,13 +82,13 @@ def require_auth(api=False):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Get session token from cookie
-            session_token = request.cookies.get('session')
-            
+            # Get session token from cookie (use 'auth_session' to avoid Flask session conflict)
+            session_token = request.cookies.get('auth_session')
+
             # Validate session
             if not session_token or not SessionManager.validate_session(session_token):
                 logger.warning(f"Unauthorized access attempt to {request.path} from {request.remote_addr}")
-                
+
                 # API routes return JSON error
                 if api:
                     return jsonify({
@@ -96,12 +96,12 @@ def require_auth(api=False):
                         "error": "Authentication required",
                         "redirect": "/login"
                     }), 401
-                
+
                 # HTML routes redirect to login
                 else:
                     # Store original URL to redirect back after login
                     return redirect(url_for('login_page', next=request.url))
-            
+
             # Session valid, proceed with request
             return f(*args, **kwargs)
         
@@ -112,10 +112,10 @@ def require_auth(api=False):
 def is_authenticated():
     """
     Check if current request is authenticated (without enforcing)
-    
+
     Returns:
         bool: True if valid session exists, False otherwise
-    
+
     Usage:
         @app.route('/home')
         def home():
@@ -123,15 +123,15 @@ def is_authenticated():
                 return render_template('dashboard.html')
             else:
                 return render_template('landing.html')
-    
+
     Use Cases:
     - Conditional content based on auth status
     - Optional authentication
     - Custom handling of unauthenticated users
-    
+
     Note: This does NOT protect the route. Use @require_auth for that.
     """
-    session_token = request.cookies.get('session')
+    session_token = request.cookies.get('auth_session')
     
     if not session_token:
         return False
@@ -142,7 +142,7 @@ def is_authenticated():
 def get_current_session_info():
     """
     Get information about the current session
-    
+
     Returns:
         dict or None: Session info if authenticated, None otherwise
         {
@@ -152,21 +152,21 @@ def get_current_session_info():
             'ip_address': '192.168.1.100',
             'user_agent': 'Mozilla/5.0...'
         }
-    
+
     Usage:
         @app.route('/profile')
         @require_auth()
         def profile():
             session = get_current_session_info()
             return render_template('profile.html', session=session)
-    
+
     Use Cases:
     - Display session info to user
     - Show "Last login" timestamp
     - Show "Session expires in X hours"
     - Security audit (show IP/user agent)
     """
-    session_token = request.cookies.get('session')
+    session_token = request.cookies.get('auth_session')
     
     if not session_token:
         return None
@@ -177,28 +177,28 @@ def get_current_session_info():
 def before_request_check():
     """
     Flask before_request handler for automatic session validation
-    
+
     This can be registered globally to validate sessions on every request.
     Not required if using @require_auth decorator, but can be useful for
     automatic cleanup of expired sessions.
-    
+
     Usage in app.py:
         from backend.auth.middleware import before_request_check
-        
+
         @app.before_request
         def check_auth():
             return before_request_check()
-    
+
     What it does:
     - Checks session validity on every request
     - Cleans up expired sessions automatically
     - Updates last_accessed timestamp
     - Does NOT enforce authentication (use @require_auth for that)
-    
+
     Note: For home labs, this might be overkill. Use @require_auth on
     specific routes instead for simpler architecture.
     """
-    session_token = request.cookies.get('session')
+    session_token = request.cookies.get('auth_session')
     
     if session_token:
         # Validate and update session

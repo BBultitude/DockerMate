@@ -67,6 +67,13 @@ app.register_blueprint(networks_bp)
 from backend.extensions import limiter
 limiter.init_app(app)
 
+# Import and initialise CSRF protection (Sprint 5 — SECURITY-003)
+from backend.extensions import csrf
+# Configure CSRF to avoid cookie name conflict with session cookie
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # Tokens don't expire (tied to session)
+app.config['WTF_CSRF_SSL_STRICT'] = False  # Allow self-signed certs
+csrf.init_app(app)
+
 # Import middleware for route protection
 from backend.auth.middleware import require_auth, get_current_session_info, is_authenticated
 

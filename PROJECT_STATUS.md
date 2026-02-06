@@ -1,9 +1,9 @@
 # DockerMate - Project Status Tracker
 
-**Last Updated:** February 5, 2026
+**Last Updated:** February 6, 2026
 **Current Version:** v0.1.0-alpha
 **Current Phase:** Sprint 5 - Volumes, Stacks & Health (Sprint 4 complete)
-**Overall Completion:** ~65% (Sprints 1-4 complete, Sprint 5 in progress — security, health, adopt/release delivered)
+**Overall Completion:** ~70% (Sprints 1-4 complete, Sprint 5 Phase 1 security/features delivered, original tasks pending)
 
 ---
 
@@ -192,12 +192,12 @@ v2.0.0 - Advanced Features (Future)
 ### Sprint 5: Volumes, Stacks & Health 🔄 IN PROGRESS
 **Status:** Bug fixes & SSL enhancement delivered; main tasks pending
 
-**Completed (Sprint 5 — Feb 5, 2026):**
+**Completed (Sprint 5 — Feb 5-6, 2026):**
 - ✅ Bug fix: Networks page `managed` flag — `list_networks()` and `get_network()` were using `db_net is not None` which incorrectly marked synced-but-unmanaged networks as "managed". Fixed to `db_net.managed if db_net else False`.
 - ✅ Bug fix: Networks page non-managed container visibility — `get_network()` now cross-references container IDs with DB to tag each with `managed: True/False`. UI shows Managed/External badges in the Connected Containers panel, Connect modal, topology legend, and SVG nodes (orange stroke for external).
 - ✅ Bug fix: Topology view `oversized` index mapping — `.filter(null)` was shifting indices before `.map()` merged the flag. Reordered to `.map()` first.
 - ✅ Feature: SSL cert host IP detection — `generate_self_signed_cert()` now includes the host machine's routable IP in SANs via `_detect_host_ips()`: reads `DOCKERMATE_HOST_IP` env var, parses default gateway from `/proc/1/net/route`, resolves `host.docker.internal`. All detected IPs deduplicated and added alongside existing container/loopback IPs.
-- ✅ SEC-001: Rate limiting via Flask-Limiter — login capped at 5/15 min per IP; all container + network mutation endpoints share a 30/min counter (`mutation_limit`). 429 responses return structured JSON. `app_dev.py` wired with `RATELIMIT_ENABLED = True` (required because `TESTING = True` disables limiter by default).
+- ✅ SEC-001: Rate limiting via Flask-Limiter — login capped at 5/15 min per IP; all container + network mutation endpoints share a 30/min counter (`mutation_limit`). 429 responses return structured JSON. Production mode (`app.py`) wired with rate limiting enabled.
 - ✅ FIX-002: Password reset CLI — `manage.py reset-password` with `--temp` (generates secure random password, sets `force_password_change`) and interactive mode (prompt-twice + strength validation). Runs inside container only; lazy imports, no Flask context needed.
 - ✅ FEAT-017: Adopt/Release unmanaged networks — `POST /api/networks/<id>/adopt` and `DELETE /api/networks/<id>/adopt`. Metadata-only (no Docker network change). Default networks (bridge/host/none) rejected. Frontend Adopt/Release buttons on network cards.
 - ✅ FEAT-019: Full health page + expanded health API — `/api/system/health` now returns 6 check domains (`database`, `docker`, `containers`, `images`, `networks`, `dockermate`) with domain-tagged warnings. Dashboard health card uses dynamic `healthDots`. `/health` page: stats row, per-domain detail cards, actionable links, 10 s auto-refresh.
@@ -205,6 +205,13 @@ v2.0.0 - Advanced Features (Future)
 - ✅ Bug fix: Release/Delete buttons hidden for adopted `dockermate_dockermate-net` — removed overly broad `includes('dockermate')` name check from frontend buttons and backend `delete_network`. Real protection is the "containers attached" guard.
 - ✅ Bug fix: Container details modal missing env_vars/volumes/limits — `showDetails()` now fetches full detail from `GET /api/containers/<id>` for managed containers instead of reusing sparse list data.
 - ✅ Bug fix: Volume mounts rendered as `[object Object]` — both the detail modal and docker-command generator now format volumes as `source:destination:mode`.
+- ✅ FEAT-012: Import unmanaged containers — `import_container()` writes external container's Docker state to DB via `_sync_database_state()`. API: `POST /api/containers/<id>/import`. Frontend: Import button on external container cards. Metadata-only (same as network adopt).
+- ✅ FEAT-013: Retag & redeploy — `retag_container()` reuses update_container_image recreate flow with new tag. API: `POST /api/containers/<id>/retag` with `{"tag": "..."}`. Frontend: Retag button (indigo) opens modal with current image + new tag input. UpdateHistory record written for rollback.
+- ✅ SECURITY-003: CSRF token validation — Flask-WTF CSRFProtect enabled. CSRF token meta tag in base.html. `getCSRFToken()` and `getCSRFHeaders()` helpers created. 21 mutation operations updated across 5 templates (containers, images, networks, settings, setup).
+- ✅ SECURITY-001: Session cookie secure flag — Session cookie renamed from 'session' to 'auth_session' (avoid Flask session conflict). Added explicit `path='/'`. Updated all references in auth.py and middleware.py.
+- ✅ UI-008: Managed/unmanaged filter — Replaced "Show all" checkbox with dropdown filter (All/Managed/External). Expanded filter grid from 4 to 5 columns. `filters.managedStatus` integrated into `applyFilters()` logic. MANAGED/EXTERNAL badges now always visible.
+- ✅ UI-007: Container refresh flicker — Scroll position preserved via intelligent merge in `loadContainers()` and `applyFilters()`. Visual flicker still present (deferred to later sprint).
+- ✅ Production mode transition — Deleted `app_dev.py`, now using `app.py` with full HTTPS. Updated `docker-compose.dev.yml` to use SSL mode self-signed. Updated `docker-entrypoint.sh` to run `app.py`.
 
 | Task | Status | Dependencies |
 |------|--------|-------------|
@@ -283,13 +290,20 @@ v2.0.0 - Advanced Features (Future)
 
 ### Recent Fixes & Completions (Sprint 5)
 1. ✅ SEC-001 — Rate limiting (Flask-Limiter: login 5/15 min, mutations 30/min shared)
-2. ✅ FIX-002 — Password reset CLI (`manage.py reset-password --temp`)
-3. ✅ FEAT-017 — Adopt/Release unmanaged networks (metadata-only, UI buttons, API endpoints)
-4. ✅ FEAT-019 — Full health page + 6-domain health API + dashboard healthDots
-5. ✅ UI-003 — Rollback button disabled when no update history (`rollback_available` flag)
-6. ✅ UI-004 — Release/Delete no longer hidden for adopted compose networks
-7. ✅ UI-005 — Container details modal fetches full data (env_vars, volumes, limits)
-8. ✅ UI-006 — Volume mounts render as `source:destination:mode` instead of `[object Object]`
+2. ✅ SECURITY-003 — CSRF token validation (21 mutation operations protected)
+3. ✅ SECURITY-001 — Session cookie secure flag (renamed to 'auth_session', explicit path)
+4. ✅ FIX-002 — Password reset CLI (`manage.py reset-password --temp`)
+5. ✅ FEAT-012 — Import unmanaged containers (metadata-only import, API + UI)
+6. ✅ FEAT-013 — Retag & redeploy (change container image version with rollback support)
+7. ✅ FEAT-017 — Adopt/Release unmanaged networks (metadata-only, UI buttons, API endpoints)
+8. ✅ FEAT-019 — Full health page + 6-domain health API + dashboard healthDots
+9. ✅ UI-003 — Rollback button disabled when no update history (`rollback_available` flag)
+10. ✅ UI-004 — Release/Delete no longer hidden for adopted compose networks
+11. ✅ UI-005 — Container details modal fetches full data (env_vars, volumes, limits)
+12. ✅ UI-006 — Volume mounts render as `source:destination:mode` instead of `[object Object]`
+13. ✅ UI-007 — Container refresh flicker (scroll position preserved, visual flicker deferred)
+14. ✅ UI-008 — Managed/unmanaged filter (dropdown replaces checkbox, always visible badges)
+15. ✅ Production mode transition — Now using app.py with full HTTPS (app_dev.py deleted)
 
 ### Previously Completed (Sprint 3-4)
 1. ✅ FEATURE-005 — Show all Docker containers (managed + external with protection)
@@ -372,9 +386,9 @@ DockerMate prioritizes educational value:
 - ✅ Perimeter security model (DESIGN-v2.md v2.0.0)
 - ✅ HTTPS/TLS 1.2+ enforcement
 - ✅ Bcrypt password hashing (work factor 12)
-- ✅ Secure session cookies (httpOnly, Secure, SameSite=Strict)
+- ✅ Secure session cookies (httpOnly, Secure, SameSite=Strict, renamed to 'auth_session')
 - ✅ Rate limiting (SEC-001 — Flask-Limiter, login 5/15 min, mutations 30/min shared)
-- ⏳ CSRF token validation (planned Sprint 5+)
+- ✅ CSRF token validation (SECURITY-003 — 21 mutation operations protected)
 - ⏳ Content Security Policy (planned Sprint 5+)
 
 ### Known Security Issues
@@ -442,5 +456,5 @@ DockerMate prioritizes educational value:
 - Update issue counts weekly
 - Review and update metrics monthly
 
-**Last Updated:** February 5, 2026 by Claude Sonnet 4.5
+**Last Updated:** February 6, 2026 by Claude Sonnet 4.5
 **Next Review:** Sprint 5 completion
