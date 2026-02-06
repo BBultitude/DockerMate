@@ -14,95 +14,79 @@
         </div>
 
         <!-- =====================================================================
-             TOP ROW  —  Health card  |  Containers card  |  Hardware card
+             COMPACT METRICS GRID  —  Optimized layout (Task 4)
              ===================================================================== -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
 
-            <!-- Health card (replaces old Capacity card) -->
-            <div class="bg-slate-800 p-6 rounded-lg border"
+            <!-- Total Containers -->
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-xs mb-1">Total Containers</p>
+                <p class="text-2xl font-bold text-white" x-text="stats.totalContainers"></p>
+                <div class="flex items-center gap-1 mt-1">
+                    <span class="text-xs text-slate-500">Capacity:</span>
+                    <span class="text-xs font-medium"
+                          :class="stats.capacityPercent > 80 ? 'text-red-400' :
+                                  stats.capacityPercent > 60 ? 'text-yellow-400' : 'text-green-400'"
+                          x-text="stats.capacityPercent + '%'"></span>
+                </div>
+            </div>
+
+            <!-- Running Containers -->
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-xs mb-1">Running</p>
+                <p class="text-2xl font-bold text-green-400" x-text="stats.runningContainers"></p>
+                <p class="text-xs text-slate-500 mt-1">Active containers</p>
+            </div>
+
+            <!-- Stopped Containers -->
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-xs mb-1">Stopped</p>
+                <p class="text-2xl font-bold text-slate-400" x-text="stats.stoppedContainers"></p>
+                <p class="text-xs text-slate-500 mt-1">Inactive containers</p>
+            </div>
+
+            <!-- Hardware Profile -->
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-xs mb-1">Hardware</p>
+                <p class="text-lg font-bold text-white truncate" x-text="hardware.profile_name || 'Loading...'"></p>
+                <p class="text-xs text-slate-500 mt-1">
+                    <span x-text="hardware.cpu_count + ' CPU'"></span> •
+                    <span x-text="hardware.total_memory_gb + 'GB'"></span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Health Status Row -->
+        <div class="grid grid-cols-1 mb-6">
+            <div class="bg-slate-800 p-4 rounded-lg border"
                  :class="health.status === 'unhealthy' ? 'border-red-600' :
                          health.status === 'warning'   ? 'border-yellow-500' :
                                                          'border-slate-700'">
-                <div class="flex items-center justify-between mb-3">
-                    <p class="text-slate-400 text-sm">Health</p>
-                    <!-- status badge -->
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                          :class="health.status === 'unhealthy' ? 'bg-red-900 text-red-300' :
-                                  health.status === 'warning'   ? 'bg-yellow-900 text-yellow-300' :
-                                                                  'bg-green-900 text-green-300'"
-                          x-text="health.status.charAt(0).toUpperCase() + health.status.slice(1)"></span>
-                </div>
-
-                <!-- capacity bar (always shown) -->
-                <div class="mb-3">
-                    <div class="flex justify-between text-xs text-slate-500 mb-1">
-                        <span>Capacity</span>
-                        <span x-text="stats.totalContainers + ' / ' + hardware.max_containers"></span>
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <!-- Status badge -->
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-semibold text-slate-300">System Health:</span>
+                        <span class="text-xs font-semibold px-3 py-1 rounded-full"
+                              :class="health.status === 'unhealthy' ? 'bg-red-900 text-red-300' :
+                                      health.status === 'warning'   ? 'bg-yellow-900 text-yellow-300' :
+                                                                      'bg-green-900 text-green-300'"
+                              x-text="health.status.charAt(0).toUpperCase() + health.status.slice(1)"></span>
                     </div>
-                    <div class="w-full bg-slate-700 rounded-full h-2">
-                        <div class="h-2 rounded-full transition-all duration-300"
-                             :class="stats.capacityPercent > 80 ? 'bg-red-500' :
-                                     stats.capacityPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'"
-                             :style="'width: ' + stats.capacityPercent + '%'"></div>
+
+                    <!-- Health checks dots -->
+                    <div class="flex gap-4 text-xs flex-wrap">
+                        <template x-for="dot in healthDots" :key="dot.label">
+                            <span class="flex items-center gap-1">
+                                <span :class="dot.status === 'ok' ? 'text-green-400' : dot.status === 'warning' ? 'text-yellow-400' : 'text-red-400'">●</span>
+                                <span class="text-slate-400" x-text="dot.label"></span>
+                            </span>
+                        </template>
                     </div>
-                </div>
 
-                <!-- checks row: one dot per domain (dynamic) -->
-                <div class="flex gap-4 text-xs mb-3 flex-wrap">
-                    <template x-for="dot in healthDots" :key="dot.label">
-                        <span class="flex items-center gap-1">
-                            <span :class="dot.status === 'ok' ? 'text-green-400' : dot.status === 'warning' ? 'text-yellow-400' : 'text-red-400'">●</span>
-                            <span class="text-slate-400" x-text="dot.label"></span>
-                        </span>
-                    </template>
-                </div>
-
-                <!-- warnings list -->
-                <div x-show="health.warnings.length > 0" class="border-t border-slate-700 pt-2 mt-1">
-                    <template x-for="w in health.warnings" :key="w.domain + w.message">
-                        <p class="text-xs text-yellow-300 flex items-start gap-1 mb-1">
-                            <span class="mt-0.5">⚠</span>
-                            <span x-text="w.message"></span>
-                        </p>
-                    </template>
-                    <a href="/health" class="text-xs text-blue-400 hover:underline mt-1 inline-block">View details →</a>
-                </div>
-
-                <!-- all-clear when no warnings -->
-                <div x-show="health.warnings.length === 0 && health.status === 'healthy'"
-                     class="text-xs text-green-400 border-t border-slate-700 pt-2 mt-1">
-                    All checks passing
-                </div>
-            </div>
-
-            <!-- Containers card -->
-            <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-slate-400 text-sm">Containers</p>
-                        <p class="text-3xl font-bold text-white mt-1" x-text="stats.totalContainers"></p>
-                        <p class="text-sm mt-2">
-                            <span class="text-green-400" x-text="stats.runningContainers + ' running'"></span>
-                            <span class="text-slate-500"> / </span>
-                            <span class="text-slate-400" x-text="stats.stoppedContainers + ' stopped'"></span>
-                        </p>
-                    </div>
-                    <div class="text-blue-400 text-3xl">📦</div>
-                </div>
-            </div>
-
-            <!-- Hardware card -->
-            <div class="bg-slate-800 p-6 rounded-lg border border-slate-700">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-slate-400 text-sm">Hardware Profile</p>
-                        <p class="text-xl font-bold text-white mt-1" x-text="hardware.profile_name || 'Loading...'"></p>
-                        <p class="text-sm mt-2 text-slate-400">
-                            <span x-text="hardware.cpu_count + ' CPU'"></span> |
-                            <span x-text="hardware.total_memory_gb + ' GB RAM'"></span>
-                        </p>
-                    </div>
-                    <div class="text-purple-400 text-3xl">💻</div>
+                    <!-- View details link -->
+                    <a href="/health" class="text-xs text-blue-400 hover:underline whitespace-nowrap">
+                        View details →
+                    </a>
                 </div>
             </div>
         </div>
@@ -141,7 +125,7 @@
                 <!-- top 3 images by size -->
                 <div x-show="images.top.length > 0" class="space-y-1 border-t border-slate-700 pt-2">
                     <p class="text-xs text-slate-500 mb-1">Largest</p>
-                    <template x-for="img in images.top" :key="img.name">
+                    <template x-for="img in images.top" :key="img.id">
                         <div class="flex items-center justify-between">
                             <span class="text-xs text-slate-300 truncate mr-2" x-text="img.name"></span>
                             <span class="text-xs text-slate-500 whitespace-nowrap" x-text="img.size"></span>
@@ -249,6 +233,7 @@ function dashboardComponent() {
         },
         lastUpdated: 'Never',
         loading: false,
+        initialLoadComplete: false,  // Track if first load is done to prevent flashing on polling
 
         // Computed: one dot per check key, friendly labels, ordered
         get healthDots() {
@@ -275,7 +260,10 @@ function dashboardComponent() {
 
         // --- fetch everything in parallel ---
         async loadAll() {
-            this.loading = true;
+            // Only show loading spinner on initial load, not on polling refreshes
+            if (!this.initialLoadComplete) {
+                this.loading = true;
+            }
             try {
                 await Promise.all([
                     this.loadHardware(),
@@ -290,6 +278,7 @@ function dashboardComponent() {
                 console.error('Dashboard load error:', e);
             } finally {
                 this.loading = false;
+                this.initialLoadComplete = true;  // Mark initial load as complete
             }
         },
 
@@ -299,7 +288,12 @@ function dashboardComponent() {
                 const r = await fetch('/api/system/hardware');
                 if (!r.ok) return;
                 const d = await r.json();
-                if (d.success) this.hardware = d.data;
+                if (d.success) {
+                    // Only update if changed
+                    if (JSON.stringify(this.hardware) !== JSON.stringify(d.data)) {
+                        this.hardware = d.data;
+                    }
+                }
             } catch (e) { console.error('loadHardware:', e); }
         },
 
@@ -309,9 +303,15 @@ function dashboardComponent() {
                 if (!r.ok) return;
                 const d = await r.json();
                 if (d.success) {
-                    this.health.status   = d.status;
-                    this.health.checks   = d.checks;
-                    this.health.warnings = d.warnings || [];
+                    // Only update if changed (prevents DOM thrashing)
+                    if (this.health.status !== d.status) this.health.status = d.status;
+                    if (JSON.stringify(this.health.checks) !== JSON.stringify(d.checks)) {
+                        this.health.checks = d.checks;
+                    }
+                    const newWarnings = d.warnings || [];
+                    if (JSON.stringify(this.health.warnings) !== JSON.stringify(newWarnings)) {
+                        this.health.warnings = newWarnings;
+                    }
                 }
             } catch (e) { console.error('loadHealth:', e); }
         },
@@ -324,22 +324,33 @@ function dashboardComponent() {
                 if (!d.success) return;
                 const containers = d.data;
 
-                this.stats.totalContainers  = containers.length;
-                this.stats.runningContainers = containers.filter(c => c.state === 'running').length;
-                this.stats.stoppedContainers = containers.filter(c => c.state !== 'running').length;
+                // Only update primitives if they've changed
+                const newTotal = containers.length;
+                const newRunning = containers.filter(c => c.state === 'running').length;
+                const newStopped = containers.filter(c => c.state !== 'running').length;
+
+                if (this.stats.totalContainers !== newTotal) this.stats.totalContainers = newTotal;
+                if (this.stats.runningContainers !== newRunning) this.stats.runningContainers = newRunning;
+                if (this.stats.stoppedContainers !== newStopped) this.stats.stoppedContainers = newStopped;
 
                 const max = this.hardware.max_containers || 100;
-                this.stats.capacityPercent = Math.min(100, Math.round((containers.length / max) * 100));
+                const newCapacity = Math.min(100, Math.round((containers.length / max) * 100));
+                if (this.stats.capacityPercent !== newCapacity) this.stats.capacityPercent = newCapacity;
 
-                // group by environment
+                // group by environment - STABLE SORT by name (not count) to prevent flickering
                 const groups = {};
                 containers.forEach(c => {
                     const env = c.environment || 'UNTAGGED';
                     groups[env] = (groups[env] || 0) + 1;
                 });
-                this.stats.byEnvironment = Object.entries(groups)
+                const newByEnvironment = Object.entries(groups)
                     .map(([name, count]) => ({ name, count }))
-                    .sort((a, b) => b.count - a.count);
+                    .sort((a, b) => a.name.localeCompare(b.name));  // Stable alphabetical sort
+
+                // Only update if changed (prevents unnecessary re-render)
+                if (JSON.stringify(this.stats.byEnvironment) !== JSON.stringify(newByEnvironment)) {
+                    this.stats.byEnvironment = newByEnvironment;
+                }
             } catch (e) { console.error('loadContainers:', e); }
         },
 
@@ -351,21 +362,31 @@ function dashboardComponent() {
                 if (!d.success) return;
 
                 const imgs = d.data;
-                this.images.count = imgs.length;
+                // Only update if changed
+                if (this.images.count !== imgs.length) this.images.count = imgs.length;
 
                 // total size
                 const totalBytes = imgs.reduce((sum, i) => sum + (i.size_bytes || 0), 0);
-                this.images.totalSizeHuman = formatBytes(totalBytes);
+                const newTotalSize = formatBytes(totalBytes);
 
-                // top 3 by size
-                this.images.top = imgs
+                // top 3 by size - use image_id as stable key
+                const newTop = imgs
                     .slice()
                     .sort((a, b) => (b.size_bytes || 0) - (a.size_bytes || 0))
                     .slice(0, 3)
                     .map(i => ({
+                        id: i.image_id || i.id,  // Stable unique ID for :key
                         name: (i.repository || '<none>') + ':' + (i.tag || '<none>'),
                         size: formatBytes(i.size_bytes)
                     }));
+
+                // Only update if changed
+                if (this.images.totalSizeHuman !== newTotalSize) {
+                    this.images.totalSizeHuman = newTotalSize;
+                }
+                if (JSON.stringify(this.images.top) !== JSON.stringify(newTop)) {
+                    this.images.top = newTop;
+                }
             } catch (e) { console.error('loadImages:', e); }
         },
 
@@ -376,8 +397,18 @@ function dashboardComponent() {
                 const d = await r.json();
                 if (!d.success) return;
 
-                this.networks.count = d.count;
-                this.networks.list  = d.data;
+                // Only update if changed
+                if (this.networks.count !== d.count) this.networks.count = d.count;
+
+                // STABLE SORT by name to prevent flickering
+                const newList = (d.data || [])
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+                // Only update if changed
+                if (JSON.stringify(this.networks.list) !== JSON.stringify(newList)) {
+                    this.networks.list = newList;
+                }
             } catch (e) { console.error('loadNetworks:', e); }
         },
 
@@ -389,9 +420,14 @@ function dashboardComponent() {
                 if (!d.success) return;
 
                 const vols = d.volumes || [];
-                this.volumes.total = vols.length;
-                this.volumes.in_use = vols.filter(v => v.containers_using > 0).length;
-                this.volumes.unused = vols.filter(v => v.containers_using === 0).length;
+                // Only update if changed
+                const newTotal = vols.length;
+                const newInUse = vols.filter(v => v.containers_using > 0).length;
+                const newUnused = vols.filter(v => v.containers_using === 0).length;
+
+                if (this.volumes.total !== newTotal) this.volumes.total = newTotal;
+                if (this.volumes.in_use !== newInUse) this.volumes.in_use = newInUse;
+                if (this.volumes.unused !== newUnused) this.volumes.unused = newUnused;
             } catch (e) { console.error('loadVolumes:', e); }
         }
     };

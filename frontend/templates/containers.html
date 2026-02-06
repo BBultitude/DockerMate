@@ -1009,6 +1009,7 @@
                         <option value="DEV">Development</option>
                         <option value="STG">Staging</option>
                         <option value="PROD">Production</option>
+                        <option value="none">Untagged (No Environment)</option>
                     </select>
                 </div>
 
@@ -1093,7 +1094,7 @@
 
         <!-- Containers Grid -->
         <div x-show="!loading && filteredContainers.length > 0" class="space-y-4">
-            <template x-for="container in filteredContainers" :key="container.name">
+            <template x-for="container in filteredContainers" :key="container.container_id">
                 <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 hover:border-slate-600 transition"
                      :class="{'ring-2 ring-blue-500': selectedContainers.includes(container.name)}">
                     <div class="flex justify-between items-start mb-4">
@@ -1290,6 +1291,7 @@ function containersComponent() {
         containers: [],
         filteredContainers: [],
         loading: false,
+        initialLoadComplete: false,  // Track if first load is done to prevent flashing on polling
         lastUpdated: 'Never',
         pollInterval: null,
         hardwareProfile: {},
@@ -1450,7 +1452,10 @@ function containersComponent() {
          * Educational: Equivalent to `docker ps -a`
          */
         async loadContainers() {
-            this.loading = true;
+            // Only show loading spinner on initial load, not on polling refreshes
+            if (!this.initialLoadComplete) {
+                this.loading = true;
+            }
 
             try {
                 // UI-008: Always fetch all Docker containers (managed + external)
@@ -1516,18 +1521,28 @@ function containersComponent() {
                     }
 
                     // Add new containers
+                    let hasNewContainers = false;
                     newContainers.forEach(newContainer => {
                         if (!oldMap.has(newContainer.container_id)) {
                             this.containers.push(newContainer);
                             // Initialize actionLoading for new container
                             this.actionLoading[newContainer.name] = false;
+                            hasNewContainers = true;
                         }
                     });
 
-                    this.runningCount = this.containers.filter(c => c.state === 'running').length;
-                    this.updateAvailableImages();  // Populate image filter dropdown
-                    this.applyFilters();
-                    this.lastUpdated = new Date().toLocaleTimeString();
+                    // Only update counts if they changed
+                    const newRunningCount = this.containers.filter(c => c.state === 'running').length;
+                    if (this.runningCount !== newRunningCount) {
+                        this.runningCount = newRunningCount;
+                    }
+
+                    // Only update filters/images if containers were added/removed
+                    if (hasNewContainers || oldMap.size !== newMap.size) {
+                        this.updateAvailableImages();  // Populate image filter dropdown
+                        this.applyFilters();
+                        this.lastUpdated = new Date().toLocaleTimeString();
+                    }
                 } else {
                     this.showToast('Failed to load containers: ' + data.message, 'error');
                 }
@@ -1535,6 +1550,7 @@ function containersComponent() {
                 this.showToast('Failed to load containers: ' + error.message, 'error');
             } finally {
                 this.loading = false;
+                this.initialLoadComplete = true;  // Mark initial load as complete
             }
         },
         
@@ -1568,7 +1584,16 @@ function containersComponent() {
                 const statusMatch = this.filters.status === 'all' || container.state === this.filters.status;
 
                 // Environment filter
-                const envMatch = this.filters.environment === 'all' || container.environment === this.filters.environment;
+                let envMatch = true;
+                if (this.filters.environment === 'all') {
+                    envMatch = true;
+                } else if (this.filters.environment === 'none') {
+                    // Match containers with no environment tag (null, undefined, or empty string)
+                    envMatch = !container.environment || container.environment === '';
+                } else {
+                    // Match specific environment (DEV, STG, PROD)
+                    envMatch = container.environment === this.filters.environment;
+                }
 
                 // Image filter
                 const imageMatch = this.filters.image === 'all' || container.image_name === this.filters.image;
@@ -1604,6 +1629,9 @@ function containersComponent() {
                     this.filteredContainers.push(container);
                 }
             });
+
+            // STABLE SORT to prevent flickering - sort by name alphabetically
+            this.filteredContainers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             // Update URL with current filters
             this.updateURLParams();

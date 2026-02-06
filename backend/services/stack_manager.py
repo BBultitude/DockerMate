@@ -405,6 +405,9 @@ class StackManager:
             stack.deployed_at = datetime.utcnow()
             self.db.commit()
 
+            # Sync stack resources to their respective database tables (Sprint 5+ - Auto-import)
+            self._sync_stack_resources_to_database(created_networks, created_volumes)
+
             logger.info(f"Stack '{stack.name}' deployed successfully: {len(created_containers)} containers, {len(created_networks)} networks, {len(created_volumes)} volumes")
 
             return {
@@ -619,6 +622,97 @@ class StackManager:
                 raise
 
         return created_containers
+
+    def _sync_stack_resources_to_database(self, network_names: list, volume_names: list) -> None:
+        """
+        Sync stack-created resources to their respective database tables.
+
+        After deploying a stack, resources are created in Docker with DockerMate labels
+        but not yet synced to the Container/Volume/Network database tables. This method
+        imports them as managed resources so they appear in their respective pages.
+
+        Args:
+            network_names: List of network names created by stack
+            volume_names: List of volume names created by stack
+
+        Educational:
+            - Stack resources already have 'com.dockermate.stack' labels
+            - Containers have 'com.dockermate.managed=true' label
+            - This method syncs them to database with managed=True
+            - Allows viewing/managing stack resources from their respective pages
+        """
+        logger.info("Syncing stack resources to database...")
+
+        try:
+            # Import manager services
+            from backend.services.container_manager import ContainerManager
+            from backend.services.volume_manager import VolumeManager
+            from backend.models.network import Network
+
+            # Sync networks to database
+            for network_name in network_names:
+                try:
+                    docker_network = self.client.networks.get(network_name)
+
+                    # Check if network already in database
+                    db_network = self.db.query(Network).filter(
+                        Network.network_id == docker_network.id
+                    ).first()
+
+                    if db_network:
+                        # Update existing record to mark as managed
+                        db_network.managed = True
+                        logger.info(f"Updated network '{network_name}' to managed=True")
+                    else:
+                        # Create new network record with managed=True
+                        attrs = docker_network.attrs
+                        ipam = attrs.get('IPAM', {}).get('Config', [])
+                        subnet = ipam[0].get('Subnet') if ipam else None
+                        gateway = ipam[0].get('Gateway') if ipam else None
+
+                        db_network = Network(
+                            network_id=docker_network.id,
+                            name=docker_network.name,
+                            driver=attrs.get('Driver', 'bridge'),
+                            subnet=subnet,
+                            gateway=gateway,
+                            managed=True  # Stack-created networks are managed
+                        )
+                        self.db.add(db_network)
+                        logger.info(f"Created database record for network '{network_name}'")
+
+                except Exception as e:
+                    logger.warning(f"Failed to sync network '{network_name}': {e}")
+
+            # Sync volumes to database
+            volume_manager = VolumeManager(self.db)
+            for volume_name in volume_names:
+                try:
+                    docker_volume = self.client.volumes.get(volume_name)
+                    # Use VolumeManager's private sync method with managed=True
+                    volume_manager._sync_database_state(docker_volume, managed=True)
+                    logger.info(f"Synced volume '{volume_name}' to database as managed")
+                except Exception as e:
+                    logger.warning(f"Failed to sync volume '{volume_name}': {e}")
+
+            # Sync containers to database
+            # ContainerManager's sync method finds all containers with com.dockermate.managed=true label
+            container_manager = ContainerManager(self.db)
+            container_sync_result = container_manager.sync_managed_containers_to_database()
+            synced_count = container_sync_result.get('recovered', 0)
+            if synced_count > 0:
+                logger.info(f"Synced {synced_count} containers to database (recovered from labels)")
+            else:
+                logger.info("No new containers to sync (all already in database)")
+
+            # Commit all changes
+            self.db.commit()
+            logger.info("✓ Stack resources synced to database successfully")
+
+        except Exception as e:
+            logger.error(f"Error syncing stack resources to database: {e}")
+            self.db.rollback()
+            # Don't raise - deployment succeeded, sync failure is non-critical
 
     def stop_stack(self, name_or_id: str) -> dict:
         """

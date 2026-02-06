@@ -891,11 +891,13 @@ src/services/container_manager.py
 ## NOTES
 
 ### Sprint Alignment
-- Sprint 2: Focus on container management backend (FEAT-008, FEAT-009, FEAT-011, FIX-001)
-- Sprint 3: Focus on container UI (FEAT-001, FEAT-003, FEAT-004, FEAT-009, DEBT-003)
-- Sprint 4: Networks and volumes + image retag (REF-001, DEBT-002, FEAT-013, FEAT-016, FEAT-017, FEAT-018) — ✅ COMPLETE: network CRUD + IPAM, IP reservation system, topology view, auto-generated docs, NETWORK-001 fix; backlog items FEAT-016, FEAT-017 remain open for Sprint 5+
-- Sprint 5: System administration, image housekeeping, health, and polish (FEAT-002, FEAT-006, FEAT-008, FEAT-014, FEAT-015, FEAT-019, FIX-002, SEC-001, SEC-002, SEC-003, SEC-004, DEBT-001, DEBT-005)
-- Sprint 6+: Future enhancements (FEAT-005, FEAT-010, REF-003, DEBT-004)
+- Sprint 1: ✅ Foundation & Auth (100%)
+- Sprint 2: ✅ Container Management (100%)
+- Sprint 3: ✅ Images & Updates (100%)
+- Sprint 4: ✅ Network Management (100%)
+- Sprint 5: ✅ Volumes, Stacks & Health (100%)
+- **v1.0.0-rc1: ALL CORE FEATURES COMPLETE**
+- v1.1+: Optional enhancements (FEAT-016 expanded subnet picker, FEAT-014/FEAT-015 image housekeeping, FEAT-005 advanced compose, FEAT-010 WebSockets, SEC-002 CSP headers)
 
 ### Prioritization Criteria
 1. **Security** issues take precedence (SEC-*)
@@ -982,37 +984,66 @@ All 7 tasks delivered. Additional items completed beyond the original scope:
 
 ---
 
-## SPRINT 5 COMPLETED ITEMS
+## SPRINT 5 COMPLETED ITEMS (v1.0.0-rc1)
 
-### SEC-001: Rate Limiting ✅ COMPLETE (Feb 5, 2026)
-Flask-Limiter added to `requirements.txt`. Limiter instance + shared mutation scope in `backend/extensions.py`. Login: 5/15 min. Container + network mutation endpoints: 30/min shared scope. 429 JSON handler in both app entry points.
+### Phase 1: Security & Features ✅ COMPLETE (Feb 5-6, 2026)
+- **SEC-001:** Rate limiting (Flask-Limiter) - 5/15min login, 30/min mutations
+- **SECURITY-001:** Session cookie secure flag (renamed to 'auth_session')
+- **SECURITY-003:** CSRF token validation (21 operations protected)
+- **FIX-002:** Password reset CLI (`manage.py reset-password`)
+- **FEAT-012:** Import unmanaged containers (one-click adopt)
+- **FEAT-013:** Retag & redeploy (change image version without full recreate)
+- **FEAT-017:** Adopt/Release networks (bring external networks under management)
+- **FEAT-019:** Full health page + 6-domain health API
+- **UI-007:** Container refresh flicker (scroll position preserved)
+- **UI-008:** Managed/unmanaged filter (dropdown with always-visible badges)
+- **Production mode:** app_dev.py deleted, full HTTPS via app.py
 
-### FIX-002: Password Reset CLI ✅ COMPLETE (Feb 5, 2026)
-`manage.py reset-password` with `--temp` (secure generated password, forces change on next login) and interactive mode (double-prompt, strength validation). Lazy imports — no Flask app context required.
+### Phase 2: Volume, Stack & Health Management ✅ COMPLETE (Feb 6, 2026)
 
-### FEAT-017: Adopt / Release Networks ✅ COMPLETE (Feb 5, 2026)
-`adopt_network()` / `release_network()` in `network_manager.py` toggle the `managed` column. API: `POST /api/networks/<id>/adopt`, `DELETE /api/networks/<id>/adopt`. Default networks (bridge/host/none) rejected. Networks must be synced to DB first (via `list_networks()`). Release and Delete buttons now use explicit default-network allowlist instead of fragile substring checks.
+**Volume Management (Tasks 1-2):**
+- Full CRUD operations for Docker volumes
+- Adopt/release external volumes
+- Usage tracking (which containers use which volumes)
+- Prune unused volumes
+- Configurable storage paths (DOCKERMATE_DATA_DIR, DOCKERMATE_SSL_DIR, DOCKERMATE_LOG_DIR)
+- API: 7 endpoints at /api/volumes
+- UI: /volumes with grid layout and filters
+- Files: backend/models/volume.py, backend/services/volume_manager.py, backend/api/volumes.py, frontend/templates/volumes.html
 
-### FEAT-019: Full Health Page + Expanded Health API ✅ COMPLETE (Feb 5, 2026)
-`/api/system/health` expanded from 2 to 6 check domains: database, docker, containers, images, networks, dockermate. Warnings carry `{domain, message}` structure. Health page (`/health`) replaces stub: stats row, per-domain detail cards with grouped warnings, 10 s auto-refresh. Dashboard health card uses dynamic `healthDots` computed property for all 6 domains.
+**Stack Management (Tasks 3-4):**
+- Full Docker Compose stack lifecycle (create, deploy, start, stop, delete)
+- YAML editor with validation
+- Stack resources tracked (containers, networks, volumes)
+- Edit/update with optional redeploy
+- Docker run → Compose converter utility
+- Supports ports, volumes, env vars, networks, restart policies, limits, labels
+- Warning system for unsupported flags
+- API: 8 endpoints at /api/stacks, /api/converter
+- UI: /stacks and /converter pages
+- Files: backend/models/stack.py, backend/services/stack_manager.py, backend/services/compose_converter.py, backend/api/stacks.py, backend/api/converter.py, frontend/templates/stacks.html, frontend/templates/converter.html
 
-### FEAT-012: Import Unmanaged Containers ✅ COMPLETE (Feb 5, 2026)
-`import_container()` in ContainerManager writes an external container's live Docker state into the DB via `_sync_database_state()` — no label surgery, no recreate. API: `POST /api/containers/<id>/import`. Frontend: Import button on external container cards (inside the orange info bar). Toast warns that imported containers won't survive a DB reset (metadata-only, same as network adopt).
+**Health Monitoring Expansion (Tasks 5-7):**
+- Background metrics worker (60-second collection interval)
+- System metrics: CPU, memory, disk usage over time
+- Per-container metrics: CPU, memory, network I/O, block I/O
+- 7-day retention with automatic cleanup
+- Historical metrics API with time-range queries
+- Enhanced health dashboard with Chart.js graphs (3 graphs: CPU/Memory/Disk 24h history)
+- Container resource usage table with live stats
+- Timezone-aware display (UTC → local time)
+- Database models: health_metrics, container_health
+- API: /api/system/health/metrics, /api/system/health/containers/<id>
+- Files: backend/models/health_metric.py, backend/models/container_health.py, backend/services/health_collector.py, backend/services/metrics_worker.py, enhanced frontend/templates/health.html
 
-### FEAT-013: Retag & Redeploy ✅ COMPLETE (Feb 5, 2026)
-`retag_container(name_or_id, new_tag)` in ContainerManager reuses the exact update_container_image recreate flow but pulls `repo:new_tag` instead of the current tag. API: `POST /api/containers/<id>/retag` with body `{"tag": "…"}`. Frontend: Retag button (indigo) on managed container cards opens a modal showing current image and a text input for the new tag. UpdateHistory record written with old/new image so rollback works automatically.
-
-### UI Bug Fixes (Sprint 5)
-- **Rollback button** — disabled + dimmed when no update history exists; populated via single bulk query against `UpdateHistory` (no N+1).
-- **Network Release/Delete visibility** — replaced `includes('dockermate')` substring guard with `['bridge','host','none']` allowlist on both frontend buttons and backend delete guard.
-- **Container detail env vars** — `showDetails()` now fetches the single-container endpoint for managed containers (two-phase: instant list data, then enriched detail).
-- **Volume mount display** — changed `x-text="volume"` → explicit `source:destination:mode` formatting in both the detail modal and the Docker command generator.
+**Total Effort:** ~62 hours (Phase 1: ~12h, Phase 2: ~50h)
 
 ---
 
 ## VERSION HISTORY
-- **v2.0** (2026-02-06): Sprint 5 Phase 1 complete — FEAT-012 (import unmanaged containers), FEAT-013 (retag & redeploy), SECURITY-003 (CSRF token validation - 21 operations protected), SECURITY-001 (session cookie secure flag + rename to 'auth_session'), UI-007 (container refresh flicker - scroll preserved), UI-008 (managed/unmanaged filter); production mode transition (app_dev.py deleted, now using app.py with full HTTPS); PROJECT_STATUS, KNOWN_ISSUES, UI_Issues, SPRINT_COMPLETION_AUDIT, Improvements updated
-- **v1.9** (2026-02-05): Sprint 5 complete — SEC-001 (rate limiting), FIX-002 (password reset CLI), FEAT-017 (adopt/release networks), FEAT-019 (full health page + expanded health API); 4 UI bugs fixed (rollback button, network Release/Delete visibility, container detail env vars, volume mount display); PROJECT_STATUS, KNOWN_ISSUES, UI_Issues, Improvements updated
+- **v3.0** (2026-02-06): v1.0.0-rc1 — All Sprint 5 tasks complete (volumes, stacks, health monitoring), all core features delivered, production-ready for offline deployment
+- **v2.0** (2026-02-06): Sprint 5 Phase 1 complete — FEAT-012 (import unmanaged containers), FEAT-013 (retag & redeploy), SECURITY-003 (CSRF token validation), SECURITY-001 (session cookie secure flag), UI-007 (scroll preserved), UI-008 (managed/unmanaged filter); production mode transition
+- **v1.9** (2026-02-05): Sprint 5 initial — SEC-001 (rate limiting), FIX-002 (password reset CLI), FEAT-017 (adopt/release networks), FEAT-019 (full health page + expanded health API)
 - **v1.8** (2026-02-04): Sprint 4 complete — NETWORK-001 fixed, Task 4 (IP reservations), Task 6 (topology view), Task 7 (auto-generated docs) all delivered; PROJECT_STATUS and KNOWN_ISSUES updated
 - **v1.7** (2026-02-03): Backlog additions — FEAT-016 (expanded subnet picker), FEAT-017 (adopt unmanaged networks), FEAT-018 (IP allocation detail view), FEAT-019 (full health page + dashboard health expansion); NETWORK-001 bug confirmed and detailed
 - **v1.6** (2026-02-03): Sprint 4 in progress — network model, NetworkManager service, networks API + frontend, hardware-aware subnet sizing, oversized detection

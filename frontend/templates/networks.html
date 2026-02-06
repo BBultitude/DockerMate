@@ -648,7 +648,9 @@ function networksComponent() {
         },
         get filteredNetworks() {
             // host and none excluded: no IP assignment possible on those networks
-            return this.networks.filter(n => !['host', 'none'].includes(n.name));
+            const filtered = this.networks.filter(n => !['host', 'none'].includes(n.name));
+            // STABLE SORT by name to prevent flickering
+            return filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         },
 
         // ---- connect-container modal ----

@@ -303,7 +303,8 @@ function imagesComponent() {
             if (term) {
                 list = list.filter(img => (img.full_name || '').toLowerCase().includes(term));
             }
-            return list;
+            // STABLE SORT by name to prevent flickering
+            return list.slice().sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
         },
 
         pullForm: {

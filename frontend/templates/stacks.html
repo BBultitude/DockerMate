@@ -141,9 +141,9 @@
 
     <!-- Create Stack Modal -->
     <div x-show="createModal.show" x-cloak
-         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4"
          @click.self="createModal.show = false">
-        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full mx-4 my-8 border border-slate-700">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full border border-slate-700 max-h-[90vh] overflow-y-auto">
             <h3 class="text-xl font-bold text-white mb-4">Create New Stack</h3>
 
             <div class="space-y-4">
@@ -168,7 +168,44 @@
 
                 <!-- Compose YAML -->
                 <div>
-                    <label class="block text-slate-300 text-sm font-medium mb-1">docker-compose.yml Content *</label>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
+                        <button @click="showYamlHelp = !showYamlHelp" type="button"
+                                class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <span x-text="showYamlHelp ? 'Hide' : 'Show'"></span> YAML Help
+                            <span x-text="showYamlHelp ? '▼' : '▶'"></span>
+                        </button>
+                    </div>
+
+                    <!-- YAML Syntax Help (Collapsible) - Compact Version -->
+                    <div x-show="showYamlHelp" x-collapse
+                         class="mb-2 p-2 bg-slate-900/50 border border-slate-700 rounded text-xs">
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- Left: Quick Rules -->
+                            <div>
+                                <p class="text-slate-300 font-semibold mb-1">⚡ Rules:</p>
+                                <ul class="text-slate-400 space-y-0.5 text-[11px]">
+                                    <li>• 2 spaces (no tabs)</li>
+                                    <li>• Space after <code class="text-blue-400">:</code> for keys</li>
+                                    <li>• Quote ports: <code class="text-blue-400">'8080:80'</code></li>
+                                </ul>
+                            </div>
+                            <!-- Right: Example -->
+                            <div>
+                                <p class="text-slate-300 font-semibold mb-1">📋 Example:</p>
+                                <div class="bg-slate-800 p-1 rounded font-mono text-[10px] text-slate-300 overflow-x-auto">
+<pre>services:
+  web:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+    volumes:
+      - data:/app</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <textarea x-model="createModal.composeYaml"
                               rows="12"
                               placeholder="version: '3.8'
@@ -177,7 +214,22 @@ services:
     image: nginx:alpine
     ports:
       - '8080:80'"
-                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                              spellcheck="false"></textarea>
+
+                    <!-- Validate YAML Button -->
+                    <div class="mt-2 flex gap-2">
+                        <button @click="validateYaml('create')" type="button"
+                                class="text-xs px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded flex items-center gap-1">
+                            <span>✓</span> Validate YAML
+                        </button>
+                        <span x-show="yamlValidation.status === 'valid'" class="text-xs text-green-400 flex items-center gap-1">
+                            ✓ Valid YAML syntax
+                        </span>
+                        <span x-show="yamlValidation.status === 'invalid'" class="text-xs text-red-400 flex items-center gap-1">
+                            ✗ Invalid: <span x-text="yamlValidation.error"></span>
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Error Display -->
@@ -202,9 +254,9 @@ services:
 
     <!-- Edit Stack Modal -->
     <div x-show="editModal.show" x-cloak
-         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4"
          @click.self="editModal.show = false">
-        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full mx-4 my-8 border border-slate-700">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full border border-slate-700 max-h-[90vh] overflow-y-auto">
             <h3 class="text-xl font-bold text-white mb-4">Edit Stack: <span x-text="editModal.stack?.name"></span></h3>
 
             <div class="space-y-4">
@@ -219,10 +271,62 @@ services:
 
                 <!-- Compose YAML -->
                 <div>
-                    <label class="block text-slate-300 text-sm font-medium mb-1">docker-compose.yml Content *</label>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
+                        <button @click="showYamlHelp = !showYamlHelp" type="button"
+                                class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <span x-text="showYamlHelp ? 'Hide' : 'Show'"></span> YAML Help
+                            <span x-text="showYamlHelp ? '▼' : '▶'"></span>
+                        </button>
+                    </div>
+
+                    <!-- YAML Syntax Help (same as create modal) -->
+                    <div x-show="showYamlHelp" x-collapse
+                         class="mb-2 p-2 bg-slate-900/50 border border-slate-700 rounded text-xs">
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- Left: Quick Rules -->
+                            <div>
+                                <p class="text-slate-300 font-semibold mb-1">⚡ Rules:</p>
+                                <ul class="text-slate-400 space-y-0.5 text-[11px]">
+                                    <li>• 2 spaces (no tabs)</li>
+                                    <li>• Space after <code class="text-blue-400">:</code> for keys</li>
+                                    <li>• Quote ports: <code class="text-blue-400">'8080:80'</code></li>
+                                </ul>
+                            </div>
+                            <!-- Right: Example -->
+                            <div>
+                                <p class="text-slate-300 font-semibold mb-1">📋 Example:</p>
+                                <div class="bg-slate-800 p-1 rounded font-mono text-[10px] text-slate-300 overflow-x-auto">
+<pre>services:
+  web:
+    image: nginx:alpine
+    ports:
+      - '80:80'
+    volumes:
+      - data:/app</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <textarea x-model="editModal.composeYaml"
                               rows="12"
-                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"
+                              spellcheck="false"></textarea>
+
+                    <!-- Validate YAML Button -->
+                    <div class="mt-2 flex gap-2">
+                        <button @click="validateYaml('edit')" type="button"
+                                class="text-xs px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded flex items-center gap-1">
+                            <span>✓</span> Validate YAML
+                        </button>
+                        <span x-show="yamlValidation.status === 'valid'" class="text-xs text-green-400 flex items-center gap-1">
+                            ✓ Valid YAML syntax
+                        </span>
+                        <span x-show="yamlValidation.status === 'invalid'" class="text-xs text-red-400 flex items-center gap-1">
+                            ✗ Invalid: <span x-text="yamlValidation.error"></span>
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Redeploy option -->
@@ -381,11 +485,14 @@ function stacksComponent() {
     return {
         stacks: [],
         loading: false,
+        initialLoadComplete: false,  // Track if first load is done to prevent flashing on polling
         toast: { show: false, type: 'success', message: '' },
         createModal: { show: false, name: '', description: '', composeYaml: '', loading: false, error: null },
         editModal: { show: false, stack: null, description: '', composeYaml: '', redeploy: false, loading: false, error: null },
         detailsModal: { show: false, stack: null },
         deleteModal: { show: false, stack: null, removeVolumes: false, loading: false },
+        showYamlHelp: false,  // Toggle for YAML syntax help
+        yamlValidation: { status: '', error: '' },  // YAML validation state
 
         async init() {
             await this.loadStacks();
@@ -406,12 +513,16 @@ function stacksComponent() {
         },
 
         async loadStacks() {
-            this.loading = true;
+            // Only show loading spinner on initial load, not on polling refreshes
+            if (!this.initialLoadComplete) {
+                this.loading = true;
+            }
             try {
                 const response = await fetch('/api/stacks');
                 const data = await response.json();
                 if (data.success) {
-                    this.stacks = data.stacks;
+                    // STABLE SORT by name to prevent flickering
+                    this.stacks = (data.stacks || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
                 } else {
                     this.showToast(data.error || 'Failed to load stacks', 'error');
                 }
@@ -419,6 +530,7 @@ function stacksComponent() {
                 this.showToast('Failed to load stacks', 'error');
             } finally {
                 this.loading = false;
+                this.initialLoadComplete = true;  // Mark initial load as complete
             }
         },
 
@@ -622,6 +734,120 @@ function stacksComponent() {
             this.toast.type = type;
             this.toast.show = true;
             setTimeout(() => { this.toast.show = false; }, 5000);
+        },
+
+        validateYaml(modalType) {
+            // Get YAML from appropriate modal
+            const yaml = modalType === 'create' ? this.createModal.composeYaml : this.editModal.composeYaml;
+
+            if (!yaml || yaml.trim() === '') {
+                this.yamlValidation = { status: 'invalid', error: 'YAML is empty' };
+                return;
+            }
+
+            try {
+                // 1. Check if js-yaml library is loaded
+                if (typeof jsyaml === 'undefined') {
+                    this.yamlValidation = { status: 'invalid', error: 'YAML validator library not loaded. Please refresh the page.' };
+                    return;
+                }
+
+                // 2. Parse YAML using js-yaml library for proper syntax validation
+                let parsed;
+                try {
+                    parsed = jsyaml.load(yaml);
+                } catch (parseError) {
+                    // Extract line number and clean error message
+                    const lineMatch = parseError.message.match(/at line (\d+)/i);
+                    let errorMsg = parseError.message.split('\n')[0]; // First line only
+                    if (lineMatch) {
+                        errorMsg = `Line ${lineMatch[1]}: ${errorMsg.replace(/at line \d+,?/i, '').trim()}`;
+                    }
+                    this.yamlValidation = { status: 'invalid', error: errorMsg };
+                    return;
+                }
+
+                // 3. Check if parsed result is an object (required for docker-compose)
+                if (typeof parsed !== 'object' || parsed === null) {
+                    this.yamlValidation = { status: 'invalid', error: 'YAML must be a mapping (key-value pairs), not a scalar value' };
+                    return;
+                }
+
+                // 4. Check for required 'services' section
+                if (!parsed.services) {
+                    this.yamlValidation = { status: 'invalid', error: 'Missing required "services:" section' };
+                    return;
+                }
+
+                // 5. Validate services is an object (not a scalar or array)
+                // In JavaScript: typeof "string" === "string", typeof {} === "object"
+                const servicesType = typeof parsed.services;
+                const isServicesString = servicesType === 'string';
+                const isServicesNumber = servicesType === 'number';
+                const isServicesBoolean = servicesType === 'boolean';
+                const isServicesArray = Array.isArray(parsed.services);
+
+                if (isServicesString || isServicesNumber || isServicesBoolean || isServicesArray) {
+                    const actualType = isServicesString ? 'string' : isServicesNumber ? 'number' : isServicesBoolean ? 'boolean' : 'array';
+                    this.yamlValidation = { status: 'invalid', error: `"services:" must be a mapping (object), not a ${actualType} value` };
+                    return;
+                }
+
+                // 6. Check that services has at least one service defined
+                const serviceNames = Object.keys(parsed.services);
+                if (serviceNames.length === 0) {
+                    this.yamlValidation = { status: 'invalid', error: '"services:" section must contain at least one service' };
+                    return;
+                }
+
+                // 7. Validate each service is properly configured (not null, not scalar)
+                for (const serviceName of serviceNames) {
+                    const service = parsed.services[serviceName];
+
+                    if (service === null || service === undefined) {
+                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" has no configuration (check indentation)` };
+                        return;
+                    }
+
+                    if (typeof service !== 'object' || Array.isArray(service)) {
+                        const actualType = Array.isArray(service) ? 'array' : typeof service;
+                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" must be a mapping (object), not a ${actualType}` };
+                        return;
+                    }
+
+                    // Each service should have at least one property (image, build, etc.)
+                    const serviceKeys = Object.keys(service);
+                    if (serviceKeys.length === 0) {
+                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" is empty - must have at least "image:" or "build:"` };
+                        return;
+                    }
+                }
+
+                // 8. Check for common misplaced top-level keys (ports, volumes at root instead of under service)
+                const invalidTopLevelKeys = ['port', 'ports', 'volume', 'volumes', 'environment', 'networks', 'depends_on', 'command', 'entrypoint'];
+                for (const key of invalidTopLevelKeys) {
+                    if (parsed[key]) {
+                        this.yamlValidation = { status: 'invalid', error: `"${key}:" should be under a service, not at root level (check indentation)` };
+                        return;
+                    }
+                }
+
+                // 9. Additional style checks
+                const lines = yaml.split('\n');
+
+                // Check for tabs (style preference)
+                const tabLineIndex = lines.findIndex(line => line.includes('\t'));
+                if (tabLineIndex !== -1) {
+                    this.yamlValidation = { status: 'invalid', error: `Line ${tabLineIndex + 1}: Use spaces, not tabs for indentation` };
+                    return;
+                }
+
+                // All checks passed
+                this.yamlValidation = { status: 'valid', error: '' };
+
+            } catch (error) {
+                this.yamlValidation = { status: 'invalid', error: error.message };
+            }
         },
 
         formatDate(dateStr) {

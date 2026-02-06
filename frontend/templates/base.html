@@ -6,14 +6,23 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}DockerMate{% endblock %}</title>
 
-    <!-- Tailwind CSS (CDN for simplicity) -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Favicon - Docker whale themed -->
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+
+    <!-- Tailwind CSS (local for offline deployment) -->
+    <script src="{{ url_for('static', filename='vendor/tailwind.js') }}"></script>
+
+    <!-- Alpine.js plugins (must load before Alpine.js core) -->
+    <script defer src="{{ url_for('static', filename='vendor/alpine-collapse.min.js') }}"></script>
 
     <!-- Alpine.js for reactivity -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
 
     <!-- Chart.js for graphs (Sprint 5 Tasks 5-7) -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/chart.min.js') }}"></script>
+
+    <!-- js-yaml for YAML parsing and validation -->
+    <script src="{{ url_for('static', filename='vendor/js-yaml.min.js') }}"></script>
 
     <!-- CSRF Token Helper (SECURITY-003) -->
     <script>

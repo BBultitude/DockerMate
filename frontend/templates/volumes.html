@@ -471,6 +471,7 @@ function volumesComponent() {
         // State
         volumes: [],
         loading: false,
+        initialLoadComplete: false,  // Track if first load is done to prevent flashing on polling
         lastUpdated: '',
         pollInterval: null,
 
@@ -525,7 +526,10 @@ function volumesComponent() {
 
         // API Methods
         async loadVolumes() {
-            this.loading = true;
+            // Only show loading spinner on initial load, not on polling refreshes
+            if (!this.initialLoadComplete) {
+                this.loading = true;
+            }
             try {
                 const response = await fetch('/api/volumes');
                 const data = await response.json();
@@ -540,6 +544,7 @@ function volumesComponent() {
                 this.showToast('Failed to load volumes', 'error');
             } finally {
                 this.loading = false;
+                this.initialLoadComplete = true;  // Mark initial load as complete
             }
         },
 
@@ -722,7 +727,7 @@ function volumesComponent() {
 
         // Computed Properties
         get filteredVolumes() {
-            return this.volumes.filter(volume => {
+            const filtered = this.volumes.filter(volume => {
                 // Search filter
                 if (this.filters.search) {
                     const search = this.filters.search.toLowerCase();
@@ -754,6 +759,8 @@ function volumesComponent() {
 
                 return true;
             });
+            // STABLE SORT by name to prevent flickering
+            return filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         },
 
         get inUseCount() {
