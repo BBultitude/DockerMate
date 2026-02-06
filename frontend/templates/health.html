@@ -6,9 +6,8 @@
     {% include 'components/navbar.html' %}
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold text-white">Health & Alerts</h2>
-            <span class="text-xs text-slate-500" x-text="'Last checked: ' + lastChecked"></span>
+        <div class="mb-6">
+            <h2 class="text-3xl font-bold text-white">Health & Monitoring</h2>
         </div>
 
         <!-- Loading -->
@@ -43,7 +42,84 @@
                 </div>
             </div>
 
-            <!-- Per-domain detail cards -->
+            <!-- Resource Usage Graphs (Sprint 5 Tasks 5-7) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <!-- CPU Usage Graph -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-white font-semibold">CPU Usage (24h)</h3>
+                        <span class="text-xs text-slate-400" x-text="'Avg: ' + metricsSummary.avg_cpu + '%'"></span>
+                    </div>
+                    <div class="h-48">
+                        <canvas x-ref="cpuChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Memory Usage Graph -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-white font-semibold">Memory Usage (24h)</h3>
+                        <span class="text-xs text-slate-400" x-text="'Avg: ' + metricsSummary.avg_memory + '%'"></span>
+                    </div>
+                    <div class="h-48">
+                        <canvas x-ref="memoryChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Disk Usage Graph -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-white font-semibold">Disk Usage (24h)</h3>
+                        <span class="text-xs text-slate-400" x-text="'Avg: ' + metricsSummary.avg_disk + '%'"></span>
+                    </div>
+                    <div class="h-48">
+                        <canvas x-ref="diskChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Container Resource Usage Table (Sprint 5 Tasks 5-7) -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6" x-show="containerMetrics.length > 0">
+                <h3 class="text-white font-semibold mb-4">Container Resource Usage</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-400 border-b border-slate-700">
+                            <tr>
+                                <th class="text-left py-2">Container</th>
+                                <th class="text-right py-2">CPU %</th>
+                                <th class="text-right py-2">Memory</th>
+                                <th class="text-center py-2">Health</th>
+                                <th class="text-center py-2">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-300">
+                            <template x-for="container in containerMetrics" :key="container.id">
+                                <tr class="border-b border-slate-700 hover:bg-slate-750">
+                                    <td class="py-3">
+                                        <a :href="'/containers#' + container.id" class="text-blue-400 hover:underline" x-text="container.name"></a>
+                                    </td>
+                                    <td class="text-right">
+                                        <span :class="getCPUColor(container.cpu_percent)" x-text="formatPercent(container.cpu_percent)"></span>
+                                    </td>
+                                    <td class="text-right">
+                                        <span x-text="formatMemory(container)"></span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span :class="getHealthColor(container.health)" x-text="container.health || 'none'"></span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="px-2 py-0.5 rounded text-xs"
+                                              :class="container.state === 'running' ? 'bg-green-900 text-green-300' : 'bg-slate-700 text-slate-400'"
+                                              x-text="container.state"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Per-domain health check cards -->
             <div class="space-y-4">
                 <template x-for="domain in domains" :key="domain.key">
                     <div class="bg-slate-800 rounded-lg border border-slate-700 p-5">
@@ -69,6 +145,7 @@
                                         <a x-show="w.domain === 'containers'"  href="/containers" class="text-xs text-blue-400 hover:underline">→ View Containers</a>
                                         <a x-show="w.domain === 'images'"      href="/images"     class="text-xs text-blue-400 hover:underline">→ View Images</a>
                                         <a x-show="w.domain === 'networks'"    href="/networks"   class="text-xs text-blue-400 hover:underline">→ View Networks</a>
+                                        <a x-show="w.domain === 'volumes'"     href="/volumes"    class="text-xs text-blue-400 hover:underline">→ View Volumes</a>
                                     </div>
                                 </div>
                             </template>
@@ -88,6 +165,13 @@
 
 {% block extra_scripts %}
 <script>
+// Store charts outside Alpine component to prevent reactivity issues
+let chartInstances = {
+    cpu: null,
+    memory: null,
+    disk: null
+};
+
 function healthPage() {
     return {
         loading: true,
@@ -95,6 +179,13 @@ function healthPage() {
         checks: {},
         warnings: [],
         lastChecked: '',
+
+        // Metrics history (Sprint 5 Tasks 5-7)
+        metricsHistory: [],
+        metricsSummary: { avg_cpu: 0, max_cpu: 0, avg_memory: 0, max_memory: 0, avg_disk: 0, max_disk: 0 },
+        containerMetrics: [],
+        chartsInitialized: false,
+        updatingCharts: false,  // Prevent concurrent updates
 
         // --- computed ---
         get okCount() {
@@ -108,12 +199,13 @@ function healthPage() {
                 containers:     'Containers',
                 images:         'Images',
                 networks:       'Networks',
+                volumes:        'Volumes',
                 dockermate:     'DockerMate',
                 infrastructure: 'Infrastructure (Docker + DB)'
             };
 
             // Resource domains rendered individually
-            const resourceKeys = ['containers', 'images', 'networks', 'dockermate'];
+            const resourceKeys = ['containers', 'images', 'networks', 'volumes', 'dockermate'];
             const result = [];
             for (const key of resourceKeys) {
                 if (this.checks[key] !== undefined) {
@@ -146,7 +238,27 @@ function healthPage() {
         // --- lifecycle ---
         async init() {
             await this.loadHealth();
-            setInterval(() => this.loadHealth(), 10000);
+            await this.loadMetricsHistory();
+            await this.loadContainerMetrics();
+
+            // Initialize charts after DOM is ready and data loaded
+            setTimeout(() => {
+                this.initCharts();
+            }, 500);
+
+            // Refresh current health every 10 seconds
+            setInterval(async () => {
+                await this.loadHealth();
+                await this.loadContainerMetrics();
+            }, 10000);
+
+            // Refresh metrics history every 60 seconds
+            setInterval(async () => {
+                await this.loadMetricsHistory();
+                if (this.chartsInitialized) {
+                    this.updateCharts();
+                }
+            }, 60000);
         },
 
         async loadHealth() {
@@ -164,6 +276,250 @@ function healthPage() {
                 console.error('healthPage loadHealth:', e);
             }
             this.loading = false;
+        },
+
+        async loadMetricsHistory() {
+            try {
+                const r = await fetch('/api/system/health/metrics?hours=24&interval=5min');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.success) {
+                    this.metricsHistory = d.metrics;
+                    this.metricsSummary = d.summary;
+                }
+            } catch (e) {
+                console.error('healthPage loadMetricsHistory:', e);
+            }
+        },
+
+        async loadContainerMetrics() {
+            try {
+                // Get ALL containers first to get names and states
+                const containersRes = await fetch('/api/containers');
+                if (!containersRes.ok) return;
+                const containersData = await containersRes.json();
+
+                if (!containersData.data) return;
+
+                // Build a map of container_id -> latest metrics
+                const metricsMap = {};
+
+                // For each running container, get its latest health metrics
+                for (const container of containersData.data.filter(c => c.state === 'running')) {
+                    try {
+                        const metricsRes = await fetch(`/api/system/health/containers/${container.container_id}?hours=1`);
+                        if (!metricsRes.ok) continue;
+                        const metricsData = await metricsRes.json();
+
+                        if (metricsData.success && metricsData.metrics && metricsData.metrics.length > 0) {
+                            // Get the most recent metric
+                            const latest = metricsData.metrics[metricsData.metrics.length - 1];
+                            metricsMap[container.container_id] = {
+                                id: container.id,
+                                name: container.name,
+                                state: container.state,
+                                health: latest.health_status || 'none',
+                                cpu_percent: latest.cpu_percent || 0,
+                                memory_used_mb: latest.memory_mb || 0,
+                                memory_limit_mb: latest.memory_limit_mb || 0
+                            };
+                        } else {
+                            // No metrics yet, show zeros
+                            metricsMap[container.container_id] = {
+                                id: container.id,
+                                name: container.name,
+                                state: container.state,
+                                health: container.health_status || 'none',
+                                cpu_percent: 0,
+                                memory_used_mb: 0,
+                                memory_limit_mb: 0
+                            };
+                        }
+                    } catch (err) {
+                        console.debug(`No metrics for ${container.name}:`, err);
+                    }
+                }
+
+                this.containerMetrics = Object.values(metricsMap);
+            } catch (e) {
+                console.error('healthPage loadContainerMetrics:', e);
+            }
+        },
+
+        initCharts() {
+            if (this.chartsInitialized) {
+                console.log('Charts already initialized');
+                return;
+            }
+
+            if (this.metricsHistory.length === 0) {
+                console.log('No metrics history yet, skipping chart initialization');
+                return;
+            }
+
+            if (!this.$refs.cpuChart || !this.$refs.memoryChart || !this.$refs.diskChart) {
+                console.log('Chart canvas elements not ready');
+                return;
+            }
+
+            const timestamps = this.metricsHistory.map(m => {
+                // Server sends UTC timestamps without 'Z', so append it for proper parsing
+                const utcTimestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                const date = new Date(utcTimestamp);
+                // Format with hours and minutes in local timezone
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${hours}:${minutes}`;
+            });
+
+            // Common chart options
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: '#334155' }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#94a3b8',
+                            maxRotation: 0,
+                            autoSkip: true,
+                            maxTicksLimit: 8
+                        },
+                        grid: { display: false }
+                    }
+                }
+            };
+
+            // CPU Chart
+            try {
+                chartInstances.cpu = new Chart(this.$refs.cpuChart, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'CPU %',
+                            data: this.metricsHistory.map(m => m.cpu_usage_percent || 0),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: commonOptions
+                });
+
+                chartInstances.memory = new Chart(this.$refs.memoryChart, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Memory %',
+                            data: this.metricsHistory.map(m => m.memory_usage_percent || 0),
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: commonOptions
+                });
+
+                chartInstances.disk = new Chart(this.$refs.diskChart, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Disk %',
+                            data: this.metricsHistory.map(m => m.disk_usage_percent || 0),
+                            borderColor: 'rgb(245, 158, 11)',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: commonOptions
+                });
+
+                this.chartsInitialized = true;
+                console.log('Charts initialized successfully');
+            } catch (error) {
+                console.error('Error initializing charts:', error);
+            }
+        },
+
+        updateCharts() {
+            if (!this.chartsInitialized || this.metricsHistory.length === 0 || this.updatingCharts) return;
+
+            this.updatingCharts = true;
+
+            try {
+                const timestamps = this.metricsHistory.map(m => {
+                    // Server sends UTC timestamps without 'Z', so append it for proper parsing
+                    const utcTimestamp = m.timestamp.endsWith('Z') ? m.timestamp : m.timestamp + 'Z';
+                    const date = new Date(utcTimestamp);
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    return `${hours}:${minutes}`;
+                });
+
+                // Update CPU chart
+                if (chartInstances.cpu) {
+                    chartInstances.cpu.data.labels = timestamps;
+                    chartInstances.cpu.data.datasets[0].data = this.metricsHistory.map(m => m.cpu_usage_percent || 0);
+                    chartInstances.cpu.update('none'); // 'none' animation mode for smooth updates
+                }
+
+                // Update Memory chart
+                if (chartInstances.memory) {
+                    chartInstances.memory.data.labels = timestamps;
+                    chartInstances.memory.data.datasets[0].data = this.metricsHistory.map(m => m.memory_usage_percent || 0);
+                    chartInstances.memory.update('none');
+                }
+
+                // Update Disk chart
+                if (chartInstances.disk) {
+                    chartInstances.disk.data.labels = timestamps;
+                    chartInstances.disk.data.datasets[0].data = this.metricsHistory.map(m => m.disk_usage_percent || 0);
+                    chartInstances.disk.update('none');
+                }
+            } finally {
+                this.updatingCharts = false;
+            }
+        },
+
+        // Formatters
+        formatPercent(value) {
+            return value != null ? `${value.toFixed(1)}%` : '-';
+        },
+
+        formatMemory(container) {
+            if (!container.memory_used_mb) return '-';
+            const mb = container.memory_used_mb;
+            if (mb < 1024) {
+                return `${mb.toFixed(0)} MB`;
+            }
+            return `${(mb / 1024).toFixed(1)} GB`;
+        },
+
+        getCPUColor(cpuPercent) {
+            if (cpuPercent == null) return 'text-slate-500';
+            if (cpuPercent < 50) return 'text-green-400';
+            if (cpuPercent < 80) return 'text-yellow-400';
+            return 'text-red-400';
+        },
+
+        getHealthColor(health) {
+            if (health === 'healthy') return 'text-green-400';
+            if (health === 'unhealthy') return 'text-red-400';
+            return 'text-slate-500';
         }
     };
 }

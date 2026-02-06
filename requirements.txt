@@ -21,6 +21,9 @@ WTForms==3.2.1
 # Docker SDK
 docker==7.1.0
 
+# Docker Compose
+PyYAML==6.0.2
+
 # System Information (Hardware Detection)
 psutil==6.1.1
 

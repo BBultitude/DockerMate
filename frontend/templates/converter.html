@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Docker Run → Compose Converter - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-slate-900" x-data="converterComponent()">
+    {% include 'components/navbar.html' %}
+
+    <!-- Toast Notifications -->
+    <div x-show="toast.show" x-transition
+         class="fixed top-4 right-4 z-50 max-w-md"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-4"
+         x-transition:enter-end="opacity-0 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="rounded-lg shadow-lg p-4"
+             :class="{'bg-green-600': toast.type === 'success', 'bg-red-600': toast.type === 'error', 'bg-blue-600': toast.type === 'info'}">
+            <span class="text-white font-medium" x-text="toast.message"></span>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Page Header -->
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-slate-100 mb-2">Docker Run → Compose Converter</h1>
+            <p class="text-slate-400">Convert docker run commands to docker-compose.yml format</p>
+        </div>
+
+        <!-- Converter Form -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Input Section -->
+            <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <h2 class="text-xl font-semibold text-white mb-4">Input</h2>
+
+                <!-- Service Name -->
+                <div class="mb-4">
+                    <label class="block text-slate-300 text-sm font-medium mb-2">Service Name</label>
+                    <input type="text"
+                           x-model="serviceName"
+                           placeholder="e.g., web, api, db (optional)"
+                           class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                    <p class="text-xs text-slate-500 mt-1">Leave empty to auto-detect from --name flag</p>
+                </div>
+
+                <!-- Docker Run Command -->
+                <div class="mb-4">
+                    <label class="block text-slate-300 text-sm font-medium mb-2">Docker Run Command</label>
+                    <textarea x-model="dockerRunCommand"
+                              rows="8"
+                              placeholder="docker run -d -p 8080:80 --name web nginx:alpine"
+                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+                </div>
+
+                <!-- Examples -->
+                <div class="mb-4">
+                    <label class="block text-slate-300 text-sm font-medium mb-2">Examples:</label>
+                    <div class="space-y-2">
+                        <button @click="loadExample(1)" class="w-full text-left px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300 transition">
+                            Nginx web server
+                        </button>
+                        <button @click="loadExample(2)" class="w-full text-left px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300 transition">
+                            PostgreSQL database
+                        </button>
+                        <button @click="loadExample(3)" class="w-full text-left px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300 transition">
+                            Redis with volume
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Convert Button -->
+                <button @click="convert()"
+                        :disabled="!dockerRunCommand || loading"
+                        class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-md transition font-medium">
+                    <span x-show="!loading">🔄 Convert to Compose</span>
+                    <span x-show="loading">Converting...</span>
+                </button>
+            </div>
+
+            <!-- Output Section -->
+            <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-white">Output</h2>
+                    <button x-show="composeYaml"
+                            @click="copyToClipboard()"
+                            class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm transition">
+                        📋 Copy
+                    </button>
+                </div>
+
+                <!-- Warnings -->
+                <div x-show="warnings.length > 0" class="mb-4 p-3 bg-amber-900/20 border border-amber-700 rounded">
+                    <p class="text-amber-300 text-sm font-medium mb-2">⚠️ Warnings:</p>
+                    <ul class="text-amber-300 text-xs space-y-1">
+                        <template x-for="warning in warnings" :key="warning">
+                            <li x-text="warning"></li>
+                        </template>
+                    </ul>
+                </div>
+
+                <!-- Compose YAML Output -->
+                <div x-show="composeYaml" class="mb-4">
+                    <div class="bg-slate-900 rounded p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                        <pre class="text-sm text-slate-300 font-mono" x-text="composeYaml"></pre>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div x-show="!composeYaml && !error" class="text-center py-12">
+                    <p class="text-slate-500">Paste a docker run command and click convert</p>
+                </div>
+
+                <!-- Error Display -->
+                <div x-show="error" class="p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                    <p class="font-medium mb-1">Error:</p>
+                    <p x-text="error"></p>
+                </div>
+
+                <!-- Actions -->
+                <div x-show="composeYaml" class="mt-4 space-y-2">
+                    <button @click="createStack()"
+                            class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition font-medium">
+                        📦 Create Stack from This Compose
+                    </button>
+                    <button @click="downloadYaml()"
+                            class="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition font-medium">
+                        💾 Download docker-compose.yml
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="mt-8 bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h3 class="text-lg font-semibold text-white mb-3">Supported Flags</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <p class="text-green-400 font-medium mb-2">✅ Fully Supported:</p>
+                    <ul class="text-slate-300 space-y-1">
+                        <li>• <code>-p, --publish</code> - Port mappings</li>
+                        <li>• <code>-v, --volume</code> - Volume mounts</li>
+                        <li>• <code>-e, --env</code> - Environment variables</li>
+                        <li>• <code>--name</code> - Container name</li>
+                        <li>• <code>--network</code> - Network configuration</li>
+                        <li>• <code>--restart</code> - Restart policy</li>
+                        <li>• <code>-m, --memory</code> - Memory limit</li>
+                        <li>• <code>--cpus</code> - CPU limit</li>
+                        <li>• <code>-l, --label</code> - Labels</li>
+                    </ul>
+                </div>
+                <div>
+                    <p class="text-amber-400 font-medium mb-2">⚠️ Not Applicable:</p>
+                    <ul class="text-slate-300 space-y-1">
+                        <li>• <code>-d, --detach</code> - Compose runs detached by default</li>
+                        <li>• <code>-i, --interactive</code> - Not for compose services</li>
+                        <li>• <code>-t, --tty</code> - Not for compose services</li>
+                        <li>• <code>--rm</code> - Auto-remove not in compose</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+function converterComponent() {
+    return {
+        dockerRunCommand: '',
+        serviceName: '',
+        composeYaml: '',
+        warnings: [],
+        error: null,
+        loading: false,
+        toast: { show: false, type: 'success', message: '' },
+
+        async convert() {
+            this.loading = true;
+            this.error = null;
+            this.warnings = [];
+            this.composeYaml = '';
+
+            try {
+                const response = await fetch('/api/converter/run-to-compose', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        command: this.dockerRunCommand,
+                        service_name: this.serviceName || undefined
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.composeYaml = data.compose_yaml;
+                    this.warnings = data.warnings || [];
+                    if (!this.serviceName) {
+                        this.serviceName = data.service_name;
+                    }
+                    this.showToast('Converted successfully!', 'success');
+                } else {
+                    this.error = data.error || 'Conversion failed';
+                }
+            } catch (error) {
+                this.error = 'Failed to convert command';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        loadExample(num) {
+            switch(num) {
+                case 1:
+                    this.dockerRunCommand = 'docker run -d -p 8080:80 --name web --restart unless-stopped nginx:alpine';
+                    this.serviceName = 'web';
+                    break;
+                case 2:
+                    this.dockerRunCommand = 'docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=mydb --name postgres postgres:15-alpine';
+                    this.serviceName = 'db';
+                    break;
+                case 3:
+                    this.dockerRunCommand = 'docker run -d -p 6379:6379 -v redis-data:/data --name cache redis:alpine';
+                    this.serviceName = 'cache';
+                    break;
+            }
+        },
+
+        async copyToClipboard() {
+            try {
+                await navigator.clipboard.writeText(this.composeYaml);
+                this.showToast('Copied to clipboard!', 'success');
+            } catch (error) {
+                this.showToast('Failed to copy', 'error');
+            }
+        },
+
+        downloadYaml() {
+            const blob = new Blob([this.composeYaml], { type: 'text/yaml' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'docker-compose.yml';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            this.showToast('Downloaded docker-compose.yml', 'success');
+        },
+
+        createStack() {
+            // Navigate to stacks page with pre-filled data
+            sessionStorage.setItem('newStackYaml', this.composeYaml);
+            sessionStorage.setItem('newStackName', this.serviceName);
+            window.location.href = '/stacks';
+        },
+
+        showToast(message, type) {
+            this.toast.message = message;
+            this.toast.type = type;
+            this.toast.show = true;
+            setTimeout(() => { this.toast.show = false; }, 3000);
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -67,6 +67,14 @@ app.register_blueprint(networks_bp)
 from backend.api.volumes import volumes_bp
 app.register_blueprint(volumes_bp)
 
+# Import and register stacks blueprint (Sprint 5 Task 3)
+from backend.api.stacks import stacks_bp
+app.register_blueprint(stacks_bp)
+
+# Import and register converter blueprint (Sprint 5 Task 4)
+from backend.api.converter import converter_bp
+app.register_blueprint(converter_bp)
+
 # Import and initialise rate limiter (Sprint 5 — SEC-001)
 from backend.extensions import limiter
 limiter.init_app(app)
@@ -189,7 +197,7 @@ def set_security_headers(response):
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com cdn.jsdelivr.net unpkg.com; "
         "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
         "img-src 'self' data: https:; "
-        "connect-src 'self'; "
+        "connect-src 'self' cdn.jsdelivr.net; "
         "font-src 'self' data:; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
@@ -329,6 +337,22 @@ def volumes_page():
     return render_template('volumes.html', session=session_info)
 
 
+@app.route('/stacks')
+@require_auth()
+def stacks_page():
+    """Stacks management page"""
+    session_info = get_current_session_info()
+    return render_template('stacks.html', session=session_info)
+
+
+@app.route('/converter')
+@require_auth()
+def converter_page():
+    """Docker Run to Compose converter page"""
+    session_info = get_current_session_info()
+    return render_template('converter.html', session=session_info)
+
+
 @app.route('/settings')
 @require_auth()
 def settings_page():
@@ -399,10 +423,21 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
-    
+
+    # Start health metrics collection worker (Sprint 5 Tasks 5-7)
+    if not app.config.get('TESTING'):
+        logger.info("Starting health metrics collection worker...")
+        try:
+            from backend.services.metrics_worker import start_metrics_worker
+            start_metrics_worker(interval_seconds=60)  # Collect every 60 seconds
+            logger.info("✓ Metrics worker started")
+        except Exception as e:
+            logger.warning(f"Failed to start metrics worker: {e}")
+            logger.warning("Health monitoring will work but historical metrics won't be collected")
+
     # Check if setup is complete
     setup_complete = os.path.exists(os.path.join(Config.DATA_DIR, 'setup_complete'))
-    
+
     if not setup_complete:
         logger.warning("First time setup - running HTTP for initial config")
         logger.info("Visit http://localhost:5000/setup to complete setup")

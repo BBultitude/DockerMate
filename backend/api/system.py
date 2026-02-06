@@ -363,3 +363,207 @@ def get_networks():
             "error": "Failed to retrieve network information",
             "error_type": "ServerError"
         }), 500
+
+
+@system_bp.route('/health/metrics', methods=['GET'])
+def get_health_metrics():
+    """
+    Get historical health metrics (Sprint 5 Tasks 5-7)
+
+    GET /api/system/health/metrics
+
+    Query Parameters:
+        - hours (int): Number of hours of history to retrieve (default 24, max 168 = 7 days)
+        - interval (str): Data point interval - '1min', '5min', '15min', '1hour' (default '5min')
+
+    Returns historical system metrics with summary statistics.
+
+    Success Response (200):
+    {
+        "success": true,
+        "metrics": [
+            {
+                "timestamp": "2026-02-06T10:00:00",
+                "cpu_usage_percent": 45.2,
+                "memory_usage_percent": 62.1,
+                "disk_usage_percent": 38.5,
+                "containers_running": 12,
+                "containers_total": 15,
+                "overall_status": "healthy"
+            },
+            ...
+        ],
+        "summary": {
+            "avg_cpu": 43.5,
+            "max_cpu": 78.2,
+            "avg_memory": 61.3,
+            "max_memory": 72.4,
+            "avg_disk": 38.1,
+            "max_disk": 42.3
+        },
+        "hours": 24,
+        "interval": "5min",
+        "count": 288
+    }
+
+    Use Cases:
+        - Display CPU/memory/disk graphs on health dashboard
+        - Analyze resource usage trends
+        - Identify peak usage periods
+    """
+    from flask import request
+    from datetime import datetime, timedelta
+    from backend.models.health_metric import HealthMetric
+
+    try:
+        # Parse query parameters
+        hours = min(int(request.args.get('hours', 24)), 168)  # Max 7 days
+        interval = request.args.get('interval', '5min')
+
+        # Map interval to minutes
+        interval_minutes = {
+            '1min': 1,
+            '5min': 5,
+            '15min': 15,
+            '1hour': 60
+        }.get(interval, 5)
+
+        # Query metrics within time range
+        db = SessionLocal()
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        all_metrics = db.query(HealthMetric).filter(
+            HealthMetric.timestamp >= cutoff
+        ).order_by(HealthMetric.timestamp.asc()).all()
+
+        # Downsample to requested interval (reduce data points)
+        metrics = []
+        last_timestamp = None
+        for m in all_metrics:
+            if last_timestamp is None or \
+               (m.timestamp - last_timestamp).total_seconds() >= (interval_minutes * 60):
+                metrics.append(m.to_dict())
+                last_timestamp = m.timestamp
+
+        # Calculate summary statistics
+        summary = {
+            'avg_cpu': 0,
+            'max_cpu': 0,
+            'avg_memory': 0,
+            'max_memory': 0,
+            'avg_disk': 0,
+            'max_disk': 0
+        }
+
+        if metrics:
+            cpu_values = [m['cpu_usage_percent'] for m in metrics if m.get('cpu_usage_percent') is not None]
+            mem_values = [m['memory_usage_percent'] for m in metrics if m.get('memory_usage_percent') is not None]
+            disk_values = [m['disk_usage_percent'] for m in metrics if m.get('disk_usage_percent') is not None]
+
+            if cpu_values:
+                summary['avg_cpu'] = round(sum(cpu_values) / len(cpu_values), 2)
+                summary['max_cpu'] = round(max(cpu_values), 2)
+
+            if mem_values:
+                summary['avg_memory'] = round(sum(mem_values) / len(mem_values), 2)
+                summary['max_memory'] = round(max(mem_values), 2)
+
+            if disk_values:
+                summary['avg_disk'] = round(sum(disk_values) / len(disk_values), 2)
+                summary['max_disk'] = round(max(disk_values), 2)
+
+        db.close()
+
+        return jsonify({
+            'success': True,
+            'metrics': metrics,
+            'summary': summary,
+            'hours': hours,
+            'interval': interval,
+            'count': len(metrics)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get health metrics: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': 'ServerError'
+        }), 500
+
+
+@system_bp.route('/health/containers/<container_id>', methods=['GET'])
+def get_container_health(container_id):
+    """
+    Get health metrics for specific container (Sprint 5 Tasks 5-7)
+
+    GET /api/system/health/containers/<container_id>
+
+    Query Parameters:
+        - hours (int): Hours of history to retrieve (default 24, max 168 = 7 days)
+
+    Returns historical metrics for one container.
+
+    Success Response (200):
+    {
+        "success": true,
+        "container_id": "abc123...",
+        "container_name": "nginx-web",
+        "metrics": [
+            {
+                "timestamp": "2026-02-06T10:00:00",
+                "cpu_percent": 15.3,
+                "memory_mb": 128.5,
+                "memory_percent": 6.2,
+                "status": "running",
+                "health_status": "healthy"
+            },
+            ...
+        ],
+        "count": 1440
+    }
+
+    Use Cases:
+        - Display per-container resource usage graphs
+        - Identify container resource trends
+        - Diagnose container performance issues
+    """
+    from flask import request
+    from datetime import datetime, timedelta
+    from backend.models.container_health import ContainerHealth
+
+    try:
+        hours = min(int(request.args.get('hours', 24)), 168)  # Max 7 days
+
+        db = SessionLocal()
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        # Query metrics for this container
+        metrics_query = db.query(ContainerHealth).filter(
+            ContainerHealth.container_id == container_id,
+            ContainerHealth.timestamp >= cutoff
+        ).order_by(ContainerHealth.timestamp.asc()).all()
+
+        # Get container name from most recent metric
+        container_name = metrics_query[-1].container_name if metrics_query else 'Unknown'
+
+        metrics = [m.to_dict() for m in metrics_query]
+
+        db.close()
+
+        return jsonify({
+            'success': True,
+            'container_id': container_id,
+            'container_name': container_name,
+            'metrics': metrics,
+            'hours': hours,
+            'count': len(metrics)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get container health: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': 'ServerError'
+        }), 500

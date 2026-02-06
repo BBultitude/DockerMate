@@ -1,0 +1,651 @@
+{% extends "base.html" %}
+
+{% block title %}Stacks - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-slate-900" x-data="stacksComponent()" x-init="init()">
+    {% include 'components/navbar.html' %}
+
+    <!-- Toast Notifications -->
+    <div x-show="toast.show" x-transition
+         class="fixed top-4 right-4 z-50 max-w-md"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-x-4"
+         x-transition:enter-end="opacity-0 translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <div class="rounded-lg shadow-lg p-4"
+             :class="{'bg-green-600': toast.type === 'success', 'bg-red-600': toast.type === 'error', 'bg-blue-600': toast.type === 'info'}">
+            <span class="text-white font-medium" x-text="toast.message"></span>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Page Header -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-slate-100">Docker Compose Stacks</h1>
+            <button @click="showCreateModal()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition font-medium">
+                📄 Create Stack
+            </button>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-slate-800 rounded-lg p-4">
+                <div class="text-slate-400 text-sm">Total Stacks</div>
+                <div class="text-2xl font-bold text-slate-100" x-text="stacks.length"></div>
+            </div>
+            <div class="bg-slate-800 rounded-lg p-4">
+                <div class="text-slate-400 text-sm">Running</div>
+                <div class="text-2xl font-bold text-green-400" x-text="runningCount"></div>
+            </div>
+            <div class="bg-slate-800 rounded-lg p-4">
+                <div class="text-slate-400 text-sm">Total Services</div>
+                <div class="text-2xl font-bold text-slate-100" x-text="totalServices"></div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-slate-600 border-t-blue-500"></div>
+            <p class="text-slate-400 mt-4">Loading stacks...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && stacks.length === 0" class="text-center py-12 bg-slate-800 rounded-lg">
+            <p class="text-slate-400 text-lg mb-4">No stacks found</p>
+            <p class="text-slate-500 text-sm mb-6">Create your first Docker Compose stack to get started</p>
+            <button @click="showCreateModal()"
+                    class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition font-medium">
+                📄 Create First Stack
+            </button>
+        </div>
+
+        <!-- Stack Cards -->
+        <div x-show="!loading && stacks.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <template x-for="stack in stacks" :key="stack.id">
+                <div class="bg-slate-800 rounded-lg p-6 border border-slate-700 hover:border-slate-600 transition">
+                    <!-- Stack Header -->
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-white" x-text="stack.name"></h3>
+                            <p class="text-slate-400 text-sm mt-1" x-text="stack.description || 'No description'"></p>
+                        </div>
+                        <span class="px-3 py-1 rounded text-sm font-medium"
+                              :class="{
+                                  'bg-green-900 text-green-300': stack.status === 'running',
+                                  'bg-gray-700 text-gray-300': stack.status === 'stopped',
+                                  'bg-yellow-900 text-yellow-300': stack.status === 'deploying',
+                                  'bg-red-900 text-red-300': stack.status === 'failed'
+                              }"
+                              x-text="stack.status.toUpperCase()"></span>
+                    </div>
+
+                    <!-- Stack Info -->
+                    <div class="grid grid-cols-3 gap-4 mb-4 text-sm">
+                        <div>
+                            <div class="text-slate-500">Services</div>
+                            <div class="text-white font-medium" x-text="stack.service_count || 0"></div>
+                        </div>
+                        <div>
+                            <div class="text-slate-500">Running</div>
+                            <div class="text-green-400 font-medium" x-text="stack.running_services || 0"></div>
+                        </div>
+                        <div>
+                            <div class="text-slate-500">Version</div>
+                            <div class="text-white font-medium" x-text="stack.compose_version || 'N/A'"></div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-2 flex-wrap">
+                        <button x-show="stack.status === 'stopped' || stack.status === 'failed'"
+                                @click="deployStack(stack)"
+                                class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition">
+                            🚀 Deploy
+                        </button>
+                        <button x-show="stack.status === 'running'"
+                                @click="stopStack(stack)"
+                                class="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-sm font-medium transition">
+                            ⏸ Stop
+                        </button>
+                        <button x-show="stack.status === 'stopped' && stack.container_ids && stack.container_ids.length > 0"
+                                @click="startStack(stack)"
+                                class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition">
+                            ▶ Start
+                        </button>
+                        <button @click="showEditModal(stack)"
+                                class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-medium transition">
+                            ✏️ Edit
+                        </button>
+                        <button @click="showDetails(stack)"
+                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm font-medium transition">
+                            📋 Details
+                        </button>
+                        <button @click="showDeleteModal(stack)"
+                                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium transition">
+                            🗑 Delete
+                        </button>
+                    </div>
+
+                    <!-- Deployed Time -->
+                    <div x-show="stack.deployed_at" class="mt-3 text-xs text-slate-500">
+                        Last deployed: <span x-text="formatDate(stack.deployed_at)"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </main>
+
+    <!-- Create Stack Modal -->
+    <div x-show="createModal.show" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         @click.self="createModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full mx-4 my-8 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Create New Stack</h3>
+
+            <div class="space-y-4">
+                <!-- Stack Name -->
+                <div>
+                    <label class="block text-slate-300 text-sm font-medium mb-1">Stack Name *</label>
+                    <input type="text"
+                           x-model="createModal.name"
+                           placeholder="e.g., wordpress-blog, monitoring-stack"
+                           class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                    <p class="text-xs text-slate-500 mt-1">Alphanumeric and hyphens only</p>
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label class="block text-slate-300 text-sm font-medium mb-1">Description</label>
+                    <input type="text"
+                           x-model="createModal.description"
+                           placeholder="Brief description of this stack"
+                           class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                </div>
+
+                <!-- Compose YAML -->
+                <div>
+                    <label class="block text-slate-300 text-sm font-medium mb-1">docker-compose.yml Content *</label>
+                    <textarea x-model="createModal.composeYaml"
+                              rows="12"
+                              placeholder="version: '3.8'
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - '8080:80'"
+                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+                </div>
+
+                <!-- Error Display -->
+                <div x-show="createModal.error" class="p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm" x-text="createModal.error"></div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="createModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition">
+                    Cancel
+                </button>
+                <button @click="createStack()"
+                        :disabled="createModal.loading || !createModal.name || !createModal.composeYaml"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded transition">
+                    <span x-show="!createModal.loading">Create Stack</span>
+                    <span x-show="createModal.loading">Creating...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Stack Modal -->
+    <div x-show="editModal.show" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         @click.self="editModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full mx-4 my-8 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Edit Stack: <span x-text="editModal.stack?.name"></span></h3>
+
+            <div class="space-y-4">
+                <!-- Description -->
+                <div>
+                    <label class="block text-slate-300 text-sm font-medium mb-1">Description</label>
+                    <input type="text"
+                           x-model="editModal.description"
+                           placeholder="Brief description of this stack"
+                           class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                </div>
+
+                <!-- Compose YAML -->
+                <div>
+                    <label class="block text-slate-300 text-sm font-medium mb-1">docker-compose.yml Content *</label>
+                    <textarea x-model="editModal.composeYaml"
+                              rows="12"
+                              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+                </div>
+
+                <!-- Redeploy option -->
+                <div class="flex items-center">
+                    <input type="checkbox" x-model="editModal.redeploy" class="mr-2" id="redeploy-checkbox">
+                    <label for="redeploy-checkbox" class="text-slate-300 text-sm">
+                        Redeploy stack after update (stop and recreate containers)
+                    </label>
+                </div>
+
+                <!-- Error Display -->
+                <div x-show="editModal.error" class="p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm" x-text="editModal.error"></div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="editModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition">
+                    Cancel
+                </button>
+                <button @click="updateStack()"
+                        :disabled="editModal.loading || !editModal.composeYaml"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded transition">
+                    <span x-show="!editModal.loading">Update Stack</span>
+                    <span x-show="editModal.loading">Updating...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div x-show="detailsModal.show" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         @click.self="detailsModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-4xl w-full mx-4 my-8 border border-slate-700 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-xl font-bold text-white mb-4">Stack Details: <span x-text="detailsModal.stack?.name"></span></h3>
+
+            <!-- Service Details -->
+            <div class="mb-6">
+                <h4 class="text-lg font-semibold text-white mb-3">Services</h4>
+                <div x-show="detailsModal.stack?.service_details && detailsModal.stack.service_details.length > 0">
+                    <div class="space-y-2">
+                        <template x-for="service in detailsModal.stack?.service_details || []" :key="service.id">
+                            <div class="bg-slate-900 rounded p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white font-medium" x-text="service.name"></span>
+                                    <span class="px-2 py-1 rounded text-xs"
+                                          :class="{
+                                              'bg-green-900 text-green-300': service.status === 'running',
+                                              'bg-gray-700 text-gray-300': service.status !== 'running'
+                                          }"
+                                          x-text="service.status.toUpperCase()"></span>
+                                </div>
+                                <div class="text-sm text-slate-400">
+                                    <div>Image: <span class="text-slate-300" x-text="service.image"></span></div>
+                                    <div x-show="service.id">ID: <span class="text-slate-300" x-text="service.id"></span></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div x-show="!detailsModal.stack?.service_details || detailsModal.stack.service_details.length === 0" class="text-slate-500 text-sm">
+                    No services deployed yet. Deploy the stack to see services.
+                </div>
+            </div>
+
+            <!-- Compose YAML -->
+            <div class="mb-6">
+                <h4 class="text-lg font-semibold text-white mb-3">Compose File</h4>
+                <div class="bg-slate-900 rounded p-4 overflow-x-auto">
+                    <pre class="text-sm text-slate-300 font-mono" x-text="detailsModal.stack?.compose_yaml"></pre>
+                </div>
+            </div>
+
+            <!-- CLI Equivalent -->
+            <div class="mb-6">
+                <h4 class="text-lg font-semibold text-white mb-3">Docker CLI Equivalent</h4>
+                <div class="space-y-2">
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">Deploy stack:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker compose -f <span x-text="detailsModal.stack?.file_path || 'docker-compose.yml'"></span> -p <span x-text="detailsModal.stack?.name"></span> up -d
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">Stop stack:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker compose -p <span x-text="detailsModal.stack?.name"></span> stop
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">Start stack:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker compose -p <span x-text="detailsModal.stack?.name"></span> start
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">Remove stack:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker compose -p <span x-text="detailsModal.stack?.name"></span> down [-v]
+                        </code>
+                        <p class="text-xs text-slate-500 mt-1">Add <strong>-v</strong> flag to also remove volumes</p>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">View logs:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker compose -p <span x-text="detailsModal.stack?.name"></span> logs -f
+                        </code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Close Button -->
+            <div class="flex justify-end">
+                <button @click="detailsModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Modal -->
+    <div x-show="deleteModal.show" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+         @click.self="deleteModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-4">Confirm Delete</h3>
+            <p class="text-slate-300 mb-4">
+                Are you sure you want to delete stack <strong class="text-white" x-text="deleteModal.stack?.name"></strong>?
+            </p>
+            <div class="mb-4">
+                <label class="flex items-center text-slate-300">
+                    <input type="checkbox" x-model="deleteModal.removeVolumes" class="mr-2">
+                    <span class="text-sm">Also remove volumes (data will be lost)</span>
+                </label>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button @click="deleteModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition">
+                    Cancel
+                </button>
+                <button @click="confirmDelete()"
+                        :disabled="deleteModal.loading"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded transition">
+                    <span x-show="!deleteModal.loading">Delete</span>
+                    <span x-show="deleteModal.loading">Deleting...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function stacksComponent() {
+    return {
+        stacks: [],
+        loading: false,
+        toast: { show: false, type: 'success', message: '' },
+        createModal: { show: false, name: '', description: '', composeYaml: '', loading: false, error: null },
+        editModal: { show: false, stack: null, description: '', composeYaml: '', redeploy: false, loading: false, error: null },
+        detailsModal: { show: false, stack: null },
+        deleteModal: { show: false, stack: null, removeVolumes: false, loading: false },
+
+        async init() {
+            await this.loadStacks();
+            this.startPolling();
+
+            // Check if we have pre-filled data from converter
+            const prefilledYaml = sessionStorage.getItem('newStackYaml');
+            const prefilledName = sessionStorage.getItem('newStackName');
+            if (prefilledYaml) {
+                this.createModal.composeYaml = prefilledYaml;
+                this.createModal.name = prefilledName || '';
+                this.createModal.description = 'Converted from docker run command';
+                this.createModal.show = true;
+                // Clear session storage
+                sessionStorage.removeItem('newStackYaml');
+                sessionStorage.removeItem('newStackName');
+            }
+        },
+
+        async loadStacks() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/stacks');
+                const data = await response.json();
+                if (data.success) {
+                    this.stacks = data.stacks;
+                } else {
+                    this.showToast(data.error || 'Failed to load stacks', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to load stacks', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async createStack() {
+            this.createModal.loading = true;
+            this.createModal.error = null;
+            try {
+                const response = await fetch('/api/stacks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        name: this.createModal.name,
+                        description: this.createModal.description,
+                        compose_yaml: this.createModal.composeYaml
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Stack '${data.stack.name}' created successfully`, 'success');
+                    this.createModal.show = false;
+                    this.createModal.name = '';
+                    this.createModal.description = '';
+                    this.createModal.composeYaml = '';
+                    await this.loadStacks();
+                } else {
+                    this.createModal.error = data.error || 'Failed to create stack';
+                }
+            } catch (error) {
+                this.createModal.error = 'Failed to create stack';
+            } finally {
+                this.createModal.loading = false;
+            }
+        },
+
+        async deployStack(stack) {
+            this.showToast(`Deploying stack '${stack.name}'...`, 'info');
+            try {
+                const response = await fetch(`/api/stacks/${stack.id}/deploy`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(`Stack deployed: ${data.deployed.containers} containers, ${data.deployed.networks} networks`, 'success');
+                    await this.loadStacks();
+                } else {
+                    this.showToast(data.error || 'Failed to deploy stack', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to deploy stack', 'error');
+            }
+        },
+
+        async startStack(stack) {
+            try {
+                const response = await fetch(`/api/stacks/${stack.id}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    await this.loadStacks();
+                } else {
+                    this.showToast(data.error || 'Failed to start stack', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to start stack', 'error');
+            }
+        },
+
+        async stopStack(stack) {
+            try {
+                const response = await fetch(`/api/stacks/${stack.id}/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    await this.loadStacks();
+                } else {
+                    this.showToast(data.error || 'Failed to stop stack', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to stop stack', 'error');
+            }
+        },
+
+        async showDetails(stack) {
+            try {
+                const response = await fetch(`/api/stacks/${stack.id}`);
+                const data = await response.json();
+                if (data.success) {
+                    this.detailsModal.stack = data.stack;
+                    this.detailsModal.show = true;
+                } else {
+                    this.showToast(data.error || 'Failed to load stack details', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to load stack details', 'error');
+            }
+        },
+
+        showCreateModal() {
+            this.createModal.show = true;
+            this.createModal.error = null;
+        },
+
+        async showEditModal(stack) {
+            try {
+                const response = await fetch(`/api/stacks/${stack.id}`);
+                const data = await response.json();
+                if (data.success) {
+                    this.editModal.stack = data.stack;
+                    this.editModal.description = data.stack.description || '';
+                    this.editModal.composeYaml = data.stack.compose_yaml;
+                    this.editModal.redeploy = false;
+                    this.editModal.error = null;
+                    this.editModal.show = true;
+                } else {
+                    this.showToast(data.error || 'Failed to load stack', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to load stack for editing', 'error');
+            }
+        },
+
+        async updateStack() {
+            this.editModal.loading = true;
+            this.editModal.error = null;
+            try {
+                const response = await fetch(`/api/stacks/${this.editModal.stack.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        description: this.editModal.description,
+                        compose_yaml: this.editModal.composeYaml,
+                        redeploy: this.editModal.redeploy
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    this.editModal.show = false;
+                    await this.loadStacks();
+                } else {
+                    this.editModal.error = data.error || 'Failed to update stack';
+                }
+            } catch (error) {
+                this.editModal.error = 'Failed to update stack';
+            } finally {
+                this.editModal.loading = false;
+            }
+        },
+
+        showDeleteModal(stack) {
+            this.deleteModal.stack = stack;
+            this.deleteModal.removeVolumes = false;
+            this.deleteModal.show = true;
+        },
+
+        async confirmDelete() {
+            this.deleteModal.loading = true;
+            try {
+                const response = await fetch(`/api/stacks/${this.deleteModal.stack.id}?remove_volumes=${this.deleteModal.removeVolumes}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.showToast(data.message, 'success');
+                    this.deleteModal.show = false;
+                    await this.loadStacks();
+                } else {
+                    this.showToast(data.error || 'Failed to delete stack', 'error');
+                }
+            } catch (error) {
+                this.showToast('Failed to delete stack', 'error');
+            } finally {
+                this.deleteModal.loading = false;
+            }
+        },
+
+        showToast(message, type) {
+            this.toast.message = message;
+            this.toast.type = type;
+            this.toast.show = true;
+            setTimeout(() => { this.toast.show = false; }, 5000);
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return 'Never';
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        },
+
+        get runningCount() {
+            return this.stacks.filter(s => s.status === 'running').length;
+        },
+
+        get totalServices() {
+            return this.stacks.reduce((sum, s) => sum + (s.service_count || 0), 0);
+        },
+
+        startPolling() {
+            setInterval(() => {
+                if (!this.createModal.show && !this.editModal.show && !this.detailsModal.show && !this.deleteModal.show) {
+                    this.loadStacks();
+                }
+            }, 10000);
+        }
+    }
+}
+</script>
+{% endblock %}

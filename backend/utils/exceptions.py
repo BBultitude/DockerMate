@@ -212,15 +212,51 @@ class AuthenticationError(DockerMateException):
 class PermissionError(DockerMateException):
     """
     Raised when user lacks required permissions.
-    
+
     Common causes:
     - Not in docker group
     - Read-only access
     - Resource access denied
-    
+
     Educational:
         - Permission errors map to HTTP 403
         - Different from authentication (401)
         - Should suggest permission fixes
+    """
+    pass
+
+
+class StackNotFoundError(DockerMateException):
+    """
+    Raised when requested Docker Compose stack doesn't exist.
+
+    Common causes:
+    - Stack was deleted
+    - Wrong stack name/ID provided
+    - Stack exists but not tracked by DockerMate
+
+    Educational:
+        - Stacks are multi-container applications
+        - Stack tracking is in DockerMate database
+        - External stacks can be imported
+    """
+    pass
+
+
+class StackDeploymentError(DockerMateException):
+    """
+    Raised when stack deployment fails.
+
+    Common causes:
+    - Invalid compose file syntax
+    - Missing required images
+    - Port conflicts
+    - Resource constraints
+    - Network/volume creation failures
+
+    Educational:
+        - Deployment errors need detailed messages
+        - Partial deployments should be cleaned up
+        - Should provide rollback guidance
     """
     pass
