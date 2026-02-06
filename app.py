@@ -63,6 +63,10 @@ app.register_blueprint(images_bp)
 from backend.api.networks import networks_bp
 app.register_blueprint(networks_bp)
 
+# Import and register volumes blueprint (Sprint 5 Task 1)
+from backend.api.volumes import volumes_bp
+app.register_blueprint(volumes_bp)
+
 # Import and initialise rate limiter (Sprint 5 — SEC-001)
 from backend.extensions import limiter
 limiter.init_app(app)
@@ -258,6 +262,14 @@ def networks_page():
     """Networks management page"""
     session_info = get_current_session_info()
     return render_template('networks.html', session=session_info)
+
+
+@app.route('/volumes')
+@require_auth()
+def volumes_page():
+    """Volumes management page"""
+    session_info = get_current_session_info()
+    return render_template('volumes.html', session=session_info)
 
 
 @app.route('/settings')

@@ -108,9 +108,9 @@
         </div>
 
         <!-- =====================================================================
-             PLATFORM OVERVIEW  —  Environments  |  Images  |  Networks
+             PLATFORM OVERVIEW  —  Environments  |  Images  |  Networks  |  Volumes
              ===================================================================== -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 
             <!-- Environment Distribution -->
             <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
@@ -170,6 +170,28 @@
                     </template>
                 </div>
             </div>
+
+            <!-- Volumes Summary -->
+            <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-semibold text-white">Volumes</h3>
+                    <a href="/volumes" class="text-blue-400 hover:text-blue-300 text-sm">View all →</a>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400 text-sm">Total</span>
+                        <span class="text-slate-100 font-medium text-sm" x-text="volumes.total || 0"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400 text-sm">In Use</span>
+                        <span class="text-green-400 font-medium text-sm" x-text="volumes.in_use || 0"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400 text-sm">Unused</span>
+                        <span class="text-amber-400 font-medium text-sm" x-text="volumes.unused || 0"></span>
+                    </div>
+                </div>
+            </div>
         </div>
 
     </main>
@@ -220,6 +242,11 @@ function dashboardComponent() {
             count: 0,
             list: []         // [{name, driver}]
         },
+        volumes: {
+            total: 0,
+            in_use: 0,
+            unused: 0
+        },
         lastUpdated: 'Never',
         loading: false,
 
@@ -227,9 +254,9 @@ function dashboardComponent() {
         get healthDots() {
             const labels = {
                 docker: 'Docker', database: 'DB', containers: 'Containers',
-                images: 'Images', networks: 'Networks', dockermate: 'DockerMate'
+                images: 'Images', networks: 'Networks', volumes: 'Volumes', dockermate: 'DockerMate'
             };
-            const order = ['docker', 'database', 'containers', 'images', 'networks', 'dockermate'];
+            const order = ['docker', 'database', 'containers', 'images', 'networks', 'volumes', 'dockermate'];
             return order
                 .filter(k => this.health.checks[k] !== undefined)
                 .map(k => ({ label: labels[k] || k, status: this.health.checks[k] }));
@@ -255,7 +282,8 @@ function dashboardComponent() {
                     this.loadHealth(),
                     this.loadContainers(),
                     this.loadImages(),
-                    this.loadNetworks()
+                    this.loadNetworks(),
+                    this.loadVolumes()
                 ]);
                 this.lastUpdated = new Date().toLocaleTimeString();
             } catch (e) {
@@ -351,6 +379,20 @@ function dashboardComponent() {
                 this.networks.count = d.count;
                 this.networks.list  = d.data;
             } catch (e) { console.error('loadNetworks:', e); }
+        },
+
+        async loadVolumes() {
+            try {
+                const r = await fetch('/api/volumes');
+                if (!r.ok) return;
+                const d = await r.json();
+                if (!d.success) return;
+
+                const vols = d.volumes || [];
+                this.volumes.total = vols.length;
+                this.volumes.in_use = vols.filter(v => v.containers_using > 0).length;
+                this.volumes.unused = vols.filter(v => v.containers_using === 0).length;
+            } catch (e) { console.error('loadVolumes:', e); }
         }
     };
 }

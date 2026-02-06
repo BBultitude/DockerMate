@@ -126,16 +126,33 @@ class NetworkNotFoundError(DockerMateException):
 class VolumeNotFoundError(DockerMateException):
     """
     Raised when requested volume doesn't exist.
-    
+
     Common causes:
     - Volume was deleted
     - Wrong volume name provided
     - Volume exists but not visible
-    
+
     Educational:
         - Volume errors prevent data persistence
         - Should suggest creating volume
         - Named volumes vs bind mounts have different behavior
+    """
+    pass
+
+
+class VolumeInUseError(DockerMateException):
+    """
+    Raised when attempting to delete a volume that is in use.
+
+    Common causes:
+    - Volume is mounted to running containers
+    - Volume is mounted to stopped containers
+    - Need to unmount before deletion
+
+    Educational:
+        - Docker prevents deletion of in-use volumes
+        - Should list which containers are using it
+        - Force flag can override if containers stopped
     """
     pass
 

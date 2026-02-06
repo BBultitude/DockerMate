@@ -265,6 +265,23 @@ def health_check():
         logger.warning(f"Networks health check: {e}")
 
     # ------------------------------------------------------------------
+    # Volumes: check for excessive unused volumes
+    # ------------------------------------------------------------------
+    checks["volumes"] = "ok"
+    try:
+        from backend.services.volume_manager import VolumeManager
+        with VolumeManager() as mgr:
+            volumes_result = mgr.list_volumes(include_external=True)
+        volumes = volumes_result.get('volumes', [])
+        unused = [v for v in volumes if v.get('containers_using', 0) == 0]
+        if len(unused) > 5:
+            checks["volumes"] = "warning"
+            warnings.append({"domain": "volumes",
+                             "message": f"{len(unused)} unused volumes consuming disk space"})
+    except Exception as e:
+        logger.warning(f"Volumes health check: {e}")
+
+    # ------------------------------------------------------------------
     # DockerMate: capacity check
     # ------------------------------------------------------------------
     checks["dockermate"] = "ok"

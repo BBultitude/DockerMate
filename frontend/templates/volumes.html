@@ -1,0 +1,806 @@
+{% extends "base.html" %}
+{% block title %}Volumes - DockerMate{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-slate-900" x-data="volumesComponent()" x-init="init()">
+    {% include 'components/navbar.html' %}
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-2"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed top-4 right-4 z-50 max-w-sm">
+        <div class="rounded-lg shadow-lg p-4"
+             :class="toast.type === 'success' ? 'bg-green-900 border border-green-700' : 'bg-red-900 border border-red-700'">
+            <p class="text-white font-medium" x-text="toast.message"></p>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h2 class="text-3xl font-bold text-white">Docker Volumes</h2>
+                <p class="text-slate-400 mt-1">Manage persistent data storage for containers</p>
+            </div>
+            <div class="flex gap-3">
+                <button @click="confirmPrune()"
+                        class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md transition">
+                    🧹 Prune Unused
+                </button>
+                <button @click="showCreateModal()"
+                        class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition">
+                    ➕ Create Volume
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Total Volumes</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="volumes.length"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">In Use</p>
+                <p class="text-2xl font-bold text-green-400 mt-1" x-text="inUseCount"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Unused</p>
+                <p class="text-2xl font-bold text-amber-400 mt-1" x-text="unusedCount"></p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                <p class="text-slate-400 text-sm">Total Size</p>
+                <p class="text-2xl font-bold text-white mt-1" x-text="formatSize(totalSize)"></p>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div x-show="!loading && volumes.length > 0" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <input type="text"
+                   x-model="filters.search"
+                   placeholder="Search volumes..."
+                   class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
+            <select x-model="filters.driver"
+                    class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
+                <option value="all">All Drivers</option>
+                <option value="local">Local</option>
+            </select>
+            <select x-model="filters.status"
+                    class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
+                <option value="all">All Volumes</option>
+                <option value="in-use">In Use</option>
+                <option value="unused">Unused</option>
+            </select>
+            <select x-model="filters.managed"
+                    class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
+                <option value="all">All</option>
+                <option value="managed">Managed</option>
+                <option value="external">External</option>
+            </select>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            <p class="text-slate-400 mt-4">Loading volumes...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && volumes.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-12 text-center">
+            <div class="text-6xl mb-4">📦</div>
+            <h3 class="text-2xl font-semibold text-white mb-2">No Volumes Found</h3>
+            <p class="text-slate-400 mb-4">Create your first volume for persistent data storage</p>
+            <button @click="showCreateModal()"
+                    class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-md transition">
+                ➕ Create Volume
+            </button>
+        </div>
+
+        <!-- Empty Filter Results -->
+        <div x-show="!loading && volumes.length > 0 && filteredVolumes.length === 0" class="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
+            <p class="text-slate-400">No volumes match your filters.</p>
+        </div>
+
+        <!-- Volumes Grid -->
+        <div x-show="!loading && filteredVolumes.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <template x-for="volume in filteredVolumes" :key="volume.id">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 hover:bg-slate-750 transition">
+                    <!-- Volume Name + Badges -->
+                    <div class="flex items-start justify-between mb-3">
+                        <h3 class="text-lg font-semibold text-slate-100 font-mono break-all flex-1" x-text="volume.name"></h3>
+                        <div class="flex flex-col gap-1 ml-2">
+                            <span x-show="volume.managed"
+                                  class="px-2 py-1 bg-green-600 text-white text-xs rounded whitespace-nowrap">
+                                MANAGED
+                            </span>
+                            <span x-show="!volume.managed"
+                                  class="px-2 py-1 bg-slate-600 text-slate-300 text-xs rounded whitespace-nowrap">
+                                EXTERNAL
+                            </span>
+                            <span x-show="volume.containers_using > 0"
+                                  class="px-2 py-1 bg-blue-600 text-white text-xs rounded whitespace-nowrap">
+                                IN USE
+                            </span>
+                            <span x-show="volume.containers_using === 0"
+                                  class="px-2 py-1 bg-amber-600 text-white text-xs rounded whitespace-nowrap">
+                                UNUSED
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Volume Details -->
+                    <div class="space-y-2 text-sm text-slate-300 mb-4">
+                        <div>
+                            <span class="text-slate-500">Driver:</span>
+                            <span x-text="volume.driver"></span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Size:</span>
+                            <span x-text="formatSize(volume.size_bytes)"></span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Containers:</span>
+                            <span x-text="volume.containers_using"></span>
+                        </div>
+                        <div x-show="volume.container_names && volume.container_names.length > 0">
+                            <span class="text-slate-500">Used by:</span>
+                            <div class="mt-1 flex flex-wrap gap-1">
+                                <template x-for="name in volume.container_names" :key="name">
+                                    <span class="px-2 py-0.5 bg-slate-700 rounded text-xs" x-text="name"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-wrap gap-2">
+                        <button @click="showDetails(volume)"
+                                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded transition">
+                            Details
+                        </button>
+                        <button x-show="!volume.managed"
+                                @click="adoptVolume(volume)"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition">
+                            Adopt
+                        </button>
+                        <button x-show="volume.managed"
+                                @click="releaseVolume(volume)"
+                                class="px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white text-sm rounded transition">
+                            Release
+                        </button>
+                        <button @click="confirmDelete(volume)"
+                                :disabled="volume.containers_using > 0"
+                                class="px-3 py-1 bg-red-600 hover:bg-red-500 disabled:bg-red-400 disabled:cursor-not-allowed text-white text-sm rounded transition"
+                                :title="volume.containers_using > 0 ? 'Cannot delete volume in use' : ''">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Last Updated -->
+        <div x-show="!loading && filteredVolumes.length > 0" class="mt-6 text-center">
+            <p class="text-slate-500 text-sm">
+                Last updated: <span x-text="lastUpdated"></span>
+            </p>
+        </div>
+    </main>
+
+    <!-- Create Volume Modal -->
+    <div x-show="createModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="createModal.show = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Create Volume</h3>
+
+            <form @submit.prevent="createVolume()">
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">Volume Name *</label>
+                    <input type="text"
+                           x-model="createModal.name"
+                           placeholder="e.g., myapp-data"
+                           required
+                           pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:border-green-500">
+                    <p class="text-xs text-slate-500 mt-1">Alphanumeric, hyphens, underscores, dots allowed</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm text-slate-400 mb-2">Driver</label>
+                    <select x-model="createModal.driver"
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:border-green-500">
+                        <option value="local">local</option>
+                    </select>
+                </div>
+
+                <div x-show="createModal.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                    <span x-text="createModal.error"></span>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button"
+                            @click="createModal.show = false"
+                            :disabled="createModal.loading"
+                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-md transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            :disabled="createModal.loading"
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition">
+                        <span x-show="!createModal.loading">Create</span>
+                        <span x-show="createModal.loading">Creating...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div x-show="deleteModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="deleteModal.show = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Delete Volume</h3>
+
+            <p class="text-slate-300 mb-4">
+                Are you sure you want to delete volume
+                <span class="font-mono font-semibold text-white" x-text="deleteModal.volume?.name"></span>?
+            </p>
+
+            <div x-show="deleteModal.volume?.containers_using > 0" class="mb-4 p-3 bg-amber-900/20 border border-amber-700 rounded">
+                <p class="text-amber-300 text-sm mb-2">
+                    ⚠️ This volume is in use by <span x-text="deleteModal.volume?.containers_using"></span> container(s):
+                </p>
+                <div class="flex flex-wrap gap-1">
+                    <template x-for="name in deleteModal.volume?.container_names" :key="name">
+                        <span class="px-2 py-0.5 bg-slate-700 rounded text-xs text-white" x-text="name"></span>
+                    </template>
+                </div>
+                <label class="flex items-center gap-2 mt-3">
+                    <input type="checkbox" x-model="deleteModal.force" class="rounded bg-slate-700 border-slate-600">
+                    <span class="text-sm text-slate-300">Force delete (stop containers first)</span>
+                </label>
+            </div>
+
+            <div x-show="deleteModal.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                <span x-text="deleteModal.error"></span>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button type="button"
+                        @click="deleteModal.show = false"
+                        :disabled="deleteModal.loading"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="deleteVolume()"
+                        :disabled="deleteModal.loading || (deleteModal.volume?.containers_using > 0 && !deleteModal.force)"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md transition">
+                    <span x-show="!deleteModal.loading">Delete</span>
+                    <span x-show="deleteModal.loading">Deleting...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div x-show="detailsModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="detailsModal.show = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-xl font-semibold text-white mb-4">Volume Details</h3>
+
+            <div x-show="detailsModal.volume" class="space-y-4">
+                <!-- Name -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Name</label>
+                    <p class="text-white font-mono" x-text="detailsModal.volume?.name"></p>
+                </div>
+
+                <!-- Driver -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Driver</label>
+                    <p class="text-white" x-text="detailsModal.volume?.driver"></p>
+                </div>
+
+                <!-- Mount Point -->
+                <div x-show="detailsModal.volume?.mount_point">
+                    <label class="block text-sm text-slate-400 mb-1">Mount Point</label>
+                    <p class="text-white font-mono text-sm break-all" x-text="detailsModal.volume?.mount_point"></p>
+                </div>
+
+                <!-- Size -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Size</label>
+                    <p class="text-white" x-text="formatSize(detailsModal.volume?.size_bytes)"></p>
+                </div>
+
+                <!-- Status -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Status</label>
+                    <div class="flex gap-2">
+                        <span x-show="detailsModal.volume?.managed"
+                              class="px-2 py-1 bg-green-600 text-white text-xs rounded">
+                            MANAGED
+                        </span>
+                        <span x-show="!detailsModal.volume?.managed"
+                              class="px-2 py-1 bg-slate-600 text-slate-300 text-xs rounded">
+                            EXTERNAL
+                        </span>
+                        <span x-show="detailsModal.volume?.containers_using > 0"
+                              class="px-2 py-1 bg-blue-600 text-white text-xs rounded">
+                            IN USE
+                        </span>
+                        <span x-show="detailsModal.volume?.containers_using === 0"
+                              class="px-2 py-1 bg-amber-600 text-white text-xs rounded">
+                            UNUSED
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Container Mounts -->
+                <div x-show="detailsModal.volume?.mount_details && detailsModal.volume.mount_details.length > 0">
+                    <label class="block text-sm text-slate-400 mb-2">Container Mounts</label>
+                    <div class="space-y-2">
+                        <template x-for="mount in detailsModal.volume?.mount_details" :key="mount.id">
+                            <div class="bg-slate-900 rounded p-3 text-sm">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-white font-medium" x-text="mount.name"></span>
+                                    <span x-show="mount.read_only" class="px-2 py-0.5 bg-amber-700 text-white text-xs rounded">
+                                        READ-ONLY
+                                    </span>
+                                </div>
+                                <p class="text-slate-400 font-mono text-xs">
+                                    → <span x-text="mount.mount_path"></span>
+                                </p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Labels -->
+                <div x-show="detailsModal.volume?.labels && Object.keys(detailsModal.volume.labels).length > 0">
+                    <label class="block text-sm text-slate-400 mb-2">Labels</label>
+                    <div class="bg-slate-900 rounded p-3 font-mono text-sm">
+                        <template x-for="[key, value] in Object.entries(detailsModal.volume?.labels || {})" :key="key">
+                            <div class="text-slate-300">
+                                <span class="text-slate-500" x-text="key + ':'"></span>
+                                <span class="text-white ml-2" x-text="value"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Created At -->
+                <div>
+                    <label class="block text-sm text-slate-400 mb-1">Created</label>
+                    <p class="text-white" x-text="formatDate(detailsModal.volume?.created_at)"></p>
+                </div>
+
+                <!-- CLI Equivalent -->
+                <div class="border-t border-slate-700 pt-4 mt-4">
+                    <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                    <div class="space-y-2">
+                        <!-- Inspect command -->
+                        <div class="bg-slate-900 rounded p-3">
+                            <p class="text-xs text-slate-500 mb-1">Inspect volume:</p>
+                            <code class="text-xs text-green-400 font-mono break-all">
+                                docker volume inspect <span x-text="detailsModal.volume?.name"></span>
+                            </code>
+                        </div>
+                        <!-- Mount to container command -->
+                        <div class="bg-slate-900 rounded p-3">
+                            <p class="text-xs text-slate-500 mb-1">Mount to container:</p>
+                            <code class="text-xs text-green-400 font-mono break-all">
+                                docker run -v <span x-text="detailsModal.volume?.name"></span>:/path/in/container image:tag
+                            </code>
+                        </div>
+                        <!-- Remove command -->
+                        <div class="bg-slate-900 rounded p-3">
+                            <p class="text-xs text-slate-500 mb-1">Remove volume:</p>
+                            <code class="text-xs text-green-400 font-mono break-all">
+                                docker volume rm <span x-text="detailsModal.volume?.name"></span>
+                            </code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end mt-6">
+                <button @click="detailsModal.show = false"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prune Confirmation Modal -->
+    <div x-show="pruneModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="pruneModal.show = false">
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold text-white mb-4">Prune Unused Volumes</h3>
+
+            <p class="text-slate-300 mb-4">
+                This will delete all volumes that are not currently mounted to any containers.
+                This action cannot be undone.
+            </p>
+
+            <div class="mb-4 p-3 bg-amber-900/20 border border-amber-700 rounded">
+                <p class="text-amber-300 text-sm">
+                    ⚠️ <span x-text="unusedCount"></span> unused volume(s) will be deleted
+                </p>
+            </div>
+
+            <div x-show="pruneModal.error" class="mb-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm">
+                <span x-text="pruneModal.error"></span>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button type="button"
+                        @click="pruneModal.show = false"
+                        :disabled="pruneModal.loading"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="pruneUnused()"
+                        :disabled="pruneModal.loading"
+                        class="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white rounded-md transition">
+                    <span x-show="!pruneModal.loading">Prune</span>
+                    <span x-show="pruneModal.loading">Pruning...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function volumesComponent() {
+    return {
+        // State
+        volumes: [],
+        loading: false,
+        lastUpdated: '',
+        pollInterval: null,
+
+        // Toast
+        toast: {
+            show: false,
+            type: 'success',
+            message: ''
+        },
+
+        // Filters
+        filters: {
+            search: '',
+            driver: 'all',
+            status: 'all',
+            managed: 'all'
+        },
+
+        // Modals
+        createModal: {
+            show: false,
+            name: '',
+            driver: 'local',
+            loading: false,
+            error: ''
+        },
+
+        deleteModal: {
+            show: false,
+            volume: null,
+            force: false,
+            loading: false,
+            error: ''
+        },
+
+        detailsModal: {
+            show: false,
+            volume: null
+        },
+
+        pruneModal: {
+            show: false,
+            loading: false,
+            error: ''
+        },
+
+        // Initialization
+        async init() {
+            await this.loadVolumes();
+            this.startPolling();
+        },
+
+        // API Methods
+        async loadVolumes() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/volumes');
+                const data = await response.json();
+                if (data.success) {
+                    this.volumes = data.volumes;
+                    this.lastUpdated = new Date().toLocaleTimeString();
+                } else {
+                    this.showToast('Failed to load volumes: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error loading volumes:', error);
+                this.showToast('Failed to load volumes', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async createVolume() {
+            this.createModal.loading = true;
+            this.createModal.error = '';
+
+            try {
+                const response = await fetch('/api/volumes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.getCSRFToken()
+                    },
+                    body: JSON.stringify({
+                        name: this.createModal.name,
+                        driver: this.createModal.driver
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast(data.message || 'Volume created successfully', 'success');
+                    this.createModal.show = false;
+                    this.createModal.name = '';
+                    this.createModal.driver = 'local';
+                    await this.loadVolumes();
+                } else {
+                    this.createModal.error = data.error;
+                }
+            } catch (error) {
+                console.error('Error creating volume:', error);
+                this.createModal.error = 'Failed to create volume';
+            } finally {
+                this.createModal.loading = false;
+            }
+        },
+
+        async deleteVolume() {
+            this.deleteModal.loading = true;
+            this.deleteModal.error = '';
+
+            try {
+                const volumeName = this.deleteModal.volume.name;
+                const force = this.deleteModal.force;
+
+                const response = await fetch(`/api/volumes/${volumeName}?force=${force}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': this.getCSRFToken()
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast(data.message || 'Volume deleted successfully', 'success');
+                    this.deleteModal.show = false;
+                    await this.loadVolumes();
+                } else {
+                    this.deleteModal.error = data.error;
+                }
+            } catch (error) {
+                console.error('Error deleting volume:', error);
+                this.deleteModal.error = 'Failed to delete volume';
+            } finally {
+                this.deleteModal.loading = false;
+            }
+        },
+
+        async adoptVolume(volume) {
+            try {
+                const response = await fetch(`/api/volumes/${volume.name}/adopt`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': this.getCSRFToken()
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast(data.message || 'Volume adopted successfully', 'success');
+                    await this.loadVolumes();
+                } else {
+                    this.showToast('Failed to adopt volume: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error adopting volume:', error);
+                this.showToast('Failed to adopt volume', 'error');
+            }
+        },
+
+        async releaseVolume(volume) {
+            try {
+                const response = await fetch(`/api/volumes/${volume.name}/adopt`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': this.getCSRFToken()
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast(data.message || 'Volume released successfully', 'success');
+                    await this.loadVolumes();
+                } else {
+                    this.showToast('Failed to release volume: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error releasing volume:', error);
+                this.showToast('Failed to release volume', 'error');
+            }
+        },
+
+        async pruneUnused() {
+            this.pruneModal.loading = true;
+            this.pruneModal.error = '';
+
+            try {
+                const response = await fetch('/api/volumes/prune', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': this.getCSRFToken()
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast(data.message || `Pruned ${data.count} volumes`, 'success');
+                    this.pruneModal.show = false;
+                    await this.loadVolumes();
+                } else {
+                    this.pruneModal.error = data.error;
+                }
+            } catch (error) {
+                console.error('Error pruning volumes:', error);
+                this.pruneModal.error = 'Failed to prune volumes';
+            } finally {
+                this.pruneModal.loading = false;
+            }
+        },
+
+        // UI Methods
+        showCreateModal() {
+            this.createModal.show = true;
+            this.createModal.name = '';
+            this.createModal.driver = 'local';
+            this.createModal.error = '';
+        },
+
+        confirmDelete(volume) {
+            this.deleteModal.volume = volume;
+            this.deleteModal.force = false;
+            this.deleteModal.error = '';
+            this.deleteModal.show = true;
+        },
+
+        showDetails(volume) {
+            this.detailsModal.volume = volume;
+            this.detailsModal.show = true;
+        },
+
+        confirmPrune() {
+            this.pruneModal.error = '';
+            this.pruneModal.show = true;
+        },
+
+        showToast(message, type = 'success') {
+            this.toast.message = message;
+            this.toast.type = type;
+            this.toast.show = true;
+            setTimeout(() => {
+                this.toast.show = false;
+            }, 4000);
+        },
+
+        // Computed Properties
+        get filteredVolumes() {
+            return this.volumes.filter(volume => {
+                // Search filter
+                if (this.filters.search) {
+                    const search = this.filters.search.toLowerCase();
+                    if (!volume.name.toLowerCase().includes(search)) {
+                        return false;
+                    }
+                }
+
+                // Driver filter
+                if (this.filters.driver !== 'all' && volume.driver !== this.filters.driver) {
+                    return false;
+                }
+
+                // Status filter
+                if (this.filters.status === 'in-use' && volume.containers_using === 0) {
+                    return false;
+                }
+                if (this.filters.status === 'unused' && volume.containers_using > 0) {
+                    return false;
+                }
+
+                // Managed filter
+                if (this.filters.managed === 'managed' && !volume.managed) {
+                    return false;
+                }
+                if (this.filters.managed === 'external' && volume.managed) {
+                    return false;
+                }
+
+                return true;
+            });
+        },
+
+        get inUseCount() {
+            return this.volumes.filter(v => v.containers_using > 0).length;
+        },
+
+        get unusedCount() {
+            return this.volumes.filter(v => v.containers_using === 0).length;
+        },
+
+        get totalSize() {
+            return this.volumes.reduce((sum, v) => sum + (v.size_bytes || 0), 0);
+        },
+
+        // Helper Methods
+        formatSize(bytes) {
+            if (!bytes || bytes === 0) return 'Unknown';
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        },
+
+        formatDate(dateString) {
+            if (!dateString) return 'Unknown';
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        },
+
+        getCSRFToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        },
+
+        startPolling() {
+            // Refresh every 10 seconds, but not during modal interactions
+            this.pollInterval = setInterval(() => {
+                if (!this.createModal.show && !this.deleteModal.show && !this.detailsModal.show && !this.pruneModal.show) {
+                    this.loadVolumes();
+                }
+            }, 10000);
+        }
+    }
+}
+</script>
+
+<style>
+[x-cloak] {
+    display: none !important;
+}
+</style>
+{% endblock %}
