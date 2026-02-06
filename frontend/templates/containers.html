@@ -36,13 +36,27 @@
          @click.self="closeDeleteModal()">
         <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
             <h3 class="text-xl font-bold text-white mb-4">Confirm Delete</h3>
-            <p class="text-slate-300 mb-6">
+            <p class="text-slate-300 mb-4">
                 Are you sure you want to delete container
                 <strong class="text-white" x-text="deleteModal.containerName"></strong>?
                 <span x-show="deleteModal.isRunning" class="text-yellow-400 block mt-2">
                     ⚠️ Container is currently running and will be force-removed.
                 </span>
             </p>
+
+            <!-- CLI Equivalent -->
+            <div class="border-t border-slate-700 pt-4 mb-4">
+                <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                <div class="bg-slate-900 rounded p-3">
+                    <code class="text-xs text-green-400 font-mono break-all">
+                        docker rm<span x-show="deleteModal.isRunning"> -f</span> <span x-text="deleteModal.containerName"></span>
+                    </code>
+                </div>
+                <p class="text-xs text-slate-500 mt-2" x-show="deleteModal.isRunning">
+                    <strong>-f</strong> flag forces removal of running containers
+                </p>
+            </div>
+
             <div class="flex justify-end space-x-3">
                 <button @click="closeDeleteModal()"
                         class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
@@ -76,6 +90,37 @@
 
             <div x-show="retagModal.error" class="text-red-400 text-sm mb-2" x-text="retagModal.error"></div>
 
+            <!-- CLI Equivalent -->
+            <div class="border-t border-slate-700 pt-4 mt-4 mb-4">
+                <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                <div class="space-y-2">
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">1. Pull new image:</p>
+                        <code class="text-xs text-green-400 font-mono break-all" x-show="retagModal.newTag">
+                            docker pull <span x-text="retagModal.currentImage?.split(':')[0]"></span>:<span x-text="retagModal.newTag"></span>
+                        </code>
+                        <code class="text-xs text-slate-500 font-mono" x-show="!retagModal.newTag">
+                            docker pull [image]:[new-tag]
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">2. Stop and remove container:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker stop <span x-text="retagModal.container?.name"></span> && docker rm <span x-text="retagModal.container?.name"></span>
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 rounded p-3">
+                        <p class="text-xs text-slate-500 mb-1">3. Recreate with new image:</p>
+                        <code class="text-xs text-green-400 font-mono break-all">
+                            docker run -d --name <span x-text="retagModal.container?.name"></span> [options] <span x-text="retagModal.currentImage?.split(':')[0]"></span>:<span x-text="retagModal.newTag || '[new-tag]'"></span>
+                        </code>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">
+                    <strong>Note:</strong> DockerMate preserves all container settings (ports, volumes, env vars) automatically.
+                </p>
+            </div>
+
             <div class="flex justify-end space-x-3 mt-4">
                 <button @click="retagModal.show = false"
                         class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition">
@@ -86,6 +131,139 @@
                         class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition">
                     <span x-show="!retagModal.loading">Retag & Redeploy</span>
                     <span x-show="retagModal.loading">Retagging...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reconfigure Modal (FEATURE-003 - Sprint 5) -->
+    <div x-show="reconfigureModal.show"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 overflow-y-auto"
+         @click.self="reconfigureModal.show = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-3xl w-full mx-4 my-8 border border-slate-700">
+            <h3 class="text-xl font-bold text-white mb-2">Reconfigure Container</h3>
+            <p class="text-slate-400 text-sm mb-2">
+                Container: <strong class="text-white" x-text="reconfigureModal.container?.name"></strong>
+            </p>
+            <div class="mb-4 p-3 bg-amber-900/20 border border-amber-700 rounded text-sm text-amber-300">
+                ⚠️ <strong>Note:</strong> Configuration changes cannot be rolled back. The Rollback button only reverts image versions.
+            </div>
+
+            <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                <!-- Ports Section -->
+                <div class="bg-slate-900 p-4 rounded">
+                    <h4 class="text-white font-semibold mb-2">🔌 Port Mappings</h4>
+                    <p class="text-slate-400 text-xs mb-2">Format: container_port/protocol → host_port (e.g., 80/tcp → 8080)</p>
+                    <div class="space-y-2">
+                        <template x-for="(port, index) in reconfigureModal.ports" :key="index">
+                            <div class="flex gap-2 items-center">
+                                <input type="text" x-model="port.container" placeholder="80/tcp"
+                                       class="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                <span class="text-slate-400">→</span>
+                                <input type="text" x-model="port.host" placeholder="8080"
+                                       class="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                <button @click="reconfigureModal.ports.splice(index, 1)"
+                                        class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm">✕</button>
+                            </div>
+                        </template>
+                        <button @click="reconfigureModal.ports.push({container: '', host: ''})"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">+ Add Port</button>
+                    </div>
+                </div>
+
+                <!-- Volumes Section -->
+                <div class="bg-slate-900 p-4 rounded">
+                    <h4 class="text-white font-semibold mb-2">💾 Volume Mounts</h4>
+                    <p class="text-slate-400 text-xs mb-2">Format: /host/path:/container/path:rw (or :ro for read-only)</p>
+                    <div class="space-y-2">
+                        <template x-for="(volume, index) in reconfigureModal.volumes" :key="index">
+                            <div class="flex gap-2 items-center">
+                                <input type="text" x-model="reconfigureModal.volumes[index]"
+                                       placeholder="/host/path:/container/path:rw"
+                                       class="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm font-mono">
+                                <button @click="reconfigureModal.volumes.splice(index, 1)"
+                                        class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm">✕</button>
+                            </div>
+                        </template>
+                        <button @click="reconfigureModal.volumes.push('')"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">+ Add Volume</button>
+                    </div>
+                </div>
+
+                <!-- Environment Variables Section -->
+                <div class="bg-slate-900 p-4 rounded">
+                    <h4 class="text-white font-semibold mb-2">🔧 Environment Variables</h4>
+                    <div class="space-y-2">
+                        <template x-for="(env, index) in reconfigureModal.environment" :key="index">
+                            <div class="flex gap-2 items-center">
+                                <input type="text" x-model="env.key" placeholder="KEY"
+                                       class="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm font-mono">
+                                <span class="text-slate-400">=</span>
+                                <input type="text" x-model="env.value" placeholder="value"
+                                       class="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm">
+                                <button @click="reconfigureModal.environment.splice(index, 1)"
+                                        class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm">✕</button>
+                            </div>
+                        </template>
+                        <button @click="reconfigureModal.environment.push({key: '', value: ''})"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">+ Add Variable</button>
+                    </div>
+                </div>
+
+                <!-- Restart Policy Section -->
+                <div class="bg-slate-900 p-4 rounded">
+                    <h4 class="text-white font-semibold mb-2">🔄 Restart Policy</h4>
+                    <select x-model="reconfigureModal.restartPolicy"
+                            class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white">
+                        <option value="">Keep current</option>
+                        <option value="no">No - Do not restart</option>
+                        <option value="always">Always - Always restart</option>
+                        <option value="unless-stopped">Unless Stopped - Restart unless manually stopped</option>
+                        <option value="on-failure">On Failure - Restart only on failure</option>
+                    </select>
+                </div>
+
+                <!-- Resource Limits Section -->
+                <div class="bg-slate-900 p-4 rounded">
+                    <h4 class="text-white font-semibold mb-2">⚡ Resource Limits</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-slate-300 text-sm mb-1">CPU Limit (cores)</label>
+                            <input type="number" step="0.1" min="0" max="64"
+                                   x-model="reconfigureModal.cpuLimit"
+                                   placeholder="e.g., 1.5"
+                                   class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white">
+                        </div>
+                        <div>
+                            <label class="block text-slate-300 text-sm mb-1">Memory Limit (MB)</label>
+                            <input type="number" step="1" min="0"
+                                   x-model="reconfigureModal.memoryLimit"
+                                   placeholder="e.g., 512"
+                                   class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white">
+                        </div>
+                    </div>
+                    <p class="text-slate-500 text-xs mt-2">Leave empty to keep current limits</p>
+                </div>
+            </div>
+
+            <!-- Error Display -->
+            <div x-show="reconfigureModal.error"
+                 class="mt-4 p-3 bg-red-900/20 border border-red-700 rounded text-red-300 text-sm"
+                 x-text="reconfigureModal.error"></div>
+
+            <!-- Actions -->
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="reconfigureModal.show = false"
+                        :disabled="reconfigureModal.loading"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-md transition">
+                    Cancel
+                </button>
+                <button @click="submitReconfigure()"
+                        :disabled="reconfigureModal.loading"
+                        class="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 disabled:cursor-not-allowed text-white rounded-md transition">
+                    <span x-show="!reconfigureModal.loading">⚙️ Apply Changes</span>
+                    <span x-show="reconfigureModal.loading">Reconfiguring...</span>
                 </button>
             </div>
         </div>
@@ -1029,9 +1207,9 @@
                         <!-- Sprint 3: Rollback Button — disabled when no update history exists -->
                         <button @click="rollbackContainer(container.name)"
                                 :disabled="actionLoading[container.name] || !container.rollback_available"
-                                :title="container.rollback_available ? 'Rollback to previous image version' : 'No previous version to roll back to'"
+                                :title="container.rollback_available ? 'Rollback to previous image version (does not restore configuration changes)' : 'No previous version to roll back to'"
                                 class="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
-                            <span x-show="!actionLoading[container.name]">↩ Rollback</span>
+                            <span x-show="!actionLoading[container.name]">↩ Rollback Image</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
 
@@ -1041,6 +1219,15 @@
                                 title="Change image tag and redeploy"
                                 class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
                             <span x-show="!actionLoading[container.name]">🏷 Retag</span>
+                            <span x-show="actionLoading[container.name]">⏳</span>
+                        </button>
+
+                        <!-- FEATURE-003: Reconfigure Button (Sprint 5) -->
+                        <button @click="openReconfigureModal(container)"
+                                :disabled="actionLoading[container.name]"
+                                title="Change container configuration (ports, volumes, env vars, etc.)"
+                                class="px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 disabled:cursor-not-allowed text-white rounded-md transition text-sm font-medium">
+                            <span x-show="!actionLoading[container.name]">⚙️ Reconfigure</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
 
@@ -1212,6 +1399,20 @@ function containersComponent() {
             container: null,
             currentImage: '',
             newTag: '',
+            error: null
+        },
+
+        // Reconfigure modal state (FEATURE-003 - Sprint 5)
+        reconfigureModal: {
+            show: false,
+            loading: false,
+            container: null,
+            ports: [],           // [{container: '80/tcp', host: '8080'}]
+            volumes: [],         // ['/host:/container:rw']
+            environment: [],     // [{key: 'KEY', value: 'value'}]
+            restartPolicy: '',
+            cpuLimit: '',
+            memoryLimit: '',
             error: null
         },
 
@@ -2352,6 +2553,163 @@ function containersComponent() {
         },
 
         /**
+         * FEATURE-003: Open reconfigure modal (Sprint 5)
+         */
+        async openReconfigureModal(container) {
+            this.reconfigureModal.container = container;
+            this.reconfigureModal.error = null;
+            this.reconfigureModal.loading = false;
+
+            // Get current container details to pre-fill form
+            try {
+                const response = await fetch(`/api/containers/${container.name}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const details = data.data;
+
+                    // Parse ports
+                    this.reconfigureModal.ports = [];
+                    if (details.ports_json) {
+                        const ports = JSON.parse(details.ports_json);
+                        for (const [containerPort, hostBindings] of Object.entries(ports)) {
+                            if (hostBindings && hostBindings[0]) {
+                                this.reconfigureModal.ports.push({
+                                    container: containerPort,
+                                    host: hostBindings[0].HostPort || ''
+                                });
+                            }
+                        }
+                    }
+
+                    // Parse volumes
+                    this.reconfigureModal.volumes = [];
+                    if (details.volumes_json) {
+                        const volumes = JSON.parse(details.volumes_json);
+                        if (Array.isArray(volumes)) {
+                            this.reconfigureModal.volumes = [...volumes];
+                        }
+                    }
+
+                    // Parse environment variables
+                    this.reconfigureModal.environment = [];
+                    if (details.env_vars_json) {
+                        const envVars = JSON.parse(details.env_vars_json);
+                        for (const [key, value] of Object.entries(envVars)) {
+                            this.reconfigureModal.environment.push({ key, value });
+                        }
+                    }
+
+                    // Current restart policy (leave empty to not change)
+                    this.reconfigureModal.restartPolicy = '';
+
+                    // Resource limits (leave empty to not change)
+                    this.reconfigureModal.cpuLimit = '';
+                    this.reconfigureModal.memoryLimit = '';
+                }
+            } catch (error) {
+                console.error('Error loading container details:', error);
+            }
+
+            this.reconfigureModal.show = true;
+        },
+
+        /**
+         * FEATURE-003: Submit reconfigure request
+         */
+        async submitReconfigure() {
+            this.reconfigureModal.loading = true;
+            this.reconfigureModal.error = null;
+
+            try {
+                // Build request payload - only include non-empty fields
+                const payload = {};
+
+                // Ports - convert to Docker format
+                if (this.reconfigureModal.ports.length > 0) {
+                    const portsMap = {};
+                    for (const port of this.reconfigureModal.ports) {
+                        if (port.container && port.host) {
+                            portsMap[port.container] = [{ 'HostPort': port.host }];
+                        }
+                    }
+                    if (Object.keys(portsMap).length > 0) {
+                        payload.ports = portsMap;
+                    }
+                }
+
+                // Volumes
+                if (this.reconfigureModal.volumes.length > 0) {
+                    const validVolumes = this.reconfigureModal.volumes.filter(v => v.trim());
+                    if (validVolumes.length > 0) {
+                        payload.volumes = validVolumes;
+                    }
+                }
+
+                // Environment variables - convert to dict
+                if (this.reconfigureModal.environment.length > 0) {
+                    const envMap = {};
+                    for (const env of this.reconfigureModal.environment) {
+                        if (env.key) {
+                            envMap[env.key] = env.value || '';
+                        }
+                    }
+                    if (Object.keys(envMap).length > 0) {
+                        payload.environment = envMap;
+                    }
+                }
+
+                // Restart policy
+                if (this.reconfigureModal.restartPolicy) {
+                    payload.restart_policy = this.reconfigureModal.restartPolicy;
+                }
+
+                // Resource limits
+                if (this.reconfigureModal.cpuLimit) {
+                    payload.cpu_limit = parseFloat(this.reconfigureModal.cpuLimit);
+                }
+                if (this.reconfigureModal.memoryLimit) {
+                    payload.memory_limit = parseInt(this.reconfigureModal.memoryLimit);
+                }
+
+                // Validate at least one change
+                if (Object.keys(payload).length === 0) {
+                    this.reconfigureModal.error = 'No changes specified. Modify at least one field.';
+                    this.reconfigureModal.loading = false;
+                    return;
+                }
+
+                // Submit reconfigure request
+                const response = await fetch(`/api/containers/${this.reconfigureModal.container.name}/recreate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.reconfigureModal.show = false;
+                    const changes = data.data?.changes || [];
+                    this.showToast(
+                        `Container "${this.reconfigureModal.container.name}" reconfigured: ${changes.join(', ')}`,
+                        'success'
+                    );
+                    await this.loadContainers();
+                } else {
+                    this.reconfigureModal.error = data.error || 'Reconfiguration failed';
+                }
+            } catch (error) {
+                this.reconfigureModal.error = error.message || 'Failed to reconfigure container';
+            } finally {
+                this.reconfigureModal.loading = false;
+            }
+        },
+
+        /**
          * Show toast notification
          */
         showToast(message, type = 'info') {
@@ -2378,6 +2736,7 @@ function containersComponent() {
                     !this.createModal.show &&
                     !this.bulkModal.show &&
                     !this.retagModal.show &&
+                    !this.reconfigureModal.show &&
                     this.selectedContainers.length === 0) {
                     this.loadContainers();
                 }

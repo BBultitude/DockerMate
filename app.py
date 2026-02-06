@@ -155,6 +155,63 @@ def force_https():
     return redirect(url, code=301)
 
 
+@app.after_request
+def set_security_headers(response):
+    """
+    Add security headers to all responses (Sprint 5 - SEC-002)
+
+    Security Headers:
+    - Content-Security-Policy: Prevents XSS attacks by controlling resource sources
+    - X-Content-Type-Options: Prevents MIME-sniffing attacks
+    - X-Frame-Options: Prevents clickjacking attacks
+    - X-XSS-Protection: Legacy XSS protection (for older browsers)
+    - Referrer-Policy: Controls referrer information in requests
+
+    CSP Policy Breakdown:
+    - default-src 'self': Only load resources from same origin by default
+    - script-src: Allow scripts from self, CDNs (Alpine.js), and inline scripts
+    - style-src: Allow styles from self, CDNs (Tailwind), and inline styles
+    - img-src: Allow images from self and data URIs
+    - connect-src: Allow API calls to self
+    - font-src: Allow fonts from self and data URIs
+    - frame-ancestors 'none': Prevent embedding in iframes (clickjacking protection)
+
+    Educational Notes:
+    - 'unsafe-inline' needed for Alpine.js and Tailwind's inline styles
+    - 'unsafe-eval' needed for Alpine.js reactive expressions (x-text, x-show, etc.)
+    - CDN domains whitelisted for Tailwind CSS and Alpine.js
+    - In production, consider moving to PostCSS build to remove CDN dependency
+    - CSP violations logged to browser console for debugging
+    """
+    # Content Security Policy
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com cdn.jsdelivr.net unpkg.com; "
+        "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "font-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self';"
+    )
+    response.headers['Content-Security-Policy'] = csp_policy
+
+    # Additional security headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+
+    # HTTPS Strict Transport Security (only if using HTTPS)
+    if request.is_secure:
+        # max-age=31536000 = 1 year
+        # includeSubDomains applies to all subdomains
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+
+    return response
+
+
 # ========================================
 # Health Check Endpoint
 # ========================================

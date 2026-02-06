@@ -1231,7 +1231,7 @@ class ContainerManager:
         if restart_name and restart_name != 'no':
             create_kwargs['restart_policy'] = {'Name': restart_name}
         if nano_cpus:
-            create_kwargs['cpu_nano_cpus'] = nano_cpus
+            create_kwargs['nano_cpus'] = nano_cpus
         if memory:
             create_kwargs['mem_limit'] = memory
 
@@ -1377,7 +1377,7 @@ class ContainerManager:
         if restart_name and restart_name != 'no':
             create_kwargs['restart_policy'] = {'Name': restart_name}
         if nano_cpus:
-            create_kwargs['cpu_nano_cpus'] = nano_cpus
+            create_kwargs['nano_cpus'] = nano_cpus
         if memory:
             create_kwargs['mem_limit'] = memory
 
@@ -1413,6 +1413,266 @@ class ContainerManager:
             'old_image':    old_image_name,
             'new_image':    new_image_name,
             'status':       'success'
+        }
+
+    # =========================================================================
+    # CONTAINER RECONFIGURE OPERATION  (Sprint 5 - FEATURE-003)
+    # =========================================================================
+
+    @docker_operation
+    def recreate_container(
+        self,
+        name_or_id: str,
+        ports: Optional[Dict[str, Any]] = None,
+        volumes: Optional[List[str]] = None,
+        environment: Optional[Dict[str, str]] = None,
+        networks: Optional[List[str]] = None,
+        restart_policy: Optional[str] = None,
+        cpu_limit: Optional[float] = None,
+        memory_limit: Optional[int] = None,
+        labels: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Recreate container with new configuration (Sprint 5 - FEATURE-003).
+
+        This enables full container reconfiguration after creation - the most
+        requested feature for Portainer parity. Changes any configuration
+        aspect: ports, volumes, environment variables, networks, restart
+        policy, or resource limits.
+
+        Process:
+        1. Validate new configuration
+        2. Read current container config
+        3. Merge new config with existing (only override specified fields)
+        4. Stop and remove old container
+        5. Create new container with merged config
+        6. Start new container
+        7. Sync to database
+        8. Record in update history
+
+        Args:
+            name_or_id: Container name or ID
+            ports: New port mappings {"container_port/protocol": [{"HostPort": "host_port"}]}
+            volumes: New volume binds ["/host/path:/container/path:rw"]
+            environment: New environment variables {"KEY": "value"}
+            networks: New network names to connect to
+            restart_policy: New restart policy ("no", "always", "unless-stopped", "on-failure")
+            cpu_limit: New CPU limit in cores (e.g., 1.5 for 1.5 CPUs)
+            memory_limit: New memory limit in MB
+            labels: New labels dict
+
+        Returns:
+            dict: {
+                'container_id': new container ID,
+                'name': container name,
+                'changes': list of changed fields,
+                'status': 'success'
+            }
+
+        Raises:
+            ContainerNotFoundError: Container not found
+            ContainerOperationError: Recreation failed
+            ValidationError: Invalid configuration
+
+        Educational:
+            - Docker doesn't support in-place config updates
+            - Must stop/remove/recreate to change config
+            - Original container ID changes after recreation
+            - UpdateHistory enables rollback to previous config
+
+        CLI Equivalent:
+            docker stop <container>
+            docker rm <container>
+            docker run [new config] <image>
+        """
+        from backend.models.update_history import UpdateHistory
+
+        # Resolve container from DB
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) |
+             (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+
+        client = get_docker_client()
+
+        # Get current Docker container
+        try:
+            old_docker = client.containers.get(db_container.container_id)
+        except NotFound:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
+
+        # Extract current configuration
+        attrs = old_docker.attrs
+        config = attrs.get('Config', {})
+        host_config = attrs.get('HostConfig', {})
+        network_settings = attrs.get('NetworkSettings', {})
+
+        old_image = config.get('Image', db_container.image_name)
+
+        # Build current config
+        current_config = {
+            'env_vars': config.get('Env') or [],
+            'labels': config.get('Labels') or {},
+            'restart_policy': host_config.get('RestartPolicy', {}).get('Name', 'no'),
+            'nano_cpus': host_config.get('NanoCpus', 0),
+            'memory': host_config.get('Memory', 0),
+            'port_bindings': {},
+            'binds': host_config.get('Binds') or [],
+            'networks': list(network_settings.get('Networks', {}).keys())
+        }
+
+        # Extract port bindings
+        network_ports = network_settings.get('Ports') or {}
+        for cport, bindings in network_ports.items():
+            if bindings:
+                current_config['port_bindings'][cport] = bindings
+
+        # Track changes for history
+        changes = []
+
+        # Merge new configuration (only override if provided)
+        if ports is not None:
+            current_config['port_bindings'] = ports
+            changes.append('ports')
+
+        if volumes is not None:
+            current_config['binds'] = volumes
+            changes.append('volumes')
+
+        if environment is not None:
+            # Convert dict to list of KEY=VALUE strings
+            env_list = [f"{k}={v}" for k, v in environment.items()]
+            current_config['env_vars'] = env_list
+            changes.append('environment')
+
+        if networks is not None:
+            current_config['networks'] = networks
+            changes.append('networks')
+
+        if restart_policy is not None:
+            # Validate restart policy
+            valid_policies = ['no', 'always', 'unless-stopped', 'on-failure']
+            if restart_policy not in valid_policies:
+                raise ValidationError(f"Invalid restart policy. Must be one of: {', '.join(valid_policies)}")
+            current_config['restart_policy'] = restart_policy
+            changes.append('restart_policy')
+
+        if cpu_limit is not None:
+            # Validate CPU limit
+            if cpu_limit <= 0 or cpu_limit > 64:
+                raise ValidationError("CPU limit must be between 0 and 64 cores")
+            current_config['nano_cpus'] = int(cpu_limit * 1_000_000_000)  # Convert to nanocpus
+            changes.append('cpu_limit')
+
+        if memory_limit is not None:
+            # Validate memory limit
+            if memory_limit <= 0:
+                raise ValidationError("Memory limit must be positive")
+            current_config['memory'] = memory_limit * 1024 * 1024  # Convert MB to bytes
+            changes.append('memory_limit')
+
+        if labels is not None:
+            current_config['labels'].update(labels)
+            changes.append('labels')
+
+        # Stop and remove old container
+        logger.info(f"Stopping and removing container '{db_container.name}' for reconfiguration")
+        try:
+            if old_docker.status == 'running':
+                old_docker.stop(timeout=10)
+            old_docker.remove()
+        except APIError as e:
+            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+
+        # Build create kwargs
+        create_kwargs = {
+            'name': db_container.name,
+            'image': old_image,
+            'detach': True,
+            'environment': current_config['env_vars'],
+            'labels': current_config['labels'],
+        }
+
+        if current_config['port_bindings']:
+            create_kwargs['ports'] = current_config['port_bindings']
+
+        if current_config['binds']:
+            create_kwargs['volumes'] = current_config['binds']
+
+        if current_config['restart_policy'] and current_config['restart_policy'] != 'no':
+            create_kwargs['restart_policy'] = {'Name': current_config['restart_policy']}
+
+        if current_config['nano_cpus']:
+            create_kwargs['nano_cpus'] = current_config['nano_cpus']
+
+        if current_config['memory']:
+            create_kwargs['mem_limit'] = current_config['memory']
+
+        # Create new container
+        logger.info(f"Creating container '{db_container.name}' with new configuration")
+        try:
+            new_docker = client.containers.create(**create_kwargs)
+
+            # Connect to networks if specified
+            if current_config['networks']:
+                for network_name in current_config['networks']:
+                    if network_name != 'bridge':  # Skip default bridge network
+                        try:
+                            network = client.networks.get(network_name)
+                            network.connect(new_docker)
+                        except Exception as e:
+                            logger.warning(f"Failed to connect to network {network_name}: {e}")
+
+            new_docker.start()
+        except APIError as e:
+            # Try to rollback - recreate with old config
+            logger.error(f"Failed to recreate container: {e.explanation}")
+            try:
+                rollback_kwargs = {
+                    'name': db_container.name,
+                    'image': old_image,
+                    'detach': True,
+                    'environment': config.get('Env') or [],
+                    'labels': config.get('Labels') or {},
+                }
+                if network_ports:
+                    rollback_kwargs['ports'] = network_ports
+                if host_config.get('Binds'):
+                    rollback_kwargs['volumes'] = host_config.get('Binds')
+
+                rollback_container = client.containers.create(**rollback_kwargs)
+                rollback_container.start()
+                logger.info(f"Rolled back to original configuration")
+            except Exception as rollback_error:
+                logger.error(f"Rollback failed: {rollback_error}")
+
+            raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
+
+        # Sync to database
+        new_docker.reload()
+        self._sync_database_state(new_docker, db_container.environment)
+
+        # Record in update history
+        self._record_update_history(
+            db_container,
+            old_image,
+            old_image,  # Same image, just different config
+            status='success'
+        )
+
+        logger.info(f"Container '{db_container.name}' reconfigured successfully. Changes: {', '.join(changes)}")
+
+        return {
+            'container_id': new_docker.id,
+            'name': db_container.name,
+            'changes': changes,
+            'old_container_id': db_container.container_id,
+            'status': 'success',
+            'message': f"Container reconfigured: {', '.join(changes)}"
         }
 
     # =========================================================================
@@ -1511,7 +1771,7 @@ class ContainerManager:
         if restart_name and restart_name != 'no':
             create_kwargs['restart_policy'] = {'Name': restart_name}
         if nano_cpus:
-            create_kwargs['cpu_nano_cpus'] = nano_cpus
+            create_kwargs['nano_cpus'] = nano_cpus
         if memory:
             create_kwargs['mem_limit'] = memory
 

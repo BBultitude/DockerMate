@@ -1705,6 +1705,130 @@ def retag_container(container_id: str):
         }), 500
 
 
+@containers_bp.route('/<container_id>/recreate', methods=['POST'])
+# @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
+@mutation_limit
+def recreate_container(container_id: str):
+    """
+    Recreate container with new configuration (Sprint 5 - FEATURE-003).
+
+    POST /api/containers/<id>/recreate
+    Body: {
+        "ports": {"80/tcp": [{"HostPort": "8080"}]},  // optional
+        "volumes": ["/host/path:/container/path:rw"],  // optional
+        "environment": {"KEY": "value"},  // optional
+        "networks": ["network1", "network2"],  // optional
+        "restart_policy": "always",  // optional
+        "cpu_limit": 1.5,  // optional (in cores)
+        "memory_limit": 512,  // optional (in MB)
+        "labels": {"key": "value"}  // optional
+    }
+
+    Enables full container reconfiguration - the most requested feature.
+    Only specified fields are updated; others remain unchanged.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "container_id": "new_id",
+            "name": "my-nginx",
+            "changes": ["ports", "volumes", "environment"],
+            "status": "success"
+        },
+        "message": "Container reconfigured: ports, volumes, environment"
+    }
+
+    Error Responses:
+    - 400: Invalid configuration
+    - 404: Container not found
+    - 500: Recreation failed
+
+    CLI Equivalent:
+        docker stop <container>
+        docker rm <container>
+        docker run [new config] <image>
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        # Extract configuration from request
+        ports = data.get('ports')
+        volumes = data.get('volumes')
+        environment = data.get('environment')
+        networks = data.get('networks')
+        restart_policy = data.get('restart_policy')
+        cpu_limit = data.get('cpu_limit')
+        memory_limit = data.get('memory_limit')
+        labels = data.get('labels')
+
+        # Validate at least one field is being updated
+        if not any([ports, volumes, environment, networks, restart_policy,
+                   cpu_limit, memory_limit, labels]):
+            return jsonify({
+                "success": False,
+                "error": "No configuration changes specified",
+                "error_type": "ValidationError"
+            }), 400
+
+        with ContainerManager() as manager:
+            result = manager.recreate_container(
+                name_or_id=container_id,
+                ports=ports,
+                volumes=volumes,
+                environment=environment,
+                networks=networks,
+                restart_policy=restart_policy,
+                cpu_limit=cpu_limit,
+                memory_limit=memory_limit,
+                labels=labels
+            )
+
+        return jsonify({
+            "success": True,
+            "data": result,
+            "message": result.get('message', 'Container reconfigured successfully')
+        }), 200
+
+    except ValidationError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ValidationError"
+        }), 400
+
+    except ContainerNotFoundError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerNotFoundError"
+        }), 404
+
+    except ContainerOperationError as e:
+        logger.error(f"Failed to recreate container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "error_type": "ContainerOperationError"
+        }), 500
+
+    except DockerConnectionError as e:
+        logger.error(f"Docker connection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error_type": "DockerConnectionError"
+        }), 500
+
+    except Exception as e:
+        logger.exception(f"Unexpected error recreating container {container_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": "An unexpected error occurred",
+            "error_type": "ServerError"
+        }), 500
+
+
 @containers_bp.route('/update-all', methods=['POST'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
 @mutation_limit
