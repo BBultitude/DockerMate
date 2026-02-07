@@ -859,6 +859,80 @@ Deferred to v1.1 - current workflow is adequate for v1.0.
 
 ---
 
+## Future Enhancements (v1.0.1+)
+
+### ENHANCE-001: Self-Update Detection with Personalized Upgrade Instructions
+**Priority:** HIGH (differentiating feature)
+**Target:** v1.0.1 or RC2
+**Status:** PROPOSED
+
+**Description:**
+Detect when DockerMate itself has an update available and provide user-centric upgrade instructions based on their current deployment configuration.
+
+**Key Features:**
+1. **Smart Detection:**
+   - Monitor dockermate image in the images list
+   - Show "Update Available" badge when new version detected
+   - Compare current running version vs available version
+
+2. **Personalized Upgrade Instructions:**
+   - Analyze current user's docker-compose.yml or run configuration
+   - Generate copy-paste upgrade commands specific to their setup
+   - Preserve all current settings:
+     - Volume mounts (data persistence)
+     - Port mappings
+     - Environment variables
+     - Network configuration
+     - DOCKER_GID and user settings
+
+3. **Zero-Data-Loss Workflow:**
+   ```bash
+   # Example personalized instructions
+   docker pull dockermate:latest
+   docker stop dockermate
+   docker rm dockermate
+   docker run -d --name dockermate \
+     -v dockermate_data:/app/data \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     -p 5000:5000 \
+     -e DOCKER_GID=986 \
+     dockermate:latest
+   ```
+
+4. **Update Modal UI:**
+   - Show current version vs available version
+   - Display changelog/release notes
+   - One-click copy upgrade commands
+   - Pre-upgrade checklist (backup reminder, etc.)
+
+**Why This Matters:**
+Most Docker management platforms miss this critical UX detail. Users are left to:
+- Manually check for updates
+- Figure out their own upgrade path
+- Risk data loss due to incorrect upgrade procedures
+- Search documentation for upgrade instructions
+
+**Implementation Notes:**
+- Add version tracking to Image model
+- Create dedicated upgrade instructions generator
+- Fetch release notes from GitHub API
+- Modal component in dashboard or images page
+- Detect if running via docker-compose vs docker run
+
+**Acceptance Criteria:**
+- [ ] DockerMate image shows update available when newer version exists
+- [ ] Upgrade modal displays personalized docker commands
+- [ ] All current volumes/ports/env vars preserved in instructions
+- [ ] Works for both docker-compose and docker run deployments
+- [ ] Includes backup reminder before upgrade
+- [ ] Copy-to-clipboard functionality for commands
+
+**Related Issues:**
+- FEAT-015 (Image update detection - foundation for this feature)
+- Improvements.md upgrade workflow documentation
+
+---
+
 ## Progress Tracking
 
 ### Sprint Summary

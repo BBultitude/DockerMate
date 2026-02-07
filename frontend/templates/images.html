@@ -375,13 +375,15 @@ function imagesComponent() {
 
         async init() {
             await this.loadImages();
+            // Load usage stats in background after page renders
+            this.loadUsageStats();
         },
 
         async loadImages() {
             this.loading = true;
             try {
-                // Include container usage stats for Images page
-                const response = await fetch('/api/images?include_usage=true');
+                // Fast load without usage stats - show page immediately
+                const response = await fetch('/api/images');
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -398,6 +400,29 @@ function imagesComponent() {
                 this.showToast('Failed to load images: ' + error.message, 'error');
             } finally {
                 this.loading = false;
+            }
+        },
+
+        async loadUsageStats() {
+            try {
+                // Load usage stats in background (slower)
+                const response = await fetch('/api/images?include_usage=true');
+                if (!response.ok) return; // Silently fail - usage stats are optional
+
+                const data = await response.json();
+                if (data.success) {
+                    // Update existing images with usage data
+                    data.data.forEach(imageWithUsage => {
+                        const existing = this.images.find(img => img.image_id === imageWithUsage.image_id);
+                        if (existing) {
+                            existing.containers_using = imageWithUsage.containers_using;
+                            existing.in_use = imageWithUsage.in_use;
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to load usage stats:', error);
+                // Don't show error toast - usage stats are optional enhancement
             }
         },
 
@@ -477,7 +502,9 @@ function imagesComponent() {
         },
 
         confirmDelete(image) {
-            this.deleteModal.imageId = image.full_name;
+            // Use image_id (SHA256) instead of full_name for reliable deletion
+            // Fixes issue with dangling images (<none>:<none>) having invalid URLs
+            this.deleteModal.imageId = image.image_id;
             this.deleteModal.imageName = image.full_name;
             this.deleteModal.force = false;
             this.deleteModal.error = '';
