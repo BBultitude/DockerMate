@@ -53,7 +53,6 @@ from backend.utils.exceptions import (
 )
 from backend.models.database import SessionLocal
 from backend.models.image import Image
-from backend.models.container import Container
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -492,53 +491,78 @@ class ImageManager:
         self.db.commit()
         self.db.refresh(image_record)
 
-        # Infer previous_tag for already-dangling images by checking container usage
+        # Infer previous_tag for already-dangling images by checking Docker container usage
         if (image_record.tag == '<none>' and image_record.previous_tag is None):
-            self._infer_previous_tag_from_containers(image_record)
+            self._infer_previous_tag_from_docker_containers(image_record)
 
         return image_record.to_dict()
 
-    def _infer_previous_tag_from_containers(self, image_record):
+    def _infer_previous_tag_from_docker_containers(self, image_record):
         """
-        Infer previous_tag for dangling images by checking container usage.
+        Infer previous_tag for dangling images by checking Docker container usage.
+
+        Queries Docker API directly rather than database to find containers using
+        this image, avoiding need for foreign key relationship.
 
         Logic:
-        1. Find first container using this image (by image_id)
-        2. If no containers use it, skip (unused image)
-        3. Extract tag from container's image_name
-        4. Save as previous_tag
+        1. Get all containers from Docker API
+        2. Find first container using this image (by matching image_id)
+        3. If no containers use it, skip (unused dangling image)
+        4. Extract tag from container's Config.Image field
+        5. Save as previous_tag
 
-        This handles already-dangling images at import time.
+        This handles already-dangling images at import/sync time.
 
         Args:
             image_record: Image model instance (must be dangling with no previous_tag)
         """
-        # Find first container using this image
-        container = self.db.query(Container).filter(
-            Container.image_id == image_record.image_id,
-            Container.state != 'removed'
-        ).first()
-
-        if not container:
-            # No containers use this image - it's unused, skip
-            logger.debug(f"Dangling image {image_record.image_id[:12]} has no containers - skipping tag inference")
-            return
-
-        # Extract tag from container's image_name (e.g., "nginx:1.28" -> "1.28")
-        image_name = container.image_name
-        if not image_name or ':' not in image_name:
-            logger.debug(f"Container {container.name} has invalid image_name format: {image_name}")
-            return
-
         try:
-            # Split on last colon to handle registry URLs like "registry.io/nginx:1.28"
-            inferred_tag = image_name.rsplit(':', 1)[1]
+            client = get_docker_client()
 
-            # Save the inferred tag
-            image_record.previous_tag = inferred_tag
-            self.db.commit()
+            # Get all containers (including stopped ones)
+            containers = client.containers.list(all=True)
 
-            logger.info(f"Inferred previous_tag '{inferred_tag}' for dangling image {image_record.image_id[:12]} from container {container.name}")
+            # Find first container using this image by image ID
+            for container in containers:
+                # Container's image.id is like "sha256:abc123..." - need to compare properly
+                container_image_id = container.image.id
 
-        except (IndexError, ValueError) as e:
-            logger.warning(f"Failed to parse tag from image_name '{image_name}': {e}")
+                # Normalize both IDs (remove sha256: prefix if present)
+                normalized_container_id = container_image_id.replace('sha256:', '')
+                normalized_image_id = image_record.image_id.replace('sha256:', '')
+
+                if normalized_container_id == normalized_image_id:
+                    # Found a container using this image
+                    # Extract image name from container config (e.g., "nginx:1.28")
+                    image_name = container.attrs.get('Config', {}).get('Image', '')
+
+                    if not image_name or ':' not in image_name:
+                        logger.debug(f"Container {container.name} has invalid image format: {image_name}")
+                        continue
+
+                    try:
+                        # Split on last colon to handle registry URLs like "registry.io/nginx:1.28"
+                        repository, tag = image_name.rsplit(':', 1)
+
+                        # Save the inferred tag
+                        image_record.previous_tag = tag
+                        self.db.commit()
+
+                        logger.info(
+                            f"Inferred previous_tag '{tag}' for dangling image "
+                            f"{image_record.image_id[:12]} from container {container.name}"
+                        )
+                        return  # Found and saved, done
+
+                    except (IndexError, ValueError) as e:
+                        logger.warning(f"Failed to parse tag from image_name '{image_name}': {e}")
+                        continue
+
+            # No containers use this dangling image
+            logger.debug(
+                f"Dangling image {image_record.image_id[:12]} has no containers - "
+                f"skipping tag inference"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to infer previous_tag from Docker containers: {e}")

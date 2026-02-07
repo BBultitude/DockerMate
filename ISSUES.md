@@ -50,22 +50,49 @@ The `if __name__ == '__main__'` block in `app.py` checks for `setup_complete` on
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
 | **Deployment/RC1** | **0** | **0** | **1** | **0** | **1** |
-| Authentication/Security | 0 | 0 | 1 | 1 | 2 |
-| Frontend Issues | 0 | 0 | 1 | 1 | 2 |
-| Backend API | 0 | 0 | 4 | 0 | 4 |
-| Database/Models | 0 | 0 | 3 | 1 | 4 |
-| Code Quality | 0 | 0 | 5 | 1 | 6 |
-| Error Handling | 0 | 0 | 4 | 0 | 4 |
+| Authentication/Security | 0 | 0 | 1 | 0 | 1 |
+| Frontend Issues | 0 | 0 | 0 | 1 | 1 |
+| Backend API | 0 | 0 | 1 | 1 | 2 |
+| Database/Models | 0 | 0 | 0 | 1 | 1 |
+| Code Quality | 0 | 0 | 2 | 1 | 3 |
+| Error Handling | 0 | 0 | 2 | 1 | 3 |
 | Documentation | 0 | 0 | 1 | 3 | 4 |
-| Performance | 0 | 0 | 1 | 3 | 4 |
+| Performance | 0 | 0 | 0 | 3 | 3 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | UI Issues | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL OPEN** | **0** | **0** | **22** | **11** | **33** |
+| **TOTAL OPEN** | **0** | **0** | **10** | **12** | **22** |
 
-**Total Resolved:** 28 issues (Sprint 1-5)
+**Total Resolved:** 39 issues (Sprint 1-5) - 11 additional fixes discovered in audit
 **Design Decisions (Not Issues):** 2 items
 **RC1 Known Issues:** 1 (manual restart after setup)
-**Status:** RC1 deployed to Raspberry Pi. 1 known deployment issue (workaround documented). No blockers for live testing.
+**Status:** RC1 ready for deployment. 1 known deployment issue (workaround documented). No blockers for release.
+
+---
+
+## Recently Resolved (Audit - February 7, 2026)
+
+### Issues Discovered as Resolved During RC1 Audit
+**Resolved:** During Sprints 2-5 (not previously documented)
+**Audit Date:** February 7, 2026
+
+These 11 issues were found to be already resolved during code review but hadn't been marked as RESOLVED in this document:
+
+**Medium Priority Resolved (8 issues):**
+1. **FRONTEND-003**: Login error handling now checks `!response.ok` before JSON parsing (Sprint 5)
+2. **API-001**: Port conflict detection has comprehensive exception handling for malformed JSON (Sprint 2-3)
+3. **API-002**: Memory limit conversion now consistent (MB→bytes) with clear documentation (Sprint 2-3)
+4. **API-003**: Empty JSON body handled with try-except around `get_json(force=True)` (Sprint 2)
+5. **DB-001**: Ports JSON storage format documented in model docstrings (Sprint 2 Task 3)
+6. **DB-003**: Database path now centralized via `Config.DATABASE_PATH` (Sprint 5)
+7. **CODE-003**: Restart policy default now consistent (`unless-stopped`) between frontend/backend (Sprint 2-3)
+8. **CODE-006**: Type hints added to all validation functions (Sprint 2)
+9. **ERROR-003**: Logging added for deletion, updates, health checks (Sprint 3-4)
+10. **PERF-001**: Health check polling now uses exponential backoff [3s, 5s, 8s...40s] (Sprint 2 Task 7)
+
+**Low Priority Resolved (1 issue):**
+11. **DB-002**: Not applicable - env vars not stored in database, fetched live from Docker
+
+**Impact:** 34% of open issues were already resolved but undocumented. Total resolved count updated from 28 to 39 issues.
 
 ---
 
@@ -280,7 +307,7 @@ Button `x-show` conditions used `!network.name.toLowerCase().includes('dockermat
 
 ---
 
-## Medium Priority Issues
+## Open Issues - Medium Priority (10 remaining)
 
 ### AUTH-001: Password Validation Not Fully NIST Compliant
 **Status:** OPEN
@@ -827,11 +854,12 @@ Deferred to v1.1 - current workflow is adequate for v1.0.
 - Issues Resolved: 20+ (All Sprint 5 tasks, SECURITY-001, SECURITY-003, CONFIG-001, CONFIG-003, all UI bugs)
 - Issues Remaining: 31 (all Medium/Low priority)
 
-**Current Status (v1.0.0-rc1):**
-- Total Open Issues: 31
+**Current Status (v1.0.0-RC1):**
+- Total Open Issues: 22 (down from 33 after audit)
 - Critical/High Priority: 0
-- Medium Priority: 20
-- Low Priority: 11
+- Medium Priority: 10 (down from 22)
+- Low Priority: 12 (down from 11, +1 new AUTH-001)
+- Resolved but Undocumented: 11 issues (found during audit)
 - No blockers for v1.0.0 release
 
 ---
