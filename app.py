@@ -278,14 +278,27 @@ def index():
 def login_page():
     """
     Login page
-    
+
     GET /login
-    
+
     Displays the login form for user authentication.
-    
+
     Note: The actual login processing happens at POST /api/auth/login
     """
     return render_template('login.html')
+
+
+@app.route('/setup')
+def setup_page():
+    """
+    Initial setup page
+
+    GET /setup
+
+    Displays the setup wizard for first-time configuration.
+    Only accessible when no user exists in the database.
+    """
+    return render_template('setup.html')
 
 
 @app.route('/dashboard')
