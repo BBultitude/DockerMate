@@ -51,7 +51,7 @@ The `if __name__ == '__main__'` block in `app.py` checks for `setup_complete` on
 |----------|----------|------|--------|-----|-------|
 | **Deployment/RC1** | **0** | **0** | **1** | **0** | **1** |
 | Authentication/Security | 0 | 0 | 1 | 0 | 1 |
-| Frontend Issues | 0 | 0 | 0 | 1 | 1 |
+| Frontend Issues | 0 | 0 | 1 | 1 | 2 |
 | Backend API | 0 | 0 | 1 | 1 | 2 |
 | Database/Models | 0 | 0 | 0 | 1 | 1 |
 | Code Quality | 0 | 0 | 2 | 1 | 3 |
@@ -59,8 +59,8 @@ The `if __name__ == '__main__'` block in `app.py` checks for `setup_complete` on
 | Documentation | 0 | 0 | 1 | 3 | 4 |
 | Performance | 0 | 0 | 0 | 3 | 3 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
-| UI Issues | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL OPEN** | **0** | **0** | **10** | **12** | **22** |
+| UI Issues | 0 | 0 | 1 | 0 | 1 |
+| **TOTAL OPEN** | **0** | **0** | **11** | **12** | **23** |
 
 **Total Resolved:** 39 issues (Sprint 1-5) - 11 additional fixes discovered in audit
 **Design Decisions (Not Issues):** 2 items
@@ -304,6 +304,39 @@ Button `x-show` conditions used `!network.name.toLowerCase().includes('dockermat
 - Frontend: Replaced substring check with explicit default-network allowlist: `!['bridge','host','none'].includes(network.name)`
 - Backend: Removed redundant `'dockermate' in net.name.lower()` guard from `delete_network()`
 - "Containers attached" check provides the real safety net
+
+---
+
+## Open Issues - Medium Priority (11 remaining)
+
+### UI-011: Modal Flash on Page Load (FOUC)
+**Status:** OPEN
+**Priority:** MEDIUM
+**Location:** All pages with modals (containers.html, images.html, etc.)
+
+**Issue:**
+When navigating to pages, modals briefly flash visible before Alpine.js initializes and hides them. This creates a Flash of Unstyled Content (FOUC) where users see the create/edit modal for a split second before it disappears.
+
+**Root Cause:**
+- Modals use `x-show="false"` which only hides after Alpine.js loads
+- During the gap between page load and Alpine initialization, default visibility applies
+- No `x-cloak` attribute to hide uninitialized Alpine elements
+
+**Affected Pages:**
+- Containers page (create container modal)
+- Images page (pull/tag modals)
+- Networks page (create network modal)
+- Volumes page (create volume modal)
+- Settings page (bulk import modal, password change)
+
+**Fix Required:**
+1. Add `x-cloak` attribute to all modal containers
+2. Add CSS rule: `[x-cloak] { display: none !important; }`
+3. Alpine will automatically remove x-cloak when initialized
+
+**Impact:** LOW - Cosmetic issue, doesn't affect functionality
+
+**Workaround:** None needed - modals function correctly after flash
 
 ---
 

@@ -105,7 +105,7 @@
                 <div x-show="stats.byEnvironment.length > 0" class="space-y-2">
                     <template x-for="env in stats.byEnvironment" :key="env.name">
                         <div class="flex items-center justify-between">
-                            <span class="text-sm text-slate-300" x-text="env.name"></span>
+                            <span class="text-sm text-slate-300 uppercase" x-text="env.name"></span>
                             <span class="text-sm font-semibold text-white bg-slate-700 px-2 py-0.5 rounded" x-text="env.count"></span>
                         </div>
                     </template>

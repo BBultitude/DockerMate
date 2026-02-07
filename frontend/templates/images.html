@@ -63,6 +63,11 @@
                         :class="imageFilter === 'dangling' ? 'bg-yellow-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
                     Dangling (<span x-text="images.filter(img => img.tag === '<none>').length"></span>)
                 </button>
+                <button @click="imageFilter = 'unused'"
+                        class="px-3 py-1.5 rounded text-sm transition"
+                        :class="imageFilter === 'unused' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                    Unused (<span x-text="images.filter(img => !img.in_use).length"></span>)
+                </button>
             </div>
         </div>
 
@@ -118,6 +123,14 @@
                                 Size: <span x-text="formatSize(image.size_bytes)"></span> |
                                 Created: <span x-text="formatDate(image.created_at)"></span>
                                 <span x-show="image.pulled_at"> | Pulled: <span x-text="formatDate(image.pulled_at)"></span></span>
+                            </p>
+                            <p class="text-slate-400 text-xs mt-1">
+                                <span x-show="image.in_use" class="text-green-400">
+                                    ✓ Used by <span x-text="image.containers_using"></span> container(s)
+                                </span>
+                                <span x-show="!image.in_use" class="text-slate-500">
+                                    ⚠ Unused - safe to prune
+                                </span>
                             </p>
                         </div>
                     </div>
@@ -307,7 +320,7 @@ function imagesComponent() {
         showPullModal: false,
         showTagModalState: false,
         searchTerm: '',
-        imageFilter: 'all',   // 'all' | 'updates' | 'dangling'
+        imageFilter: 'all',   // 'all' | 'updates' | 'dangling' | 'unused'
 
         get filteredImages() {
             let list = this.images;
@@ -315,6 +328,8 @@ function imagesComponent() {
                 list = list.filter(img => img.update_available);
             } else if (this.imageFilter === 'dangling') {
                 list = list.filter(img => img.tag === '<none>');
+            } else if (this.imageFilter === 'unused') {
+                list = list.filter(img => !img.in_use);
             }
             const term = this.searchTerm.trim().toLowerCase();
             if (term) {
@@ -365,7 +380,8 @@ function imagesComponent() {
         async loadImages() {
             this.loading = true;
             try {
-                const response = await fetch('/api/images');
+                // Include container usage stats for Images page
+                const response = await fetch('/api/images?include_usage=true');
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }

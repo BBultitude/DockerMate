@@ -71,8 +71,11 @@ def list_images():
         docker images
     """
     try:
+        # Optional: include container usage stats (slower on large systems)
+        include_usage = request.args.get('include_usage', 'false').lower() == 'true'
+
         with ImageManager() as manager:
-            images = manager.list_images()
+            images = manager.list_images(include_usage=include_usage)
 
         return jsonify({
             "success": True,

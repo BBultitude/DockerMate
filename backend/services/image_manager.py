@@ -104,12 +104,15 @@ class ImageManager:
     # READ OPERATIONS
     # =========================================================================
 
-    def list_images(self) -> List[Dict[str, Any]]:
+    def list_images(self, include_usage: bool = False) -> List[Dict[str, Any]]:
         """
         List all Docker images on the system.
 
         Queries Docker daemon for all images and syncs with database.
         Returns combined data from both sources.
+
+        Args:
+            include_usage: If True, include container usage stats (slower)
 
         Returns:
             list: List of image dictionaries with metadata
@@ -117,6 +120,7 @@ class ImageManager:
         Educational:
             - Queries Docker daemon for current state
             - Syncs with database for persistence
+            - Set include_usage=True to see which containers use each image
             - CLI equivalent: docker images
         """
         logger.debug("Listing all Docker images")
@@ -124,10 +128,30 @@ class ImageManager:
         client = get_docker_client()
         docker_images = client.images.list()
 
+        # Optionally get container usage (can be slow on large systems)
+        all_containers = None
+        if include_usage:
+            all_containers = client.containers.list(all=True)
+
         result = []
         for docker_image in docker_images:
             # Sync to database and get full metadata
             image_data = self._sync_database_state(docker_image)
+
+            # Add usage info if requested
+            if include_usage and all_containers:
+                image_id = docker_image.id.replace('sha256:', '')
+                container_count = sum(
+                    1 for c in all_containers
+                    if c.image.id.replace('sha256:', '') == image_id
+                )
+                image_data['containers_using'] = container_count
+                image_data['in_use'] = container_count > 0
+            else:
+                # Default values when not included
+                image_data['containers_using'] = 0
+                image_data['in_use'] = False
+
             result.append(image_data)
 
         return result
