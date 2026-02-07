@@ -146,9 +146,8 @@ logs/
 # ============================================
 # Docker
 # ============================================
-# Don't ignore Dockerfile and docker-compose.yml (we want these)
+# Don't ignore Dockerfile, docker-compose.yml, and .dockerignore (we want these in repo)
 # But ignore runtime Docker volumes
-.dockerignore
 
 # ============================================
 # Flask
@@ -176,11 +175,15 @@ tmp/
 temp/
 
 # ============================================
+# AI Agent Instructions (Claude Code)
+# ============================================
+INSTRUCTIONS.md
+
+# ============================================
 # Verification Scripts Output
 # ============================================
 # Keep the verification scripts, but ignore their outputs if any
 verification_results.txt
-INSTRUCTIONS.md
 
 # ============================================
 # Documentation Build Artifacts

@@ -37,8 +37,8 @@ RUN mkdir -p \
     /app/exports \
     && chown -R dockermate:dockermate /app
 
-# Make reset password script executable
-RUN chmod +x reset_password.py
+# Make entrypoint and scripts executable
+RUN chmod +x docker-entrypoint.sh manage.py
 
 # Switch to app user
 USER dockermate
@@ -50,5 +50,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -fk https://localhost:5000/api/health || exit 1
 
-# Run application
-CMD ["python", "app.py"]
+# Run application via entrypoint (handles migrations and setup)
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

@@ -49,9 +49,12 @@ docs/
 
 # Tests & dev tooling (not needed in production image)
 tests/
-scripts/verify_*.sh
+scripts/
 seed_test_user.py
 test_docker_compose.sh
+test_recreate.sh
+test-stack.yml
+pytest.ini
 requirements-dev.txt
 .pre-commit-config.yaml
 
