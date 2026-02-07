@@ -42,23 +42,10 @@ db = SessionLocal()
 try:
     # Check if user exists
     user = db.query(User).first()
-    
+
     if not user:
-        print("No user found. Creating default admin user...")
-        print("  Username: admin")
-        print("  Password: admin123")
+        print("No user found. Please visit /setup to create your admin account.")
         print("")
-        print("⚠️  IMPORTANT: Change this password after first login!")
-        print("")
-        
-        # Create default user with hashed password
-        user = User(
-            username='admin',
-            password_hash=PasswordManager.hash_password("admin123")
-        )
-        db.add(user)
-        db.commit()
-        print("✓ Default user created")
     else:
         print("✓ User already exists, skipping creation")
     

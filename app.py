@@ -19,12 +19,13 @@ Design Philosophy:
 """
 
 from flask import Flask, redirect, request, jsonify, render_template
-from backend.models.database import init_db
+from backend.models.database import init_db, SessionLocal
 from backend.ssl.cert_manager import CertificateManager
 from config import Config
 import ssl
 import os
 import logging
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(
@@ -262,12 +263,28 @@ def health_check():
 @app.route('/')
 def index():
     """
-    Root route - redirect to dashboard if authenticated, otherwise login
-    
-    This provides a friendly default landing page.
+    Root route - redirect based on setup and authentication status
+
+    Flow:
+    1. No user exists → /setup (first-time setup)
+    2. User exists + authenticated → /dashboard
+    3. User exists + not authenticated → /login
     """
     from backend.auth.middleware import is_authenticated
-    
+    from backend.models.user import User
+
+    # Check if setup is complete (user exists)
+    db = SessionLocal()
+    try:
+        user_exists = db.query(User).first() is not None
+    finally:
+        db.close()
+
+    # First-time setup needed
+    if not user_exists:
+        return redirect('/setup')
+
+    # Setup complete - normal auth flow
     if is_authenticated():
         return redirect('/dashboard')
     else:
@@ -288,17 +305,82 @@ def login_page():
     return render_template('login.html')
 
 
-@app.route('/setup')
+@app.route('/setup', methods=['GET', 'POST'])
 def setup_page():
     """
     Initial setup page
 
-    GET /setup
+    GET /setup - Displays the setup wizard for first-time configuration
+    POST /setup - Processes the initial password and creates admin user
 
-    Displays the setup wizard for first-time configuration.
     Only accessible when no user exists in the database.
     """
-    return render_template('setup.html')
+    if request.method == 'GET':
+        return render_template('setup.html')
+
+    # POST - process setup
+    from backend.models.user import User
+    from backend.auth.password_manager import PasswordManager
+
+    try:
+        data = request.get_json()
+        password = data.get('password')
+
+        if not password:
+            return jsonify({
+                'success': False,
+                'errors': ['Password is required']
+            }), 400
+
+        # Validate password strength
+        validation = PasswordManager.validate_password_strength(password)
+        if not validation['valid']:
+            return jsonify({
+                'success': False,
+                'errors': validation['issues']
+            }), 400
+
+        # Create database session
+        db = SessionLocal()
+        try:
+            # Check if user already exists
+            existing_user = db.query(User).first()
+            if existing_user:
+                return jsonify({
+                    'success': False,
+                    'errors': ['Setup already complete. Please login.']
+                }), 400
+
+            # Create admin user
+            admin_user = User(
+                username='admin',
+                password_hash=PasswordManager.hash_password(password)
+            )
+            db.add(admin_user)
+            db.commit()
+
+            # Create setup_complete marker
+            setup_complete_path = os.path.join(Config.DATA_DIR, 'setup_complete')
+            os.makedirs(Config.DATA_DIR, exist_ok=True)
+            with open(setup_complete_path, 'w') as f:
+                f.write(datetime.now().isoformat())
+
+            logger.info("Initial setup completed successfully")
+
+            return jsonify({
+                'success': True,
+                'message': 'Setup complete! Redirecting to login...'
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Setup failed: {e}")
+        return jsonify({
+            'success': False,
+            'errors': ['Setup failed. Please try again.']
+        }), 500
 
 
 @app.route('/dashboard')

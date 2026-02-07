@@ -6,10 +6,14 @@ services:
     image: dockermate:latest
     container_name: dockermate
     restart: unless-stopped
-    
+
+    # Add docker group for socket access
+    group_add:
+      - ${DOCKER_GID:-999}
+
     ports:
       - "5000:5000"  # HTTPS (HTTP redirects to HTTPS)
-    
+
     volumes:
       # Docker socket (read-only for security)
       - /var/run/docker.sock:/var/run/docker.sock:ro
