@@ -5,6 +5,7 @@ DockerMate - System API Endpoints (Sprint 2 Task 6)
 System-level API endpoints for hardware profiles, health checks, and configuration.
 
 Endpoints:
+    GET /api/system/info        Get system information (version, Python, DB)
     GET /api/system/hardware    Get hardware profile information
     GET /api/system/health      System health check
 
@@ -31,6 +32,62 @@ logger = logging.getLogger(__name__)
 
 # Create blueprint for system routes
 system_bp = Blueprint('system', __name__, url_prefix='/api/system')
+
+
+@system_bp.route('/info', methods=['GET'])
+def get_system_info():
+    """
+    Get system information including versions and configuration.
+
+    GET /api/system/info
+
+    Returns DockerMate version, Python version, and other system details
+    for display in the Settings page.
+
+    Success Response (200):
+    {
+        "success": true,
+        "data": {
+            "dockermate_version": "1.0.0-RC1",
+            "python_version": "3.11.2",
+            "database": "SQLite",
+            "authentication": "Enabled (bcrypt + sessions)",
+            "https_enabled": true
+        }
+    }
+    """
+    import sys
+    import sqlite3
+    import flask
+    import sqlalchemy
+    import docker
+    import alembic
+    from backend import __version__
+
+    try:
+        system_info = {
+            "dockermate_version": __version__,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "flask_version": flask.__version__,
+            "sqlalchemy_version": sqlalchemy.__version__,
+            "docker_sdk_version": docker.__version__,
+            "alembic_version": alembic.__version__,
+            "database": f"SQLite {sqlite3.sqlite_version}",
+            "authentication": "Enabled (bcrypt + sessions)",
+            "https_enabled": True
+        }
+
+        return jsonify({
+            "success": True,
+            "data": system_info
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get system info: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @system_bp.route('/hardware', methods=['GET'])

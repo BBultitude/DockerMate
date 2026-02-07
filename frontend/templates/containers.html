@@ -399,10 +399,11 @@
                         <label class="text-slate-400 text-sm">Environment</label>
                         <div>
                             <span :class="{
-                                'bg-green-900 text-green-300': detailsModal.container?.environment === 'DEV',
-                                'bg-yellow-900 text-yellow-300': detailsModal.container?.environment === 'STG',
-                                'bg-red-900 text-red-300': detailsModal.container?.environment === 'PROD'
-                            }" class="px-2 py-1 rounded text-sm font-medium" x-text="detailsModal.container?.environment"></span>
+                                'bg-green-900 text-green-300': detailsModal.container?.environment === 'dev',
+                                'bg-blue-900 text-blue-300': detailsModal.container?.environment === 'test',
+                                'bg-yellow-900 text-yellow-300': detailsModal.container?.environment === 'staging' || detailsModal.container?.environment === 'uat',
+                                'bg-red-900 text-red-300': detailsModal.container?.environment === 'prod'
+                            }" class="px-2 py-1 rounded text-sm font-medium uppercase" x-text="detailsModal.container?.environment"></span>
                         </div>
                     </div>
                     <div class="col-span-2">
@@ -1119,10 +1120,11 @@
                                 }" class="px-2 py-1 rounded text-xs font-medium uppercase" x-text="container.state"></span>
                                 <span x-show="container.environment"
                                       :class="{
-                                    'bg-green-900 text-green-300': container.environment === 'DEV',
-                                    'bg-yellow-900 text-yellow-300': container.environment === 'STG',
-                                    'bg-red-900 text-red-300': container.environment === 'PROD'
-                                }" class="px-2 py-1 rounded text-xs font-medium" x-text="container.environment"></span>
+                                    'bg-green-900 text-green-300': container.environment === 'dev',
+                                    'bg-blue-900 text-blue-300': container.environment === 'test',
+                                    'bg-yellow-900 text-yellow-300': container.environment === 'staging' || container.environment === 'uat',
+                                    'bg-red-900 text-red-300': container.environment === 'prod'
+                                }" class="px-2 py-1 rounded text-xs font-medium uppercase" x-text="container.environment"></span>
                                 <!-- UI-008: Managed/External Badge (always visible) -->
                                 <span x-show="container.managed === false"
                                       class="px-2 py-1 rounded text-xs font-medium bg-orange-900 text-orange-300"
@@ -1195,6 +1197,46 @@
                             📜 Logs
                         </button>
 
+                        <!-- Environment Tag Selector -->
+                        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                            <button @click="open = !open"
+                                    class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-md transition text-sm font-medium flex items-center gap-1"
+                                    title="Set environment tag">
+                                🏷️ <span class="uppercase" x-text="container.environment || 'Env'"></span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            <div x-show="open"
+                                 x-transition
+                                 class="absolute z-10 mt-1 w-40 bg-slate-700 border border-slate-600 rounded-md shadow-lg">
+                                <button @click="setEnvironment(container, 'dev'); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 first:rounded-t-md uppercase">
+                                    DEV
+                                </button>
+                                <button @click="setEnvironment(container, 'test'); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 uppercase">
+                                    TEST
+                                </button>
+                                <button @click="setEnvironment(container, 'staging'); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 uppercase">
+                                    STAGING
+                                </button>
+                                <button @click="setEnvironment(container, 'uat'); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 uppercase">
+                                    UAT
+                                </button>
+                                <button @click="setEnvironment(container, 'prod'); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-600 uppercase">
+                                    PROD
+                                </button>
+                                <button @click="setEnvironment(container, null); open = false"
+                                        class="w-full text-left px-4 py-2 text-sm text-slate-400 hover:bg-slate-600 last:rounded-b-md border-t border-slate-600 uppercase">
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Sprint 3: Update Button (shown when image has update available) -->
                         <button x-show="hasUpdate(container)"
                                 @click="updateContainer(container.name)"
@@ -1245,13 +1287,18 @@
                     <!-- FEAT-012: Import button for external containers -->
                     <div x-show="container.managed === false" class="mt-4 p-3 bg-orange-900/20 border border-orange-700 rounded text-sm text-orange-300 flex items-center justify-between">
                         <span>ℹ️ External container — not managed by DockerMate.</span>
-                        <button @click="importContainer(container)"
+                        <!-- Hide import button for DockerMate platform container -->
+                        <button x-show="container.name !== 'dockermate'"
+                                @click="importContainer(container)"
                                 :disabled="actionLoading[container.name]"
                                 title="Import this container into DockerMate (metadata only)"
                                 class="ml-3 px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded text-sm font-medium whitespace-nowrap transition">
                             <span x-show="!actionLoading[container.name]">⬇ Import</span>
                             <span x-show="actionLoading[container.name]">⏳</span>
                         </button>
+                        <span x-show="container.name === 'dockermate'" class="text-slate-400 text-xs italic">
+                            Platform container (cannot be imported)
+                        </span>
                     </div>
                 </div>
             </template>
@@ -1724,7 +1771,41 @@ function containersComponent() {
                 this.actionLoading[containerId] = false;
             }
         },
-        
+
+        /**
+         * Set environment tag for a container
+         */
+        async setEnvironment(container, environment) {
+            try {
+                const response = await fetch(`/api/containers/${container.container_id}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
+                    body: JSON.stringify({ environment })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || 'Failed to update environment');
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const envText = environment ? environment.toUpperCase() : 'cleared';
+                    this.showToast(`Environment set to ${envText}`, 'success');
+                    await this.loadContainers();
+                } else {
+                    this.showToast(`Failed to update environment: ${data.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('setEnvironment error:', error);
+                this.showToast(`Failed to update environment: ${error.message}`, 'error');
+            }
+        },
+
         /**
          * Start health check polling for a container with exponential backoff
          * Polling schedule: 3s, 5s, 8s, 12s, 15s, 20s... (max 10 attempts)

@@ -58,6 +58,11 @@
                         :class="imageFilter === 'updates' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
                     Updates Available
                 </button>
+                <button @click="imageFilter = 'dangling'"
+                        class="px-3 py-1.5 rounded text-sm transition"
+                        :class="imageFilter === 'dangling' ? 'bg-yellow-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                    Dangling (<span x-text="images.filter(img => img.tag === '<none>').length"></span>)
+                </button>
             </div>
         </div>
 
@@ -90,7 +95,17 @@
                     <div class="flex justify-between items-start mb-4">
                         <div class="flex-1">
                             <div class="flex items-center gap-3 mb-2">
-                                <h3 class="text-xl font-semibold text-white font-mono" x-text="image.full_name"></h3>
+                                <div class="flex flex-col">
+                                    <h3 class="text-xl font-semibold text-white font-mono" x-text="image.full_name"></h3>
+                                    <span x-show="image.tag === '<none>' && image.previous_tag"
+                                          class="text-yellow-400 text-sm mt-1">
+                                        (was <span x-text="image.repository + ':' + image.previous_tag"></span>)
+                                    </span>
+                                </div>
+                                <span x-show="image.tag === '<none>'"
+                                      class="px-2 py-1 bg-yellow-600 text-slate-900 rounded text-xs font-bold">
+                                    DANGLING
+                                </span>
                                 <span x-show="image.update_available"
                                       class="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-xs font-medium">
                                     UPDATE AVAILABLE
@@ -292,16 +307,21 @@ function imagesComponent() {
         showPullModal: false,
         showTagModalState: false,
         searchTerm: '',
-        imageFilter: 'all',   // 'all' | 'updates'
+        imageFilter: 'all',   // 'all' | 'updates' | 'dangling'
 
         get filteredImages() {
             let list = this.images;
             if (this.imageFilter === 'updates') {
                 list = list.filter(img => img.update_available);
+            } else if (this.imageFilter === 'dangling') {
+                list = list.filter(img => img.tag === '<none>');
             }
             const term = this.searchTerm.trim().toLowerCase();
             if (term) {
-                list = list.filter(img => (img.full_name || '').toLowerCase().includes(term));
+                list = list.filter(img =>
+                    (img.full_name || '').toLowerCase().includes(term) ||
+                    (img.previous_tag && img.previous_tag.toLowerCase().includes(term))
+                );
             }
             // STABLE SORT by name to prevent flickering
             return list.slice().sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));

@@ -356,8 +356,11 @@ def change_password():
     """
     try:
         # Require authentication
-        session_token = request.cookies.get('session')
+        session_token = request.cookies.get('auth_session')
+        logger.info(f"Password change request - Session token present: {bool(session_token)}")
+
         if not SessionManager.validate_session(session_token):
+            logger.warning(f"Password change failed - Invalid session. Token: {session_token[:20] if session_token else 'None'}...")
             return jsonify({
                 "success": False,
                 "error": "Not authenticated"

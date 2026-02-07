@@ -106,11 +106,13 @@ function navbar() {
             this.loading = true;
             
             try {
-                const response = await fetch('/logout', {
+                const response = await fetch('/api/auth/logout', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
-                    }
+                        'Content-Type': 'application/json',
+                        ...getCSRFHeaders()
+                    },
+                    credentials: 'include'
                 });
                 
                 if (response.ok) {

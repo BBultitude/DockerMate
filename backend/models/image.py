@@ -28,6 +28,7 @@ class Image(Base):
         image_id: Docker's SHA256 image ID (unique identifier)
         repository: Image repository name (e.g., "nginx", "mysql")
         tag: Image tag (e.g., "latest", "8.0", "alpine")
+        previous_tag: Tag before becoming dangling (<none>)
         digest: SHA256 content digest for update detection
         size_bytes: Image size in bytes
         created_at: When the image was created (from Docker metadata)
@@ -52,6 +53,7 @@ class Image(Base):
     image_id = Column(String(64), unique=True, nullable=False, index=True)
     repository = Column(String(255), nullable=False, index=True)
     tag = Column(String(255), nullable=False, index=True)
+    previous_tag = Column(String(255), nullable=True)  # Tag before becoming <none>
     digest = Column(String(255))  # SHA256 digest for update detection
 
     # Size and metadata
@@ -87,6 +89,7 @@ class Image(Base):
             'image_id': self.image_id,
             'repository': self.repository,
             'tag': self.tag,
+            'previous_tag': self.previous_tag,
             'full_name': f"{self.repository}:{self.tag}",
             'digest': self.digest,
             'size_bytes': self.size_bytes,

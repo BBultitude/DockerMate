@@ -270,26 +270,40 @@ def validate_update_request(data: Dict[str, Any]) -> None:
     if not data:
         raise ValidationError("Update request body cannot be empty")
     
-    # Phase 1: Only labels are supported
-    allowed_fields = {'labels'}
+    # Phase 1: Only labels and environment are supported
+    allowed_fields = {'labels', 'environment'}
     provided_fields = set(data.keys())
     unsupported_fields = provided_fields - allowed_fields
-    
+
     if unsupported_fields:
         raise ValidationError(
             f"Unsupported update fields: {', '.join(unsupported_fields)}. "
-            f"Phase 1 only supports updating: labels. "
+            f"Phase 1 only supports updating: labels, environment. "
             f"Full updates will be available in the UI (Task 6)."
         )
-    
+
     # Validate labels format
     if 'labels' in data:
         if not isinstance(data['labels'], dict):
             raise ValidationError("Labels must be a dictionary")
-        
+
         for key, value in data['labels'].items():
             if not isinstance(key, str) or not isinstance(value, str):
                 raise ValidationError("Label keys and values must be strings")
+
+    # Validate environment if provided
+    if 'environment' in data:
+        environment = data['environment']
+        if environment is not None and not isinstance(environment, str):
+            raise ValidationError("Environment must be a string or null")
+
+        # Validate against allowed values (case-insensitive)
+        if environment:
+            valid_environments = ['dev', 'test', 'staging', 'prod', 'uat']
+            if environment.lower() not in valid_environments:
+                raise ValidationError(
+                    f"Invalid environment. Must be one of: {', '.join(valid_environments)} (case-insensitive)"
+                )
 
 
 # =============================================================================
@@ -841,9 +855,16 @@ def update_container(container_id: str):
         
         # Update container via service
         with ContainerManager() as manager:
+            # Build kwargs with only the fields that were provided
+            update_kwargs = {}
+            if 'labels' in data:
+                update_kwargs['labels'] = data['labels']
+            if 'environment' in data:
+                update_kwargs['environment'] = data['environment']
+
             container = manager.update_container(
                 container_id,
-                labels=data.get('labels')
+                **update_kwargs
             )
         
         logger.info(f"Container updated via API: {container_id}")

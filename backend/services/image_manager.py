@@ -53,6 +53,7 @@ from backend.utils.exceptions import (
 )
 from backend.models.database import SessionLocal
 from backend.models.image import Image
+from backend.models.container import Container
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -461,6 +462,10 @@ class ImageManager:
 
         if existing:
             # Update existing record
+            # Save previous tag before overwriting with <none> (dangling image tracking)
+            if (repository == '<none>' or tag == '<none>') and existing.tag != '<none>':
+                existing.previous_tag = existing.tag
+
             existing.repository = repository
             existing.tag = tag
             existing.digest = digest
@@ -487,4 +492,53 @@ class ImageManager:
         self.db.commit()
         self.db.refresh(image_record)
 
+        # Infer previous_tag for already-dangling images by checking container usage
+        if (image_record.tag == '<none>' and image_record.previous_tag is None):
+            self._infer_previous_tag_from_containers(image_record)
+
         return image_record.to_dict()
+
+    def _infer_previous_tag_from_containers(self, image_record):
+        """
+        Infer previous_tag for dangling images by checking container usage.
+
+        Logic:
+        1. Find first container using this image (by image_id)
+        2. If no containers use it, skip (unused image)
+        3. Extract tag from container's image_name
+        4. Save as previous_tag
+
+        This handles already-dangling images at import time.
+
+        Args:
+            image_record: Image model instance (must be dangling with no previous_tag)
+        """
+        # Find first container using this image
+        container = self.db.query(Container).filter(
+            Container.image_id == image_record.image_id,
+            Container.state != 'removed'
+        ).first()
+
+        if not container:
+            # No containers use this image - it's unused, skip
+            logger.debug(f"Dangling image {image_record.image_id[:12]} has no containers - skipping tag inference")
+            return
+
+        # Extract tag from container's image_name (e.g., "nginx:1.28" -> "1.28")
+        image_name = container.image_name
+        if not image_name or ':' not in image_name:
+            logger.debug(f"Container {container.name} has invalid image_name format: {image_name}")
+            return
+
+        try:
+            # Split on last colon to handle registry URLs like "registry.io/nginx:1.28"
+            inferred_tag = image_name.rsplit(':', 1)[1]
+
+            # Save the inferred tag
+            image_record.previous_tag = inferred_tag
+            self.db.commit()
+
+            logger.info(f"Inferred previous_tag '{inferred_tag}' for dangling image {image_record.image_id[:12]} from container {container.name}")
+
+        except (IndexError, ValueError) as e:
+            logger.warning(f"Failed to parse tag from image_name '{image_name}': {e}")

@@ -1081,41 +1081,55 @@ class ContainerManager:
             - CLI equivalent: docker update --label key=value <container>
         """
         logger.info(f"Updating container: {name_or_id}")
-        
-        # Phase 1: Only labels supported
-        allowed_fields = {'labels'}
+        logger.info(f"Update kwargs: {kwargs}")
+
+        # Phase 1: Only labels and environment supported
+        allowed_fields = {'labels', 'environment'}
         provided_fields = set(kwargs.keys())
         unsupported = provided_fields - allowed_fields
-        
+
         if unsupported:
             raise ValidationError(
                 f"Unsupported update fields: {', '.join(unsupported)}. "
                 f"Phase 1 only supports: {', '.join(allowed_fields)}"
             )
-        
+
         # Get container
         container = self.db.query(Container).filter(
             (Container.name == name_or_id) |
             (Container.container_id == name_or_id),
             Container.state != 'removed'
         ).first()
-        
+
         if not container:
             raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
-        
+
+        # Handle environment update (database-only, no Docker changes needed)
+        if 'environment' in kwargs:
+            logger.info(f"Environment update detected: {kwargs['environment']}")
+            container.environment = kwargs['environment']
+            self.db.commit()
+            logger.info(f"Updated environment for container {name_or_id} to: {kwargs['environment']}")
+
+            # If only environment was updated, return the container data
+            if 'labels' not in kwargs:
+                logger.info("Only environment was updated, returning early")
+                self.db.refresh(container)
+                return container.to_dict()
+            else:
+                logger.info("Both environment and labels were provided")
+
         # Update labels via Docker API
+        if 'labels' in kwargs:
+            # Docker SDK doesn't support label updates directly
+            # We'd need to use low-level API or recreate container
+            logger.warning("Label updates require container recreation (Phase 2)")
+            raise ValidationError("Label updates not yet implemented (Phase 2)")
+
+        # If we got here without updating anything, sync and return current state
         client = get_docker_client()
         try:
             docker_container = client.containers.get(container.container_id)
-            
-            if 'labels' in kwargs:
-                # Docker SDK doesn't support label updates directly
-                # We'd need to use low-level API or recreate container
-                # For now, just update database
-                logger.warning("Label updates require container recreation (Phase 2)")
-                raise ValidationError("Label updates not yet implemented (Phase 2)")
-            
-            # Sync and return updated state
             return self._sync_database_state(docker_container, container.environment)
             
         except NotFound:

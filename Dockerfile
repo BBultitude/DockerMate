@@ -1,9 +1,15 @@
 FROM python:3.11-slim-bookworm
 
+# Read version from VERSION file
+ARG VERSION
+COPY VERSION /tmp/VERSION
+RUN VERSION=$(cat /tmp/VERSION 2>/dev/null || echo "1.0.0") && \
+    echo "Building DockerMate version: $VERSION"
+
 # Metadata
 LABEL maintainer="DockerMate Contributors"
 LABEL description="Intelligent Docker Management for Home Labs"
-LABEL version="1.0.0"
+LABEL version="${VERSION:-1.0.0}"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \

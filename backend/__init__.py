@@ -14,5 +14,14 @@ Author: DockerMate Team
 License: MIT
 """
 
-__version__ = "1.0.0"
+import os
+
+# Read version from VERSION file (single source of truth)
+_version_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'VERSION')
+try:
+    with open(_version_file, 'r') as f:
+        __version__ = f.read().strip()
+except FileNotFoundError:
+    __version__ = "1.0.0"  # Fallback
+
 __author__ = "DockerMate Team"

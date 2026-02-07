@@ -1,10 +1,47 @@
 # DockerMate - Issues Tracker
 
 **Version:** v1.0.0-rc1
-**Last Updated:** February 6, 2026
-**Status:** All sprints complete, no blocking issues for v1.0.0 release
+**Last Updated:** February 7, 2026
+**Status:** RC1 deployed and testing - 1 known deployment issue (manual restart required)
 
 This document consolidates all known issues, UI fixes, and feature tracking for DockerMate. Issues are categorized by priority and type, with comprehensive resolution tracking.
+
+---
+
+## Known Issues - RC1 Deployment
+
+### DEPLOY-001: Manual Container Restart Required After First-Time Setup
+**Status:** KNOWN ISSUE (RC1)
+**Priority:** MEDIUM
+**Affects:** First-time deployment only
+
+**Issue:**
+After completing the `/setup` wizard and creating the admin password, the container continues running in HTTP mode. The app only checks for the `setup_complete` file at startup, so it doesn't automatically switch to HTTPS mode after setup completes.
+
+**Symptoms:**
+- Setup page works correctly (HTTP)
+- After setup, browser redirects to `/login`
+- Server sends 301 redirect to HTTPS
+- Browser tries HTTPS but gets SSL handshake errors (400 Bad Request)
+- Logs show: `"GET /login HTTP/1.1" 301` followed by SSL errors
+
+**Workaround:**
+After completing setup, manually restart the container:
+```bash
+docker restart dockermate
+```
+Then access `https://your-ip:5000` to login.
+
+**Root Cause:**
+The `if __name__ == '__main__'` block in `app.py` checks for `setup_complete` only once at startup. After setup creates the file, the Flask process continues running in HTTP mode until restarted.
+
+**Potential Fixes (post-RC1):**
+1. Add instruction in setup completion message: "Setup complete! Restart container to enable HTTPS"
+2. Use Flask-Restart or similar to auto-restart after setup
+3. Use a supervisor process (gunicorn/uwsgi) that detects file changes
+4. Accept HTTP for first login after setup, then enforce HTTPS
+
+**Decision:** Document as known issue for RC1. Fix in v1.0.1 or v1.1.0.
 
 ---
 
@@ -12,7 +49,8 @@ This document consolidates all known issues, UI fixes, and feature tracking for 
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| Authentication/Security | 0 | 0 | 0 | 1 | 1 |
+| **Deployment/RC1** | **0** | **0** | **1** | **0** | **1** |
+| Authentication/Security | 0 | 0 | 1 | 1 | 2 |
 | Frontend Issues | 0 | 0 | 1 | 1 | 2 |
 | Backend API | 0 | 0 | 4 | 0 | 4 |
 | Database/Models | 0 | 0 | 3 | 1 | 4 |
@@ -22,11 +60,12 @@ This document consolidates all known issues, UI fixes, and feature tracking for 
 | Performance | 0 | 0 | 1 | 3 | 4 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | UI Issues | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL OPEN** | **0** | **0** | **20** | **11** | **31** |
+| **TOTAL OPEN** | **0** | **0** | **22** | **11** | **33** |
 
 **Total Resolved:** 28 issues (Sprint 1-5)
 **Design Decisions (Not Issues):** 2 items
-**Status:** All critical and high-priority issues resolved. No blockers for v1.0.0 release.
+**RC1 Known Issues:** 1 (manual restart after setup)
+**Status:** RC1 deployed to Raspberry Pi. 1 known deployment issue (workaround documented). No blockers for live testing.
 
 ---
 
@@ -242,6 +281,41 @@ Button `x-show` conditions used `!network.name.toLowerCase().includes('dockermat
 ---
 
 ## Medium Priority Issues
+
+### AUTH-001: Password Validation Not Fully NIST Compliant
+**Status:** OPEN
+**Priority:** MEDIUM
+**Location:** `backend/auth/password_manager.py:197-300`
+
+**Issue:**
+Current password validation only performs basic pattern checks and doesn't fully comply with NIST SP 800-63B recommendations. The validation allows weak passwords like "TestPassword123!" which contain common dictionary words with simple modifications.
+
+**Current Validation:**
+- Minimum 12 characters ✓
+- Uppercase, lowercase, digits required ✓
+- Blocks common words ONLY when used alone (e.g., "password123") ✓
+- Basic sequential pattern detection ✓
+
+**Missing NIST Requirements:**
+- No check against known breached password databases (e.g., Have I Been Pwned)
+- Doesn't detect dictionary words with modifications (e.g., "TestPassword")
+- No sophisticated pattern detection for keyboard patterns
+- Should allow spaces and all printable characters per NIST
+- Feedback could be more specific about why passwords are rejected
+
+**Fix Required:**
+1. Integrate with breached password database (zxcvbn library or HIBP API)
+2. Enhance dictionary word detection to catch modified words
+3. Improve pattern detection (leet speak, keyboard walks)
+4. Follow NIST SP 800-63B Section 5.1.1 more closely
+
+**Workaround:**
+Users can still set reasonably strong passwords by avoiding common words entirely and using random character combinations or passphrases.
+
+**Note:**
+Deferred to v1.1 - requires third-party library integration and testing.
+
+---
 
 ### FRONTEND-003: Login Error Handling Incomplete
 **Status:** OPEN

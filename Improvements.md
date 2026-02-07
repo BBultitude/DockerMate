@@ -439,6 +439,40 @@ The backend checks should be added incrementally — `containers` and `images` f
 
 ---
 
+### FEAT-020: Bulk Import Resources (Settings Page)
+**Priority:** Medium
+**Effort:** 6-8 hours
+**Sprint:** v1.1.0 (Post-RC1)
+**Description:**
+Persistent bulk import feature in Settings page to adopt existing Docker resources into DockerMate management. Allows selective import by resource type (containers, networks, volumes, images) at any time, not just during initial setup. Useful when external tools or docker-compose create resources outside DockerMate, or when onboarding an existing Docker host.
+
+**Functionality:**
+- Dropdown selector to choose resource type (containers, networks, volumes, images)
+- Bulk select interface showing all unmanaged resources of that type
+- Import button adopts checked resources into DockerMate management
+- One-click "Import All" option with confirmation modal
+- Progress feedback during bulk operations
+- Success/failure summary after import
+
+**Use Cases:**
+- Initial onboarding of existing Docker host with many resources
+- Periodic adoption of resources created by external tools
+- Migration from CLI-based management to DockerMate
+- Recovery after database reset or corruption
+
+**Implementation Notes:**
+- Leverages existing adopt/import functions from FEAT-012 (containers), FEAT-017 (networks)
+- Needs similar adopt logic for volumes and images
+- Settings page already exists; add new "Bulk Import" section
+- Each resource type uses its existing import/adopt backend endpoint
+
+**Related Features:**
+- FEAT-012 (Import unmanaged containers) - provides container import backend
+- FEAT-017 (Adopt/release networks) - provides network import backend
+- Similar adopt logic needed for volumes and images
+
+---
+
 ### FEAT-010: WebSocket Live Updates
 **Priority:** Low
 **Effort:** 6-8 hours

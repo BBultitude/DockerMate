@@ -8,7 +8,7 @@
     {% include 'components/navbar.html' %}
     
     <!-- Main Content -->
-    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="settingsPage()">
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="settingsPage()" x-init="init()">
         <h2 class="text-3xl font-bold text-white mb-8">Settings</h2>
         
         <!-- Change Password Section -->
@@ -75,35 +75,213 @@
                 </button>
             </form>
         </div>
-        
+
+        <!-- Bulk Import Section -->
+        <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 mb-6">
+            <h3 class="text-xl font-semibold text-white mb-4">📦 Bulk Import Resources</h3>
+            <p class="text-slate-400 mb-4">
+                Import multiple unmanaged Docker resources (containers, networks, volumes) into DockerMate management at once.
+            </p>
+
+            <button @click="openBulkImportModal()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition font-medium">
+                Open Bulk Import
+            </button>
+        </div>
+
         <!-- System Information Section -->
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
             <h3 class="text-xl font-semibold text-white mb-4">ℹ️ System Information</h3>
-            
-            <div class="space-y-3 text-sm">
+
+            <div x-show="systemInfoLoading" class="text-center py-4">
+                <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+            </div>
+
+            <div x-show="!systemInfoLoading" class="space-y-3 text-sm">
+                <!-- Platform -->
                 <div class="flex justify-between">
                     <span class="text-slate-400">DockerMate Version:</span>
-                    <span class="text-white font-mono">v0.1.0-alpha (Sprint 1)</span>
+                    <span class="text-white font-mono" x-text="systemInfo.dockermate_version || 'Loading...'"></span>
+                </div>
+
+                <!-- Core Framework -->
+                <div class="flex justify-between border-t border-slate-700 pt-3">
+                    <span class="text-slate-400">Python:</span>
+                    <span class="text-white font-mono" x-text="systemInfo.python_version || 'Loading...'"></span>
                 </div>
                 <div class="flex justify-between">
-                    <span class="text-slate-400">Python Version:</span>
-                    <span class="text-white font-mono">3.11+</span>
+                    <span class="text-slate-400">Flask:</span>
+                    <span class="text-white font-mono" x-text="systemInfo.flask_version || 'Loading...'"></span>
                 </div>
                 <div class="flex justify-between">
-                    <span class="text-slate-400">Flask Version:</span>
-                    <span class="text-white font-mono">3.0</span>
+                    <span class="text-slate-400">SQLAlchemy:</span>
+                    <span class="text-white font-mono" x-text="systemInfo.sqlalchemy_version || 'Loading...'"></span>
                 </div>
                 <div class="flex justify-between">
+                    <span class="text-slate-400">Docker SDK:</span>
+                    <span class="text-white font-mono" x-text="systemInfo.docker_sdk_version || 'Loading...'"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Alembic:</span>
+                    <span class="text-white font-mono" x-text="systemInfo.alembic_version || 'Loading...'"></span>
+                </div>
+
+                <!-- Database -->
+                <div class="flex justify-between border-t border-slate-700 pt-3">
                     <span class="text-slate-400">Database:</span>
-                    <span class="text-white font-mono">SQLite 3.40</span>
+                    <span class="text-white font-mono" x-text="systemInfo.database || 'Loading...'"></span>
                 </div>
-                <div class="flex justify-between">
+
+                <!-- Security -->
+                <div class="flex justify-between border-t border-slate-700 pt-3">
                     <span class="text-slate-400">Authentication:</span>
-                    <span class="text-green-400 font-semibold">✓ Enabled (bcrypt + sessions)</span>
+                    <span class="text-green-400 font-semibold" x-text="'✓ ' + (systemInfo.authentication || 'Loading...')"></span>
                 </div>
                 <div class="flex justify-between">
                     <span class="text-slate-400">HTTPS/TLS:</span>
-                    <span class="text-green-400 font-semibold">✓ Enabled (Self-signed)</span>
+                    <span class="text-green-400 font-semibold" x-text="systemInfo.https_enabled ? '✓ Enabled (Self-signed)' : '✗ Disabled'"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Import Modal -->
+        <div x-show="bulkImportModal.show"
+             x-cloak
+             class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+             @click.self="!bulkImportModal.loading && closeBulkImportModal()">
+
+            <div class="bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="flex items-center justify-between p-6 border-b border-slate-700">
+                    <h3 class="text-xl font-semibold">Bulk Import Resources</h3>
+                    <button @click="closeBulkImportModal()"
+                            :disabled="bulkImportModal.loading"
+                            class="text-slate-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Content -->
+                <div class="p-6">
+                    <!-- Phase 1: Selection -->
+                    <div x-show="!bulkImportModal.completed">
+                        <!-- Resource Type Selector -->
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium mb-2">Resource Type</label>
+                            <select x-model="bulkImportModal.resourceType"
+                                    @change="loadUnmanagedResources()"
+                                    :disabled="bulkImportModal.loading"
+                                    class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2">
+                                <option value="containers">Containers</option>
+                                <option value="networks">Networks</option>
+                                <option value="volumes">Volumes</option>
+                            </select>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div x-show="bulkImportModal.loading && !bulkImportModal.unmanaged.length"
+                             class="text-center py-8">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                            <p class="mt-2 text-slate-400">Loading resources...</p>
+                        </div>
+
+                        <!-- Empty State -->
+                        <div x-show="!bulkImportModal.loading && !bulkImportModal.unmanaged.length"
+                             class="text-center py-8 text-slate-400">
+                            <p>No unmanaged <span x-text="bulkImportModal.resourceType"></span> found.</p>
+                        </div>
+
+                        <!-- Resource List -->
+                        <div x-show="bulkImportModal.unmanaged.length > 0" class="mb-6">
+                            <div class="flex items-center justify-between mb-3">
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="checkbox"
+                                           @change="toggleSelectAll($event.target.checked)"
+                                           :checked="bulkImportModal.selected.length === bulkImportModal.unmanaged.length"
+                                           class="mr-2">
+                                    <span class="text-sm">Select All (<span x-text="bulkImportModal.unmanaged.length"></span>)</span>
+                                </label>
+                                <span class="text-sm text-slate-400">
+                                    <span x-text="bulkImportModal.selected.length"></span> selected
+                                </span>
+                            </div>
+
+                            <div class="space-y-2 max-h-96 overflow-y-auto">
+                                <template x-for="resource in bulkImportModal.unmanaged" :key="getResourceId(resource)">
+                                    <label class="flex items-center p-3 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer">
+                                        <input type="checkbox"
+                                               :value="getResourceId(resource)"
+                                               x-model="bulkImportModal.selected"
+                                               class="mr-3">
+                                        <div class="flex-1">
+                                            <div class="font-medium" x-text="getResourceName(resource)"></div>
+                                            <div class="text-sm text-slate-400" x-text="getResourceDetails(resource)"></div>
+                                        </div>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div x-show="bulkImportModal.unmanaged.length > 0"
+                             class="flex gap-3 justify-end">
+                            <button @click="closeBulkImportModal()"
+                                    :disabled="bulkImportModal.loading"
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded transition-colors">
+                                Cancel
+                            </button>
+                            <button @click="executeBulkImport()"
+                                    :disabled="bulkImportModal.loading || bulkImportModal.selected.length === 0"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span x-show="!bulkImportModal.loading">
+                                    Import Selected (<span x-text="bulkImportModal.selected.length"></span>)
+                                </span>
+                                <span x-show="bulkImportModal.loading" class="flex items-center">
+                                    <svg class="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Importing...
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Phase 2: Results -->
+                    <div x-show="bulkImportModal.completed">
+                        <h4 class="text-lg font-medium mb-4">Import Results</h4>
+
+                        <div class="space-y-2 mb-6 max-h-96 overflow-y-auto">
+                            <template x-for="result in bulkImportModal.results" :key="result.id">
+                                <div class="p-3 rounded"
+                                     :class="result.success ? 'bg-green-900/20 border border-green-800' : 'bg-red-900/20 border border-red-800'">
+                                    <div class="flex items-center">
+                                        <svg x-show="result.success" class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        </svg>
+                                        <svg x-show="!result.success" class="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                        </svg>
+                                        <div class="flex-1">
+                                            <div class="font-medium" x-text="result.name"></div>
+                                            <div class="text-sm"
+                                                 :class="result.success ? 'text-green-400' : 'text-red-400'"
+                                                 x-text="result.message"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <button @click="closeBulkImportModal()"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -130,7 +308,58 @@ function settingsPage() {
         passwordLoading: false,
         passwordSuccess: false,
         passwordError: null,
-        
+
+        // Bulk import modal state
+        bulkImportModal: {
+            show: false,
+            loading: false,
+            completed: false,
+            resourceType: 'containers',
+            unmanaged: [],
+            selected: [],
+            results: []
+        },
+
+        // System information
+        systemInfo: {},
+        systemInfoLoading: true,
+
+        /**
+         * Initialize - load system info
+         */
+        async init() {
+            await this.loadSystemInfo();
+        },
+
+        /**
+         * Load system information from API
+         */
+        async loadSystemInfo() {
+            this.systemInfoLoading = true;
+            try {
+                const response = await fetch('/api/system/info', {
+                    headers: getCSRFHeaders()
+                });
+
+                if (!response.ok) throw new Error('Failed to load system info');
+
+                const result = await response.json();
+                this.systemInfo = result.data || {};
+            } catch (error) {
+                console.error('Failed to load system info:', error);
+                // Set defaults on error
+                this.systemInfo = {
+                    dockermate_version: 'Unknown',
+                    python_version: 'Unknown',
+                    database: 'Unknown',
+                    authentication: 'Unknown',
+                    https_enabled: false
+                };
+            } finally {
+                this.systemInfoLoading = false;
+            }
+        },
+
         /**
          * Handle password change form submission
          * 
@@ -166,9 +395,11 @@ function settingsPage() {
                         'Content-Type': 'application/json',
                         ...getCSRFHeaders()
                     },
+                    credentials: 'include',
                     body: JSON.stringify({
                         current_password: this.passwordForm.current_password,
-                        new_password: this.passwordForm.new_password
+                        new_password: this.passwordForm.new_password,
+                        confirm_password: this.passwordForm.confirm_password
                     })
                 });
                 
@@ -197,6 +428,167 @@ function settingsPage() {
             } finally {
                 this.passwordLoading = false;
             }
+        },
+
+        /**
+         * Open bulk import modal and load unmanaged resources
+         */
+        openBulkImportModal() {
+            this.bulkImportModal.show = true;
+            this.bulkImportModal.loading = false;
+            this.bulkImportModal.completed = false;
+            this.bulkImportModal.resourceType = 'containers';
+            this.bulkImportModal.unmanaged = [];
+            this.bulkImportModal.selected = [];
+            this.bulkImportModal.results = [];
+            this.loadUnmanagedResources();
+        },
+
+        /**
+         * Close bulk import modal
+         */
+        closeBulkImportModal() {
+            if (this.bulkImportModal.loading) return;
+            this.bulkImportModal.show = false;
+        },
+
+        /**
+         * Load unmanaged resources of the selected type
+         */
+        async loadUnmanagedResources() {
+            this.bulkImportModal.loading = true;
+            this.bulkImportModal.unmanaged = [];
+            this.bulkImportModal.selected = [];
+
+            try {
+                const type = this.bulkImportModal.resourceType;
+
+                // For containers, we need show_all=true to get the managed flag
+                const url = type === 'containers'
+                    ? `/api/${type}?show_all=true&all=true`
+                    : `/api/${type}`;
+
+                const response = await fetch(url, {
+                    headers: getCSRFHeaders()
+                });
+
+                if (!response.ok) throw new Error('Failed to load resources');
+
+                const result = await response.json();
+                // Volumes API returns 'volumes' array, others return 'data' array
+                const resources = type === 'volumes' ? (result.volumes || []) : (result.data || []);
+
+                // Filter to unmanaged only with exclusions
+                this.bulkImportModal.unmanaged = resources.filter(r => {
+                    if (type === 'containers') {
+                        // Exclude managed containers and the DockerMate platform container
+                        return r.managed === false && r.name !== 'dockermate';
+                    } else if (type === 'networks') {
+                        // Exclude managed networks, default Docker networks, and platform networks
+                        const defaultNetworks = ['bridge', 'host', 'none'];
+                        const isPlatformNetwork = r.name.startsWith('dockermate');
+                        return r.managed === false && !defaultNetworks.includes(r.name) && !isPlatformNetwork;
+                    } else if (type === 'volumes') {
+                        // Only show unmanaged volumes
+                        return r.managed === false;
+                    }
+                    return false;
+                });
+            } catch (error) {
+                console.error('Failed to load unmanaged resources:', error);
+                alert('Failed to load resources: ' + error.message);
+            } finally {
+                this.bulkImportModal.loading = false;
+            }
+        },
+
+        /**
+         * Toggle select all resources
+         */
+        toggleSelectAll(checked) {
+            if (checked) {
+                this.bulkImportModal.selected = this.bulkImportModal.unmanaged.map(r =>
+                    this.getResourceId(r)
+                );
+            } else {
+                this.bulkImportModal.selected = [];
+            }
+        },
+
+        /**
+         * Execute bulk import of selected resources
+         */
+        async executeBulkImport() {
+            this.bulkImportModal.loading = true;
+            this.bulkImportModal.results = [];
+
+            const type = this.bulkImportModal.resourceType;
+            const endpoint = type === 'containers' ? 'import' : 'adopt';
+
+            for (const id of this.bulkImportModal.selected) {
+                const resource = this.bulkImportModal.unmanaged.find(r =>
+                    this.getResourceId(r) === id
+                );
+
+                try {
+                    const url = type === 'volumes'
+                        ? `/api/${type}/${encodeURIComponent(id)}/${endpoint}`
+                        : `/api/${type}/${id}/${endpoint}`;
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: getCSRFHeaders()
+                    });
+
+                    const result = await response.json();
+
+                    this.bulkImportModal.results.push({
+                        id: id,
+                        name: this.getResourceName(resource),
+                        success: response.ok,
+                        message: response.ok ? 'Successfully imported' : (result.error || result.message || 'Import failed')
+                    });
+                } catch (error) {
+                    this.bulkImportModal.results.push({
+                        id: id,
+                        name: this.getResourceName(resource),
+                        success: false,
+                        message: error.message || 'Import failed'
+                    });
+                }
+            }
+
+            this.bulkImportModal.loading = false;
+            this.bulkImportModal.completed = true;
+        },
+
+        /**
+         * Get resource ID based on type
+         */
+        getResourceId(resource) {
+            const type = this.bulkImportModal.resourceType;
+            if (type === 'containers') return resource.container_id;
+            if (type === 'networks') return resource.network_id;
+            if (type === 'volumes') return resource.name;
+            return resource.id;
+        },
+
+        /**
+         * Get resource name for display
+         */
+        getResourceName(resource) {
+            return resource.name || resource.container_name || resource.id;
+        },
+
+        /**
+         * Get resource details for display
+         */
+        getResourceDetails(resource) {
+            const type = this.bulkImportModal.resourceType;
+            if (type === 'containers') return `Image: ${resource.image_name || 'Unknown'}`;
+            if (type === 'networks') return `Driver: ${resource.driver || 'Unknown'}`;
+            if (type === 'volumes') return `Driver: ${resource.driver || 'local'}`;
+            return '';
         }
     };
 }
