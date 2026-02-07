@@ -138,26 +138,32 @@ def create_ssl_context():
 def force_https():
     """
     Redirect HTTP to HTTPS
-    
+
     This ensures all traffic is encrypted. For home labs, even self-signed
     HTTPS is better than plain HTTP.
-    
+
     Exceptions:
     - Testing mode (app.config['TESTING'])
+    - First-time setup (before setup_complete file exists)
     - Let's Encrypt validation paths (/.well-known/acme-challenge/)
     - Requests already using HTTPS
     """
     # Skip HTTPS redirect in testing mode
     if app.config.get('TESTING'):
         return
-    
+
     if request.is_secure:
         return
-    
+
+    # Allow HTTP during first-time setup
+    setup_complete = os.path.exists(os.path.join(Config.DATA_DIR, 'setup_complete'))
+    if not setup_complete:
+        return
+
     # Allow Let's Encrypt validation
     if request.path.startswith('/.well-known/acme-challenge/'):
         return
-    
+
     # Redirect to HTTPS
     url = request.url.replace('http://', 'https://', 1)
     return redirect(url, code=301)
