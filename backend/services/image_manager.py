@@ -515,6 +515,16 @@ class ImageManager:
         self.db.commit()
         self.db.refresh(image_record)
 
+        # Clean up invalid previous_tags (image IDs stored as tags)
+        if image_record.previous_tag:
+            tag = image_record.previous_tag
+            # Check if previous_tag looks like an image ID (SHA256 hash)
+            if tag.startswith('sha256:') or (len(tag) >= 12 and all(c in '0123456789abcdef' for c in tag[:12])):
+                logger.info(f"Clearing invalid previous_tag (image ID) for {image_record.image_id[:12]}: {tag[:12]}...")
+                image_record.previous_tag = None
+                self.db.commit()
+                self.db.refresh(image_record)
+
         # Infer previous_tag for already-dangling images by checking Docker container usage
         if (image_record.tag == '<none>' and image_record.previous_tag is None):
             self._infer_previous_tag_from_docker_containers(image_record)
@@ -567,6 +577,21 @@ class ImageManager:
                     try:
                         # Split on last colon to handle registry URLs like "registry.io/nginx:1.28"
                         repository, tag = image_name.rsplit(':', 1)
+
+                        # Validate tag is not an image ID (SHA256 hash)
+                        # Skip if tag looks like sha256 hash (64 hex chars or starts with sha256:)
+                        if tag.startswith('sha256:') or (len(tag) >= 12 and all(c in '0123456789abcdef' for c in tag[:12])):
+                            logger.debug(
+                                f"Skipping image ID as previous_tag for container {container.name}: {tag[:12]}..."
+                            )
+                            continue
+
+                        # Skip if repository is also <none> (fully untagged image)
+                        if repository == '<none>' or repository == '':
+                            logger.debug(
+                                f"Skipping <none> repository for container {container.name}"
+                            )
+                            continue
 
                         # Save the inferred tag
                         image_record.previous_tag = tag
