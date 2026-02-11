@@ -1,8 +1,8 @@
 # DockerMate - Issues Tracker
 
-**Version:** v1.0.0-rc1
-**Last Updated:** February 7, 2026
-**Status:** RC1 deployed and testing - 1 known deployment issue (manual restart required)
+**Version:** v1.0.0-RC2
+**Last Updated:** February 11, 2026
+**Status:** RC2 deployed and testing - 3 HIGH priority bugs fixed, 2 deployment issues with workarounds remain
 
 This document consolidates all known issues, UI fixes, and feature tracking for DockerMate. Issues are categorized by priority and type, with comprehensive resolution tracking.
 
@@ -45,27 +45,171 @@ The `if __name__ == '__main__'` block in `app.py` checks for `setup_complete` on
 
 ---
 
+### DEPLOY-002: Health Checks Too Aggressive for Raspberry Pi with USB Storage
+**Status:** KNOWN ISSUE (RC1)
+**Priority:** MEDIUM
+**Affects:** Raspberry Pi deployments with external storage (USB/SD card)
+**Discovered:** February 11, 2026 (week-long Pi deployment test)
+
+**Issue:**
+After running for a week on Raspberry Pi with data stored on external USB storage (`/srv/sda1/Appdata/DockerMate/`), the container is marked as "unhealthy" even though the web interface works perfectly.
+
+**Root Cause:**
+The default health check settings are too aggressive for Raspberry Pi's slower hardware + USB I/O:
+- Timeout: 10s (too short for USB storage database queries)
+- Interval: 30s (checks too frequently)
+- Start period: 40s (Pi needs more warmup time)
+
+The `/api/health` endpoint performs extensive checks (database, docker daemon, all containers, all images, all networks, all volumes) which can take >10s on Pi with slow USB storage, causing the health check to timeout.
+
+**Symptoms:**
+- Container marked as "unhealthy" in `docker ps`
+- Web interface works normally (https accessible)
+- No errors in logs
+- App functions correctly despite unhealthy status
+
+**Workaround - Adjusted Health Check Settings for Pi:**
+```bash
+docker run -d --name dockermate \
+  --restart unless-stopped \
+  --group-add $(getent group docker | cut -d: -f3) \
+  -p 5000:5000 \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /path/to/data:/app/data \
+  -v /path/to/stacks:/app/stacks \
+  -v /path/to/exports:/app/exports \
+  -e DOCKERMATE_SSL_MODE=self-signed \
+  --health-cmd="curl -fk https://localhost:5000/api/health || exit 1" \
+  --health-interval=90s \
+  --health-timeout=30s \
+  --health-retries=5 \
+  --health-start-period=180s \
+  dockermate:latest
+```
+
+**Changes for Pi:**
+- `--health-interval=90s` (was 30s) - Check less frequently
+- `--health-timeout=30s` (was 10s) - Allow more time for slow USB I/O
+- `--health-retries=5` (was 3) - More tolerant of occasional slowness
+- `--health-start-period=180s` (was 40s) - Give Pi more startup time
+
+**Alternative - Disable Health Checks:**
+Add `--no-healthcheck` to docker run command if health monitoring not needed.
+
+**Potential Fixes (v1.0.1):**
+1. Add lightweight `/api/ping` endpoint that doesn't do heavy checks
+2. Auto-detect Pi hardware and adjust health check timeouts
+3. Make health check timeout configurable via environment variable
+4. Document Pi-specific deployment settings in README
+
+**Decision:** Document as known issue for RC1. Add Pi deployment guide with recommended settings.
+
+---
+
+### STACK-001: Docker Compose `command` Field Not Supported
+**Status:** ✅ FIXED (RC2)
+**Priority:** HIGH
+**Affects:** Stack deployments using docker-compose YAML with custom commands
+**Discovered:** February 11, 2026 (Raspberry Pi deployment testing)
+**Fixed:** February 11, 2026 (v1.0.0-RC2)
+
+**Issue:**
+When deploying stacks from docker-compose YAML that include a `command:` field, the command is ignored and containers crash immediately with no logs.
+
+**Example YAML (fails):**
+```yaml
+version: '3.8'
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token xxxxxxxxxxxxxxxxxxxx
+```
+
+**Root Cause:**
+The stack deployment code in `backend/services/stack_manager.py` (`_create_services` method, lines 482-624) parses the following fields:
+- ✅ image
+- ✅ ports
+- ✅ environment
+- ✅ volumes
+- ✅ networks
+- ✅ restart
+- ❌ **command** (NOT IMPLEMENTED)
+
+When `command:` is specified in the YAML, it's silently ignored. The container is created with the default CMD from the Docker image, not the overridden command. For images like cloudflare/cloudflared that require specific commands, this causes immediate exit.
+
+**Symptoms:**
+- Stack creates successfully (no errors)
+- Container starts then immediately exits/crashes
+- No logs visible (container exits before logging anything)
+- `docker ps -a` shows exited container with exit code 0 or 1
+
+**Workaround:**
+None currently. Must deploy such containers manually via Containers page where `command` CAN be specified.
+
+**Fix Required:**
+Add support for `command` field in `stack_manager.py`:
+
+```python
+# Add after line 562 (environment handling):
+# Command override
+if 'command' in service_config:
+    command = service_config['command']
+    # Handle both string and list formats
+    if isinstance(command, str):
+        container_config['command'] = command
+    elif isinstance(command, list):
+        container_config['command'] = command
+```
+
+**Also Missing (discovered during review):**
+Other common docker-compose fields not yet supported:
+- `entrypoint:` - Override container entrypoint
+- `working_dir:` - Set working directory
+- `user:` - Run as specific user
+- `hostname:` - Set container hostname
+- `cap_add:` / `cap_drop:` - Linux capabilities
+- `privileged:` - Privileged mode
+- `devices:` - Device mappings
+- `healthcheck:` - Health check configuration
+- `depends_on:` - Service dependencies (basic ordering exists, but not condition-based)
+
+**Priority:** HIGH - breaks common use cases (tunnels, proxies, init containers)
+
+**Resolution (RC2):**
+Fixed in `backend/services/stack_manager.py` (lines 563-582):
+- Added parsing for `command` field (supports both string and list formats)
+- Added parsing for `entrypoint` field (supports both string and list formats)
+- Both fields now passed correctly to Docker SDK during stack deployment
+- Tested with cloudflare tunnel and alpine containers successfully
+
+**Files Modified:**
+- `backend/services/stack_manager.py`
+
+---
+
 ## Summary Statistics
 
 | Category | Critical | High | Medium | Low | Total |
 |----------|----------|------|--------|-----|-------|
-| **Deployment/RC1** | **0** | **0** | **1** | **0** | **1** |
+| **Deployment/RC2** | **0** | **0** | **2** | **0** | **2** |
+| **Stack/Compose** | **0** | **0** | **0** | **0** | **0** ✅ |
 | Authentication/Security | 0 | 0 | 1 | 0 | 1 |
-| Frontend Issues | 0 | 0 | 1 | 1 | 2 |
+| Frontend Issues | 0 | 0 | 0 | 1 | 1 ✅ |
 | Backend API | 0 | 0 | 1 | 1 | 2 |
 | Database/Models | 0 | 0 | 0 | 1 | 1 |
 | Code Quality | 0 | 0 | 2 | 1 | 3 |
-| Error Handling | 0 | 0 | 2 | 1 | 3 |
+| Error Handling | 0 | 0 | 1 | 1 | 2 ✅ |
 | Documentation | 0 | 0 | 1 | 3 | 4 |
 | Performance | 0 | 0 | 0 | 3 | 3 |
 | Testing | 0 | 0 | 2 | 1 | 3 |
 | UI Issues | 0 | 0 | 1 | 0 | 1 |
 | **TOTAL OPEN** | **0** | **0** | **11** | **12** | **23** |
 
-**Total Resolved:** 39 issues (Sprint 1-5) - 11 additional fixes discovered in audit
+**Total Resolved:** 42 issues (Sprint 1-5 + RC2 fixes)
+**RC2 Fixes:** STACK-001 (stack command/entrypoint), UI-011 (modal FOUC), ERROR-004 (error messages)
 **Design Decisions (Not Issues):** 2 items
-**RC1 Known Issues:** 1 (manual restart after setup)
-**Status:** RC1 ready for deployment. 1 known deployment issue (workaround documented). No blockers for release.
+**RC2 Known Issues:** 2 deployment issues (manual restart after setup, Pi health checks - workarounds available)
+**Status:** RC2 deployed and testing. All HIGH priority bugs fixed. 2 MEDIUM deployment issues have documented workarounds.
 
 ---
 
@@ -310,9 +454,10 @@ Button `x-show` conditions used `!network.name.toLowerCase().includes('dockermat
 ## Open Issues - Medium Priority (11 remaining)
 
 ### UI-011: Modal Flash on Page Load (FOUC)
-**Status:** OPEN
+**Status:** ✅ FIXED (RC2)
 **Priority:** MEDIUM
 **Location:** All pages with modals (containers.html, images.html, etc.)
+**Fixed:** February 11, 2026 (v1.0.0-RC2)
 
 **Issue:**
 When navigating to pages, modals briefly flash visible before Alpine.js initializes and hides them. This creates a Flash of Unstyled Content (FOUC) where users see the create/edit modal for a split second before it disappears.
@@ -336,7 +481,15 @@ When navigating to pages, modals briefly flash visible before Alpine.js initiali
 
 **Impact:** LOW - Cosmetic issue, doesn't affect functionality
 
-**Workaround:** None needed - modals function correctly after flash
+**Resolution (RC2):**
+Fixed by adding `x-cloak` attributes and CSS rule:
+1. Added CSS rule in `frontend/templates/base.html`: `[x-cloak] { display: none !important; }`
+2. Added `x-cloak` attributes to all modal containers in:
+   - `frontend/templates/networks.html`
+   - Other templates already had partial x-cloak coverage
+3. Alpine.js automatically removes x-cloak after initialization
+
+**Result:** Modal flash eliminated across all pages
 
 ---
 
@@ -687,12 +840,21 @@ No validation that parsed durations are positive (non-critical edge case).
 ---
 
 ### ERROR-004: Docker Error Messages Not Exposed
-**Status:** OPEN
-**Priority:** LOW
+**Status:** ✅ FIXED (RC2)
+**Priority:** MEDIUM (upgraded from LOW - impacts debugging)
 **Location:** `backend/api/containers.py` (multiple)
+**Fixed:** February 11, 2026 (v1.0.0-RC2)
 
 **Issue:**
-Docker SDK errors wrapped with generic messages, losing original error details.
+Docker SDK errors wrapped with generic messages like "An unexpected error occurred", losing original error details that would help users understand what went wrong.
+
+**Resolution (RC2):**
+Updated all 17 error handlers in `backend/api/containers.py`:
+- Replaced generic messages with actual error details: `f"Unexpected error: {str(e)}"`
+- Added `"details"` field to error responses for additional context
+- Errors now show specific issues like "Name must contain only alphanumeric characters" instead of generic failures
+
+**Impact:** Users can now debug issues by seeing actual Docker/Python error messages.
 
 ---
 

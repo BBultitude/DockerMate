@@ -414,6 +414,7 @@ def create_container():
             container = manager.create_container(
                 name=data['name'],
                 image=data['image'],
+                command=data.get('command'),  # FEAT-021: Optional command override
                 environment=data.get('environment'),
                 ports=data.get('ports'),
                 volumes=data.get('volumes'),
@@ -462,8 +463,9 @@ def create_container():
         logger.exception(f"Unexpected error creating container: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
-            "error_type": "ServerError"
+            "error": f"Unexpected error: {str(e)}",
+            "error_type": "ServerError",
+            "details": str(e)
         }), 500
 
 
@@ -593,7 +595,7 @@ def list_containers():
         logger.exception(f"Unexpected error listing containers: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -687,7 +689,7 @@ def get_container(container_id: str):
         logger.exception(f"Unexpected error getting container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -779,7 +781,7 @@ def get_container_health(name_or_id: str):
         logger.exception(f"Unexpected error during health check: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -910,7 +912,7 @@ def update_container(container_id: str):
         logger.exception(f"Unexpected error updating container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1015,7 +1017,7 @@ def delete_container(container_id: str):
         logger.exception(f"Unexpected error deleting container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1112,7 +1114,7 @@ def start_container(container_id: str):
         logger.exception(f"Unexpected error starting container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1221,7 +1223,7 @@ def stop_container(container_id: str):
         logger.exception(f"Unexpected error stopping container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1330,7 +1332,7 @@ def restart_container(container_id: str):
         logger.exception(f"Unexpected error restarting container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1478,7 +1480,7 @@ def get_container_logs(container_id: str):
         logger.exception(f"Unexpected error fetching logs for {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1557,7 +1559,7 @@ def update_container_image(container_id: str):
         logger.exception(f"Unexpected error updating container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1633,7 +1635,7 @@ def rollback_container(container_id: str):
         logger.exception(f"Unexpected error rolling back container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1721,7 +1723,7 @@ def retag_container(container_id: str):
         logger.exception(f"Unexpected error retagging container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1845,7 +1847,7 @@ def recreate_container(container_id: str):
         logger.exception(f"Unexpected error recreating container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1934,7 +1936,7 @@ def update_all_containers():
         logger.exception("Unexpected error in bulk update")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -1990,7 +1992,7 @@ def get_container_history(container_id: str):
         logger.exception(f"Error fetching history for container {container_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500
 
@@ -2119,6 +2121,6 @@ def import_container(container_id: str):
         logger.exception(f"Unexpected error importing container {container_id}: {e}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": f"Unexpected error: {str(e)}",
             "error_type": "ServerError"
         }), 500

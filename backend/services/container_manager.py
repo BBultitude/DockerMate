@@ -153,6 +153,7 @@ class ContainerManager:
         self,
         name: str,
         image: str,
+        command: Optional[str] = None,  # FEAT-021: Optional command override
         environment: Optional[str] = None,
         ports: Optional[Dict[str, int]] = None,
         volumes: Optional[Dict[str, Dict[str, str]]] = None,
@@ -182,6 +183,7 @@ class ContainerManager:
         Args:
             name: Container name (must be unique)
             image: Docker image (e.g., 'nginx:latest')
+            command: Override container CMD (e.g., 'sh -c "while true; do echo hello; sleep 10; done"')
             environment: Environment tag (e.g., 'dev', 'prod')
             ports: Port mappings {container_port: host_port}
             volumes: Volume mounts {host_path: {'bind': container_path, 'mode': 'rw'}}
@@ -268,7 +270,11 @@ class ContainerManager:
             'labels': docker_labels,
             'environment': env_vars or {},
         }
-        
+
+        # FEAT-021: Add command override if specified
+        if command:
+            container_config['command'] = command
+
         # Add port mappings (format: {'80/tcp': 8080})
         if ports:
             container_config['ports'] = ports
@@ -590,6 +596,9 @@ class ContainerManager:
         # TASK 7 FIX: Extract environment variables from Docker
         env_vars_list = config.get('Env', [])
 
+        # FEAT-021: Extract command from Docker
+        command = config.get('Cmd')  # Can be None, string, or list
+
         # Extract resource limits from Docker
         host_config = attrs.get('HostConfig', {})
         nano_cpus = host_config.get('NanoCpus', 0)
@@ -677,7 +686,8 @@ class ContainerManager:
         result['ports'] = ports_list
         result['volumes'] = volumes_list
         result['env_vars'] = env_vars_list
-        
+        result['command'] = command  # FEAT-021: Include command in response
+
         return result
     
     # =========================================================================

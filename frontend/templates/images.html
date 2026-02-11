@@ -160,7 +160,7 @@
 
     <!-- Pull Image Modal -->
     <div x-show="showPullModal"
-         x-cloak
+             x-cloak
          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
          @click.self="showPullModal = false">
         <div class="bg-slate-800 rounded-lg border border-slate-700 p-6 max-w-md w-full mx-4">
@@ -171,9 +171,12 @@
                     <label class="block text-sm text-slate-400 mb-2">Repository</label>
                     <input type="text"
                            x-model="pullForm.repository"
-                           placeholder="e.g., nginx, mysql, redis"
+                           placeholder="e.g., nginx, ghcr.io/user/image, quay.io/repo/image"
                            required
                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
+                    <p class="text-xs text-slate-500 mt-1">
+                        💡 Supports Docker Hub, GHCR, Quay, and any registry. Use full path for non-Docker Hub registries.
+                    </p>
                 </div>
 
                 <div class="mb-4">

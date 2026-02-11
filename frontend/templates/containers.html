@@ -459,7 +459,18 @@
                         </template>
                     </div>
                 </div>
-                
+
+                <!-- Command (FEAT-021) -->
+                <div x-show="detailsModal.container?.command">
+                    <label class="text-slate-400 text-sm">Command Override</label>
+                    <div class="mt-1 bg-slate-900 rounded p-3">
+                        <div class="text-white font-mono text-sm" x-text="Array.isArray(detailsModal.container?.command) ? detailsModal.container.command.join(' ') : detailsModal.container?.command"></div>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1">
+                        Overrides the image's default CMD
+                    </p>
+                </div>
+
                 <!-- Volumes -->
                 <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
                     <label class="text-slate-400 text-sm">Volume Mounts</label>
@@ -645,10 +656,26 @@
                                    placeholder="nginx:latest"
                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                    :class="{'border-red-500': createModal.errors.image}">
-                            <p class="text-xs text-slate-500 mt-1">Docker image with optional tag (e.g., nginx:alpine)</p>
+                            <p class="text-xs text-slate-500 mt-1">Docker image with optional tag (e.g., nginx:latest)</p>
                             <p x-show="createModal.errors.image" class="text-xs text-red-400 mt-1" x-text="createModal.errors.image"></p>
                         </div>
-                        
+
+                        <!-- Command (Optional) -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                                Command <span class="text-slate-500">(optional)</span>
+                            </label>
+                            <input type="text"
+                                   x-model="createModal.formData.command"
+                                   placeholder="Leave blank for image default, or: tunnel run --token xxx"
+                                   class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm">
+                            <p class="text-xs text-slate-500 mt-1">
+                                Override the image's default CMD. Examples:
+                                <code class="text-blue-400">sh -c "while true; do echo hello; sleep 10; done"</code> or
+                                <code class="text-blue-400">nginx -g "daemon off;"</code>
+                            </p>
+                        </div>
+
                         <!-- Environment Tag -->
                         <div>
                             <label class="block text-sm font-medium text-slate-300 mb-1">
@@ -1407,6 +1434,7 @@ function containersComponent() {
             formData: {
                 name: '',
                 image: '',
+                command: '',  // FEAT-021: Optional command override
                 environment: 'DEV',
                 ports: [],
                 volumes: [],
@@ -2203,6 +2231,11 @@ function containersComponent() {
                     auto_start: this.createModal.formData.auto_start,
                     pull_if_missing: this.createModal.formData.pull_if_missing
                 };
+
+                // FEAT-021: Add command override if specified
+                if (this.createModal.formData.command && this.createModal.formData.command.trim()) {
+                    requestData.command = this.createModal.formData.command.trim();
+                }
 
                 // Network selection
                 if (this.createModal.formData.network) {

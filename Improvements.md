@@ -473,6 +473,130 @@ Persistent bulk import feature in Settings page to adopt existing Docker resourc
 
 ---
 
+### FEAT-021: Add Command Field to Container Creation UI
+**Priority:** Medium
+**Effort:** 2-3 hours
+**Sprint:** RC2
+**Status:** ✅ COMPLETE — Implemented in v1.0.0-RC2
+**Discovered:** February 11, 2026
+**Completed:** February 11, 2026
+
+**Description:**
+The Container creation UI currently allows configuring image, ports, volumes, environment variables, networks, and restart policies, but does NOT allow specifying a custom `command` to override the image's default CMD. This is a common requirement for many Docker images that expect command-line arguments.
+
+**Use Cases:**
+- Running cloudflare/cloudflared tunnel with token: `tunnel --no-autoupdate run --token XXX`
+- Running nginx with custom config: `nginx -g 'daemon off;' -c /etc/nginx/custom.conf`
+- Running alpine with shell: `sh -c "while true; do echo hello; sleep 10; done"`
+- Running node apps with arguments: `node server.js --port 3000`
+
+**Current Workaround:**
+Users must either:
+1. Use the Stacks page with docker-compose YAML (but STACK-001 bug prevents this from working)
+2. Create container via CLI then import it as external
+
+**Implementation:**
+Add a "Command (optional)" field to the container creation modal:
+
+1. **UI Change (containers.html):**
+   - Add text input field after "Image" field
+   - Label: "Command (optional)"
+   - Placeholder: "Leave blank to use image default, or override: /bin/sh -c 'command'"
+   - Help text: "Override the image's default CMD. Enter as space-separated arguments or a single string."
+
+2. **Backend Change (containers.py create endpoint):**
+   - Accept `command` field in request body (string or array)
+   - Pass to ContainerManager.create_container()
+
+3. **ContainerManager Change (container_manager.py):**
+   - Accept `command` parameter in create_container()
+   - Pass to Docker SDK: `container = client.containers.create(image=image, command=command, ...)`
+
+**Docker SDK Support:**
+The Docker SDK already supports this via the `command` parameter:
+```python
+container = client.containers.create(
+    image='nginx',
+    command='nginx -g "daemon off;"',  # String format
+    # OR
+    command=['nginx', '-g', 'daemon off;'],  # List format
+    ...
+)
+```
+
+**Educational Value:**
+Show the Docker CLI equivalent with command override:
+```bash
+docker run -d nginx nginx -g 'daemon off;'
+#             ^^^^^ ^^^^^^^^^^^^^^^^^^^^
+#             image      command
+```
+
+**Priority Justification:**
+- Medium priority because workaround exists (use CLI then import)
+- But HIGH visibility issue since many common images require command override
+- Should be fixed before v1.0.0 release for feature completeness
+
+**Related Issues:**
+- STACK-001: Stack command field bug (HIGH priority - blocks stack deployments) — Also FIXED in RC2
+- This feature request is for the Containers UI, not Stacks
+
+**Implementation (RC2):**
+
+**Part 1: Command Creation Field**
+- `frontend/templates/containers.html` (lines 652-667): Added "Command (optional)" input field in create modal
+- `frontend/templates/containers.html` (line 1426): Added command to formData initialization
+- `frontend/templates/containers.html` (lines 2223-2226): Added command to API request payload
+- `backend/api/containers.py` (line 417): Added command parameter to create endpoint
+- `backend/services/container_manager.py` (line 155): Updated create_container signature
+- `backend/services/container_manager.py` (lines 274-276): Added command to Docker SDK container config
+
+**Part 2: Command Display in Details Modal**
+- `backend/services/container_manager.py` (~line 600): Extract command from Docker config
+- `backend/services/container_manager.py` (~line 687): Include command in API response
+- `frontend/templates/containers.html`: Added "Command Override" display section in details modal
+
+**Result:** Users can now create containers with custom commands via UI AND view the command in container details.
+
+---
+
+### FEAT-022: Multi-Registry Support Documentation
+**Priority:** Low
+**Effort:** 15 minutes
+**Sprint:** RC2
+**Status:** ✅ COMPLETE — Implemented in v1.0.0-RC2
+**Completed:** February 11, 2026
+
+**Description:**
+The Pull Image UI only showed Docker Hub examples in the placeholder text, leading users to believe only Docker Hub was supported. The backend already supported all Docker registries via the Docker SDK, but this wasn't clear from the UI.
+
+**Problem:**
+- Placeholder: "e.g., nginx, mysql, redis" (all Docker Hub images)
+- No indication that GHCR, Quay, or private registries were supported
+- Users asked: "Do we need to account for repo choice?"
+
+**Solution (UI Documentation Improvement):**
+- Updated placeholder: "e.g., nginx, ghcr.io/user/image, quay.io/repo/image"
+- Added help text: "💡 Supports Docker Hub, GHCR, Quay, and any registry. Use full path for non-Docker Hub registries."
+
+**Files Modified:**
+- `frontend/templates/images.html` (pull image modal)
+
+**Supported Registries:**
+- Docker Hub: `nginx:latest` (default) or `docker.io/library/nginx:latest`
+- GitHub Container Registry: `ghcr.io/username/image:tag`
+- Quay.io: `quay.io/repository/image:tag`
+- Google GCR: `gcr.io/project/image:tag`
+- Private registries: `registry.example.com/image:tag`
+- Any registry with full path
+
+**Authentication Note:**
+Private registries require `docker login <registry>` on the host. DockerMate uses the host's Docker daemon auth from `~/.docker/config.json`.
+
+**Result:** Users now understand they can pull from any Docker registry by specifying the full repository path.
+
+---
+
 ### FEAT-010: WebSocket Live Updates
 **Priority:** Low
 **Effort:** 6-8 hours

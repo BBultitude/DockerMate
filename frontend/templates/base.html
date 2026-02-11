@@ -41,6 +41,11 @@
     </script>
     
     <style>
+        /* Alpine.js x-cloak - hide elements until Alpine initializes (UI-011 fix) */
+        [x-cloak] {
+            display: none !important;
+        }
+
         /* Dark mode by default for home labs */
         :root {
             --bg-primary: #0f172a;    /* slate-900 */

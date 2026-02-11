@@ -1,15 +1,15 @@
 # DockerMate - Project Status Tracker
 
-**Last Updated:** February 6, 2026
-**Current Version:** v1.0.0-rc1 (Release Candidate 1)
-**Current Phase:** v1.0 Polish Sprint Complete — Ready for Sprint 6
-**Overall Completion:** ~85% (Sprints 1-5 + v1.0 Polish complete)
+**Last Updated:** February 11, 2026
+**Current Version:** v1.0.0-RC2 (Release Candidate 2)
+**Current Phase:** RC2 Testing — Bug fixes and enhancements complete
+**Overall Completion:** ~90% (Sprints 1-5 + v1.0 Polish + RC2 Fixes complete)
 
 ---
 
 ## 📊 Executive Summary
 
-DockerMate has completed **Sprints 1-5** and the **v1.0 Polish Sprint**, achieving Release Candidate 1 status. All core features are functional: authentication, container management, image management with update detection, network management with IPAM, volume management, stack deployment (docker-compose), and health monitoring. The application is production-ready with HTTPS, CSRF protection, rate limiting, and offline deployment support (all CDN dependencies vendored locally).
+DockerMate has completed **Sprints 1-5**, the **v1.0 Polish Sprint**, and **RC2 bug fixes**, achieving Release Candidate 2 status. All core features are functional: authentication, container management with command override support, image management with multi-registry support and update detection, network management with IPAM, volume management, stack deployment with full docker-compose command/entrypoint support, and health monitoring. The application is production-ready with HTTPS, CSRF protection, rate limiting, and offline deployment support (all CDN dependencies vendored locally). RC2 addresses all HIGH priority bugs discovered during Raspberry Pi deployment testing.
 
 **Key Milestones:**
 - ✅ Sprint 1: Foundation & Auth (100% complete)
@@ -40,13 +40,22 @@ v0.5.0 - Beta (Sprint 3-4) ✅ COMPLETE
 ├─ Network management with IPAM ✅
 └─ Beta testing complete
 
-v1.0.0-rc1 - Release Candidate (Sprint 5 + Polish) ✅ CURRENT
+v1.0.0-rc1 - Release Candidate 1 (Sprint 5 + Polish) ✅ COMPLETE
 ├─ Volume management ✅
 ├─ Stack deployment (docker-compose) ✅
 ├─ Health monitoring ✅
 ├─ Offline deployment support ✅
 ├─ All core features complete ✅
 └─ Ready for final polish
+
+v1.0.0-RC2 - Release Candidate 2 (Bug Fixes + Enhancements) ✅ CURRENT
+├─ STACK-001: Stack command/entrypoint support ✅
+├─ FEAT-021: Container command field (creation + display) ✅
+├─ UI-011: Modal FOUC fix ✅
+├─ ERROR-004: Docker error message passthrough ✅
+├─ FEAT-022: Multi-registry support documentation ✅
+├─ Raspberry Pi deployment tested ✅
+└─ Ready for v1.0.0 release
 
 v1.0.0 - Release (Sprint 6-7)
 ├─ Export system (JSON, Compose, CLI)

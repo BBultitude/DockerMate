@@ -561,6 +561,23 @@ class StackManager:
             if environment:
                 container_config['environment'] = environment
 
+            # Command override (e.g., cloudflare tunnel commands)
+            if 'command' in service_config:
+                command = service_config['command']
+                # Docker SDK accepts both string and list formats
+                if isinstance(command, str):
+                    container_config['command'] = command
+                elif isinstance(command, list):
+                    container_config['command'] = command
+
+            # Entrypoint override (less common but supported)
+            if 'entrypoint' in service_config:
+                entrypoint = service_config['entrypoint']
+                if isinstance(entrypoint, str):
+                    container_config['entrypoint'] = entrypoint
+                elif isinstance(entrypoint, list):
+                    container_config['entrypoint'] = entrypoint
+
             # Volumes
             if 'volumes' in service_config:
                 volumes = {}
