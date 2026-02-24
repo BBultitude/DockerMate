@@ -178,6 +178,7 @@ temp/
 # AI Agent Instructions (Claude Code)
 # ============================================
 INSTRUCTIONS.md
+Operator_INFO.md
 
 # ============================================
 # Verification Scripts Output
