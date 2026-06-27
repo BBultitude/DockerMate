@@ -22,7 +22,7 @@ Design:
 import yaml
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from backend.models.stack import Stack
 from backend.utils.docker_client import get_docker_client
@@ -36,6 +36,8 @@ from docker.errors import APIError, NotFound
 import logging
 
 logger = logging.getLogger(__name__)
+
+_DOCKERMATE_STACK_LABEL = 'com.dockermate.stack'
 
 
 class StackManager:
@@ -402,7 +404,7 @@ class StackManager:
             stack.network_names_json = json.dumps(created_networks)
             stack.volume_names_json = json.dumps(created_volumes)
             stack.status = 'running'
-            stack.deployed_at = datetime.utcnow()
+            stack.deployed_at = datetime.now(timezone.utc)
             self.db.commit()
 
             # Sync stack resources to their respective database tables (Sprint 5+ - Auto-import)
@@ -442,10 +444,10 @@ class StackManager:
             except NotFound:
                 # Create network
                 driver = network_config.get('driver', 'bridge') if isinstance(network_config, dict) else 'bridge'
-                network = self.client.networks.create(
+                self.client.networks.create(
                     name=full_name,
                     driver=driver,
-                    labels={'com.dockermate.stack': stack_name}
+                    labels={_DOCKERMATE_STACK_LABEL: stack_name}
                 )
                 logger.info(f"Created network '{full_name}'")
 
@@ -468,10 +470,10 @@ class StackManager:
             except NotFound:
                 # Create volume
                 driver = volume_config.get('driver', 'local') if isinstance(volume_config, dict) else 'local'
-                volume = self.client.volumes.create(
+                self.client.volumes.create(
                     name=full_name,
                     driver=driver,
-                    labels={'com.dockermate.stack': stack_name}
+                    labels={_DOCKERMATE_STACK_LABEL: stack_name}
                 )
                 logger.info(f"Created volume '{full_name}'")
 
@@ -479,18 +481,106 @@ class StackManager:
 
         return created
 
+    def _ensure_image_available(self, image: str) -> None:
+        """Pull image if not present locally."""
+        try:
+            self.client.images.get(image)
+        except NotFound:
+            logger.info(f"Pulling image '{image}'...")
+            self.client.images.pull(image)
+
+    def _parse_compose_ports(self, port_specs: list) -> dict:
+        """Convert compose ports list to Docker port bindings dict."""
+        ports = {}
+        for port_spec in port_specs:
+            if isinstance(port_spec, str):
+                parts = port_spec.split(':')
+                if len(parts) == 2:
+                    ports[parts[1]] = parts[0]
+            elif isinstance(port_spec, int):
+                ports[str(port_spec)] = str(port_spec)
+        return ports
+
+    def _parse_compose_environment(self, service_config: dict, env_vars: dict) -> dict:
+        """Normalize compose environment (list or dict) and merge stack overrides."""
+        environment = service_config.get('environment', {})
+        if isinstance(environment, list):
+            environment = {
+                k: v for item in environment if '=' in item
+                for k, v in [item.split('=', 1)]
+            }
+        environment.update(env_vars)
+        return environment
+
+    def _parse_compose_volumes(self, volume_specs: list, sanitized_stack_name: str) -> dict:
+        """Convert compose volume specs to Docker volumes dict."""
+        volumes = {}
+        for volume_spec in volume_specs:
+            if ':' not in volume_spec:
+                continue
+            parts = volume_spec.split(':')
+            source, target = parts[0], parts[1]
+            mode = parts[2] if len(parts) > 2 else 'rw'
+            is_bind_mount = source.startswith('/') or source.startswith('.') or source.startswith('~')
+            if is_bind_mount:
+                if source.startswith('.'):
+                    logger.warning(f"Relative volume path '{source}' not supported - skipping.")
+                    continue
+                volumes[source] = {'bind': target, 'mode': mode}
+            else:
+                volumes[f"{sanitized_stack_name}_{source}"] = {'bind': target, 'mode': mode}
+        return volumes
+
+    def _build_service_container_config(self, service_name: str, service_config: dict,
+                                        env_vars: dict, stack_name: str,
+                                        container_name: str, sanitized_stack_name: str) -> dict:
+        """Build the container.create() config dict for a single compose service."""
+        image = service_config['image']
+        container_config: dict = {
+            'name': container_name,
+            'image': image,
+            'detach': True,
+            'labels': {
+                _DOCKERMATE_STACK_LABEL: stack_name,
+                'com.dockermate.service': service_name,
+                'com.dockermate.managed': 'true',
+            },
+        }
+        if 'ports' in service_config:
+            ports = self._parse_compose_ports(service_config['ports'])
+            if ports:
+                container_config['ports'] = ports
+        environment = self._parse_compose_environment(service_config, env_vars)
+        if environment:
+            container_config['environment'] = environment
+        if 'command' in service_config and isinstance(service_config['command'], (str, list)):
+            container_config['command'] = service_config['command']
+        if 'entrypoint' in service_config and isinstance(service_config['entrypoint'], (str, list)):
+            container_config['entrypoint'] = service_config['entrypoint']
+        if 'volumes' in service_config:
+            volumes = self._parse_compose_volumes(service_config['volumes'], sanitized_stack_name)
+            if volumes:
+                container_config['volumes'] = volumes
+        restart_policy = service_config.get('restart', 'no')
+        if restart_policy != 'no':
+            container_config['restart_policy'] = {'Name': restart_policy}
+        return container_config
+
+    def _connect_and_start_service(self, container, networks: list, container_name: str) -> None:
+        """Connect a container to networks then start it."""
+        for network_name in (networks or []):
+            try:
+                self.client.networks.get(network_name).connect(container)
+            except Exception as e:
+                logger.warning(f"Failed to connect to network '{network_name}': {e}")
+        container.start()
+        logger.info(f"Started container '{container_name}'")
+
     def _create_services(self, stack_name: str, services_spec: dict, env_vars: dict, networks: list) -> list:
         """
-        Create containers for all services defined in compose file
+        Create containers for all services defined in compose file.
 
-        This is simplified and supports common docker-compose features:
-        - image
-        - ports
-        - environment
-        - volumes
-        - networks
-        - restart policy
-        - depends_on (basic ordering, not waiting)
+        Supports: image, ports, environment, volumes, networks, restart, command, entrypoint.
         """
         created_containers = []
         sanitized_stack_name = self._sanitize_name(stack_name)
@@ -498,7 +588,6 @@ class StackManager:
         for service_name, service_config in services_spec.items():
             container_name = f"{sanitized_stack_name}_{service_name}_1"
 
-            # Skip if container already exists
             try:
                 existing = self.client.containers.get(container_name)
                 logger.info(f"Container '{container_name}' already exists")
@@ -507,133 +596,21 @@ class StackManager:
             except NotFound:
                 pass
 
-            # Build container configuration
             image = service_config.get('image')
             if not image:
                 logger.warning(f"Service '{service_name}' has no image, skipping")
                 continue
 
-            # Pull image if not present
-            try:
-                self.client.images.get(image)
-            except NotFound:
-                logger.info(f"Pulling image '{image}'...")
-                self.client.images.pull(image)
+            self._ensure_image_available(image)
+            container_config = self._build_service_container_config(
+                service_name, service_config, env_vars,
+                stack_name, container_name, sanitized_stack_name
+            )
 
-            # Parse configuration
-            container_config = {
-                'name': container_name,
-                'image': image,
-                'detach': True,
-                'labels': {
-                    'com.dockermate.stack': stack_name,
-                    'com.dockermate.service': service_name,
-                    'com.dockermate.managed': 'true'
-                }
-            }
-
-            # Ports
-            if 'ports' in service_config:
-                ports = {}
-                for port_spec in service_config['ports']:
-                    if isinstance(port_spec, str):
-                        parts = port_spec.split(':')
-                        if len(parts) == 2:
-                            host_port, container_port = parts
-                            ports[container_port] = host_port
-                    elif isinstance(port_spec, int):
-                        ports[str(port_spec)] = str(port_spec)
-                if ports:
-                    container_config['ports'] = ports
-
-            # Environment
-            environment = service_config.get('environment', {})
-            if isinstance(environment, list):
-                # Convert list format to dict
-                env_dict = {}
-                for env in environment:
-                    if '=' in env:
-                        key, value = env.split('=', 1)
-                        env_dict[key] = value
-                environment = env_dict
-            # Merge with stack-level overrides
-            environment.update(env_vars)
-            if environment:
-                container_config['environment'] = environment
-
-            # Command override (e.g., cloudflare tunnel commands)
-            if 'command' in service_config:
-                command = service_config['command']
-                # Docker SDK accepts both string and list formats
-                if isinstance(command, str):
-                    container_config['command'] = command
-                elif isinstance(command, list):
-                    container_config['command'] = command
-
-            # Entrypoint override (less common but supported)
-            if 'entrypoint' in service_config:
-                entrypoint = service_config['entrypoint']
-                if isinstance(entrypoint, str):
-                    container_config['entrypoint'] = entrypoint
-                elif isinstance(entrypoint, list):
-                    container_config['entrypoint'] = entrypoint
-
-            # Volumes
-            if 'volumes' in service_config:
-                volumes = {}
-                for volume_spec in service_config['volumes']:
-                    if ':' in volume_spec:
-                        parts = volume_spec.split(':')
-                        source = parts[0]
-                        target = parts[1]
-                        mode = 'rw'
-                        if len(parts) > 2:
-                            mode = parts[2]
-
-                        # Determine if it's a bind mount or named volume
-                        # Bind mounts: start with / or . or ~ (absolute or relative paths)
-                        # Named volumes: anything else (just a name)
-                        is_bind_mount = source.startswith('/') or source.startswith('.') or source.startswith('~')
-
-                        if is_bind_mount:
-                            # Bind mount - use as-is (but convert to absolute if relative)
-                            if source.startswith('.'):
-                                # Relative paths not supported in Docker without context
-                                # Skip this volume with a warning
-                                logger.warning(f"Relative volume path '{source}' not supported - skipping. Use absolute paths or named volumes.")
-                                continue
-                            volumes[source] = {'bind': target, 'mode': mode}
-                        else:
-                            # Named volume - prefix with stack name
-                            prefixed_source = f"{sanitized_stack_name}_{source}"
-                            volumes[prefixed_source] = {'bind': target, 'mode': mode}
-
-                if volumes:
-                    container_config['volumes'] = volumes
-
-            # Restart policy
-            restart_policy = service_config.get('restart', 'no')
-            if restart_policy != 'no':
-                container_config['restart_policy'] = {'Name': restart_policy}
-
-            # Create container
             try:
                 container = self.client.containers.create(**container_config)
-
-                # Connect to networks
-                if networks:
-                    for network_name in networks:
-                        try:
-                            network = self.client.networks.get(network_name)
-                            network.connect(container)
-                        except Exception as e:
-                            logger.warning(f"Failed to connect to network '{network_name}': {e}")
-
-                # Start container
-                container.start()
-                logger.info(f"Started container '{container_name}'")
+                self._connect_and_start_service(container, networks, container_name)
                 created_containers.append(container)
-
             except APIError as e:
                 logger.error(f"Failed to create container '{container_name}': {e}")
                 raise

@@ -169,8 +169,8 @@
                     <div x-show="!bulkImportModal.completed">
                         <!-- Resource Type Selector -->
                         <div class="mb-6">
-                            <label class="block text-sm font-medium mb-2">Resource Type</label>
-                            <select x-model="bulkImportModal.resourceType"
+                            <label for="bulk-resource-type" class="block text-sm font-medium mb-2">Resource Type</label>
+                            <select id="bulk-resource-type" x-model="bulkImportModal.resourceType"
                                     @change="loadUnmanagedResources()"
                                     :disabled="bulkImportModal.loading"
                                     class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2">
@@ -210,8 +210,9 @@
 
                             <div class="space-y-2 max-h-96 overflow-y-auto">
                                 <template x-for="resource in bulkImportModal.unmanaged" :key="getResourceId(resource)">
-                                    <label class="flex items-center p-3 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer">
+                                    <label :for="'bulk-resource-' + getResourceId(resource)" class="flex items-center p-3 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer">
                                         <input type="checkbox"
+                                               :id="'bulk-resource-' + getResourceId(resource)"
                                                :value="getResourceId(resource)"
                                                x-model="bulkImportModal.selected"
                                                class="mr-3">

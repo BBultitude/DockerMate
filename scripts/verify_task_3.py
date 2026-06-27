@@ -265,7 +265,7 @@ def test_crud_operations():
     try:
         from app import create_app, db
         from app.models.container import Container
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         app = create_app('testing')
         
@@ -329,7 +329,7 @@ def verify_model_methods():
     try:
         from app import create_app, db
         from app.models.container import Container
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         
         app = create_app('testing')
         
@@ -350,7 +350,7 @@ def verify_model_methods():
             
             # Test uptime calculation
             print_info("Testing uptime_seconds property...")
-            container.started_at = datetime.utcnow() - timedelta(seconds=300)
+            container.started_at = datetime.now(timezone.utc) - timedelta(seconds=300)
             uptime = container.uptime_seconds
             if not (299 <= uptime <= 301):
                 print_error(f"uptime_seconds should be ~300, got {uptime}")
@@ -362,11 +362,11 @@ def verify_model_methods():
             container.memory_usage = 268435456  # 256 MB
             container.memory_limit = 536870912  # 512 MB
             
-            if container.memory_usage_mb != 256.0:
+            if container.memory_usage_mb != 256:
                 print_error(f"memory_usage_mb should be 256.0, got {container.memory_usage_mb}")
                 return False
             
-            if container.memory_limit_mb != 512.0:
+            if container.memory_limit_mb != 512:
                 print_error(f"memory_limit_mb should be 512.0, got {container.memory_limit_mb}")
                 return False
             

@@ -57,7 +57,7 @@ class TestPasswordHashing:
     
     def test_hash_password_with_special_characters(self):
         """Test hashing password with special characters"""
-        password = "P@ssw0rd!#$%^&*()_+-=[]{}|;:',.<>?/~`"
+        password = "P@ssw0rd!#$%^&*()_+-=[]{}|;:',.<>?/~`"  # NOSONAR
         hashed = PasswordManager.hash_password(password)
         
         assert hashed.startswith('$2b$12$')
@@ -65,7 +65,7 @@ class TestPasswordHashing:
     
     def test_hash_password_unicode(self):
         """Test hashing password with unicode characters"""
-        password = "Pāssw0rd🔒中文"
+        password = "Pāssw0rd🔒中文"  # NOSONAR
         hashed = PasswordManager.hash_password(password)
         
         assert hashed.startswith('$2b$12$')
@@ -122,7 +122,7 @@ class TestPasswordValidation:
     def test_validate_strong_password(self):
         """Test validating a strong password"""
         # Minimum 12 chars with mix of char types
-        strong_password = "MyStr0ngP@ssw0rd!"
+        strong_password = "MyStr0ngP@ssw0rd!"  # NOSONAR
         result = PasswordManager.validate_password_strength(strong_password)
         
         assert result['valid'] is True
@@ -131,7 +131,7 @@ class TestPasswordValidation:
     
     def test_validate_short_password(self):
         """Test validating password that's too short"""
-        short_password = "Short1!"
+        short_password = "Short1!"  # NOSONAR
         result = PasswordManager.validate_password_strength(short_password)
         
         assert result['valid'] is False
@@ -221,7 +221,7 @@ class TestPasswordValidation:
     
     def test_validate_repeated_characters(self):
         """Test detection of repeated characters"""
-        password = "MyPasssssword111!!!"
+        password = "MyPasssssword111!!!"  # NOSONAR
         result = PasswordManager.validate_password_strength(password)
         
         # Should still validate basic requirements

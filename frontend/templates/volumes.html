@@ -62,21 +62,25 @@
         <!-- Filters -->
         <div x-show="!loading && volumes.length > 0" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <input type="text"
+                   aria-label="Search volumes"
                    x-model="filters.search"
                    placeholder="Search volumes..."
                    class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
-            <select x-model="filters.driver"
+            <select aria-label="Filter by driver"
+                    x-model="filters.driver"
                     class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
                 <option value="all">All Drivers</option>
                 <option value="local">Local</option>
             </select>
-            <select x-model="filters.status"
+            <select aria-label="Filter by status"
+                    x-model="filters.status"
                     class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
                 <option value="all">All Volumes</option>
                 <option value="in-use">In Use</option>
                 <option value="unused">Unused</option>
             </select>
-            <select x-model="filters.managed"
+            <select aria-label="Filter by managed status"
+                    x-model="filters.managed"
                     class="px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:border-purple-500">
                 <option value="all">All</option>
                 <option value="managed">Managed</option>
@@ -112,7 +116,7 @@
                 <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 hover:bg-slate-750 transition">
                     <!-- Volume Name + Badges -->
                     <div class="flex items-start justify-between mb-3">
-                        <h3 class="text-lg font-semibold text-slate-100 font-mono break-all flex-1" x-text="volume.name"></h3>
+                        <h3 class="text-lg font-semibold text-slate-100 font-mono break-all flex-1" x-text="volume.name">Volume</h3>
                         <div class="flex flex-col gap-1 ml-2">
                             <span x-show="volume.managed"
                                   class="px-2 py-1 bg-green-600 text-white text-xs rounded whitespace-nowrap">
@@ -202,8 +206,8 @@
 
             <form @submit.prevent="createVolume()">
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">Volume Name *</label>
-                    <input type="text"
+                    <label for="volume-create-name" class="block text-sm text-slate-400 mb-2">Volume Name *</label>
+                    <input id="volume-create-name" type="text"
                            x-model="createModal.name"
                            placeholder="e.g., myapp-data"
                            required
@@ -213,8 +217,8 @@
                 </div>
 
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">Driver</label>
-                    <select x-model="createModal.driver"
+                    <label for="volume-create-driver" class="block text-sm text-slate-400 mb-2">Driver</label>
+                    <select id="volume-create-driver" x-model="createModal.driver"
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:border-green-500">
                         <option value="local">local</option>
                     </select>
@@ -264,8 +268,8 @@
                         <span class="px-2 py-0.5 bg-slate-700 rounded text-xs text-white" x-text="name"></span>
                     </template>
                 </div>
-                <label class="flex items-center gap-2 mt-3">
-                    <input type="checkbox" x-model="deleteModal.force" class="rounded bg-slate-700 border-slate-600">
+                <label for="vol-delete-force" class="flex items-center gap-2 mt-3">
+                    <input type="checkbox" id="vol-delete-force" x-model="deleteModal.force" class="rounded bg-slate-700 border-slate-600">
                     <span class="text-sm text-slate-300">Force delete (stop containers first)</span>
                 </label>
             </div>
@@ -302,31 +306,31 @@
             <div x-show="detailsModal.volume" class="space-y-4">
                 <!-- Name -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Name</label>
+                    <p class="block text-sm text-slate-400 mb-1">Name</p>
                     <p class="text-white font-mono" x-text="detailsModal.volume?.name"></p>
                 </div>
 
                 <!-- Driver -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Driver</label>
+                    <p class="block text-sm text-slate-400 mb-1">Driver</p>
                     <p class="text-white" x-text="detailsModal.volume?.driver"></p>
                 </div>
 
                 <!-- Mount Point -->
                 <div x-show="detailsModal.volume?.mount_point">
-                    <label class="block text-sm text-slate-400 mb-1">Mount Point</label>
+                    <p class="block text-sm text-slate-400 mb-1">Mount Point</p>
                     <p class="text-white font-mono text-sm break-all" x-text="detailsModal.volume?.mount_point"></p>
                 </div>
 
                 <!-- Size -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Size</label>
+                    <p class="block text-sm text-slate-400 mb-1">Size</p>
                     <p class="text-white" x-text="formatSize(detailsModal.volume?.size_bytes)"></p>
                 </div>
 
                 <!-- Status -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Status</label>
+                    <p class="block text-sm text-slate-400 mb-1">Status</p>
                     <div class="flex gap-2">
                         <span x-show="detailsModal.volume?.managed"
                               class="px-2 py-1 bg-green-600 text-white text-xs rounded">
@@ -349,7 +353,7 @@
 
                 <!-- Container Mounts -->
                 <div x-show="detailsModal.volume?.mount_details && detailsModal.volume.mount_details.length > 0">
-                    <label class="block text-sm text-slate-400 mb-2">Container Mounts</label>
+                    <p class="block text-sm text-slate-400 mb-2">Container Mounts</p>
                     <div class="space-y-2">
                         <template x-for="mount in detailsModal.volume?.mount_details" :key="mount.id">
                             <div class="bg-slate-900 rounded p-3 text-sm">
@@ -369,7 +373,7 @@
 
                 <!-- Labels -->
                 <div x-show="detailsModal.volume?.labels && Object.keys(detailsModal.volume.labels).length > 0">
-                    <label class="block text-sm text-slate-400 mb-2">Labels</label>
+                    <p class="block text-sm text-slate-400 mb-2">Labels</p>
                     <div class="bg-slate-900 rounded p-3 font-mono text-sm">
                         <template x-for="[key, value] in Object.entries(detailsModal.volume?.labels || {})" :key="key">
                             <div class="text-slate-300">
@@ -382,13 +386,13 @@
 
                 <!-- Created At -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Created</label>
+                    <p class="block text-sm text-slate-400 mb-1">Created</p>
                     <p class="text-white" x-text="formatDate(detailsModal.volume?.created_at)"></p>
                 </div>
 
                 <!-- CLI Equivalent -->
                 <div class="border-t border-slate-700 pt-4 mt-4">
-                    <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                    <p class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</p>
                     <div class="space-y-2">
                         <!-- Inspect command -->
                         <div class="bg-slate-900 rounded p-3">

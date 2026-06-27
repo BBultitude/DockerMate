@@ -66,7 +66,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import socket
 import struct
 import os
@@ -210,7 +210,7 @@ class CertificateManager:
             try:
                 # Connect to Google DNS to get local IP (doesn't actually send data)
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(('8.8.8.8', 80))
+                s.connect(('8.8.8.8', 80))  # NOSONAR
                 local_ip = s.getsockname()[0]
                 s.close()
             except Exception as e:
@@ -233,7 +233,7 @@ class CertificateManager:
             ])
             
             # Calculate validity period
-            not_valid_before = datetime.utcnow()
+            not_valid_before = datetime.now(timezone.utc)
             not_valid_after = not_valid_before + timedelta(
                 days=CertificateManager.DEFAULT_VALIDITY_DAYS
             )
@@ -308,7 +308,7 @@ class CertificateManager:
             logger.info(f"Private key written to: {key_path}")
             
             # Set secure permissions on private key (owner read/write only)
-            os.chmod(key_path, 0o600)
+            os.chmod(key_path, 0o600)  # NOSONAR: 600 is correct for private keys
             logger.info("Set private key permissions to 600 (owner only)")
             
             result = {
@@ -321,7 +321,7 @@ class CertificateManager:
                 'san_ips': list(added_ips),
             }
 
-            logger.info(f"Certificate generated successfully")
+            logger.info("Certificate generated successfully")
             logger.info(f"  Hostname: {hostname}")
             logger.info(f"  SANs (IPs): {list(added_ips)}")
             logger.info(f"  Expires: {not_valid_after.strftime('%Y-%m-%d')}")
@@ -465,8 +465,8 @@ class CertificateManager:
             with open(dest_cert_path, 'wb') as dst:
                 dst.write(cert_data)
             
-            # Set certificate permissions (644 - readable by all)
-            os.chmod(dest_cert_path, 0o644)
+            # Set certificate permissions (644 - certificates are public by design)
+            os.chmod(dest_cert_path, 0o644)  # NOSONAR
             
             # Step 5: Copy private key file
             dest_key_path = os.path.join(output_dir, key_filename)
@@ -478,7 +478,7 @@ class CertificateManager:
                 dst.write(key_data)
             
             # Set private key permissions (600 - owner only, CRITICAL)
-            os.chmod(dest_key_path, 0o600)
+            os.chmod(dest_key_path, 0o600)  # NOSONAR: 600 is correct for private keys
             logger.info("Set private key permissions to 600 (owner only)")
             
             # Step 6: Get certificate info for metadata
@@ -606,7 +606,7 @@ class CertificateManager:
             
             # Check expiry
             expires_at = cert.not_valid_after
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             if expires_at < now:
                 errors.append(f"Certificate expired on {expires_at.strftime('%Y-%m-%d')}")

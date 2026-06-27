@@ -486,7 +486,7 @@ class TestGetContainerLogs:
         mock_get_client.return_value = mock_client
         
         # Execute
-        result = service.get_container_logs('test-container', since='2024-01-01T00:00:00Z')
+        _ = = service.get_container_logs('test-container', since='2024-01-01T00:00:00Z')
         
         # Verify
         mock_container.logs.assert_called_once_with(
@@ -537,8 +537,8 @@ class TestGetContainerStats:
         assert 'memory_usage_mb' in result
         assert 'memory_limit_mb' in result
         assert 'memory_percent' in result
-        assert result['memory_usage_mb'] == 500.0
-        assert result['memory_limit_mb'] == 1024.0
+        assert result['memory_usage_mb'] == 500
+        assert result['memory_limit_mb'] == 1024
         mock_container.stats.assert_called_once_with(stream=False)
 
 

@@ -70,7 +70,7 @@
                     <!-- Stack Header -->
                     <div class="flex items-center justify-between mb-4">
                         <div>
-                            <h3 class="text-xl font-semibold text-white" x-text="stack.name"></h3>
+                            <h3 class="text-xl font-semibold text-white" x-text="stack.name">Stack</h3>
                             <p class="text-slate-400 text-sm mt-1" x-text="stack.description || 'No description'"></p>
                         </div>
                         <span class="px-3 py-1 rounded text-sm font-medium"
@@ -149,8 +149,8 @@
             <div class="space-y-4">
                 <!-- Stack Name -->
                 <div>
-                    <label class="block text-slate-300 text-sm font-medium mb-1">Stack Name *</label>
-                    <input type="text"
+                    <label for="stack-create-name" class="block text-slate-300 text-sm font-medium mb-1">Stack Name *</label>
+                    <input id="stack-create-name" type="text"
                            x-model="createModal.name"
                            placeholder="e.g., wordpress-blog, monitoring-stack"
                            class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
@@ -159,8 +159,8 @@
 
                 <!-- Description -->
                 <div>
-                    <label class="block text-slate-300 text-sm font-medium mb-1">Description</label>
-                    <input type="text"
+                    <label for="stack-create-description" class="block text-slate-300 text-sm font-medium mb-1">Description</label>
+                    <input id="stack-create-description" type="text"
                            x-model="createModal.description"
                            placeholder="Brief description of this stack"
                            class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
@@ -169,7 +169,7 @@
                 <!-- Compose YAML -->
                 <div>
                     <div class="flex items-center justify-between mb-1">
-                        <label class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
+                        <label for="stack-create-yaml" class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
                         <button @click="showYamlHelp = !showYamlHelp" type="button"
                                 class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
                             <span x-text="showYamlHelp ? 'Hide' : 'Show'"></span> YAML Help
@@ -206,7 +206,7 @@
                         </div>
                     </div>
 
-                    <textarea x-model="createModal.composeYaml"
+                    <textarea id="stack-create-yaml" x-model="createModal.composeYaml"
                               rows="12"
                               placeholder="version: '3.8'
 services:
@@ -262,8 +262,8 @@ services:
             <div class="space-y-4">
                 <!-- Description -->
                 <div>
-                    <label class="block text-slate-300 text-sm font-medium mb-1">Description</label>
-                    <input type="text"
+                    <label for="stack-edit-description" class="block text-slate-300 text-sm font-medium mb-1">Description</label>
+                    <input id="stack-edit-description" type="text"
                            x-model="editModal.description"
                            placeholder="Brief description of this stack"
                            class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
@@ -272,7 +272,7 @@ services:
                 <!-- Compose YAML -->
                 <div>
                     <div class="flex items-center justify-between mb-1">
-                        <label class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
+                        <label for="stack-edit-yaml" class="block text-slate-300 text-sm font-medium">docker-compose.yml Content *</label>
                         <button @click="showYamlHelp = !showYamlHelp" type="button"
                                 class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
                             <span x-text="showYamlHelp ? 'Hide' : 'Show'"></span> YAML Help
@@ -309,7 +309,7 @@ services:
                         </div>
                     </div>
 
-                    <textarea x-model="editModal.composeYaml"
+                    <textarea id="stack-edit-yaml" x-model="editModal.composeYaml"
                               rows="12"
                               class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-sm"
                               spellcheck="false"></textarea>
@@ -527,6 +527,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to load stacks', 'error');
                 }
             } catch (error) {
+                console.error('loadStacks:', error);
                 this.showToast('Failed to load stacks', 'error');
             } finally {
                 this.loading = false;
@@ -562,6 +563,7 @@ function stacksComponent() {
                     this.createModal.error = data.error || 'Failed to create stack';
                 }
             } catch (error) {
+                console.error('createStack:', error);
                 this.createModal.error = 'Failed to create stack';
             } finally {
                 this.createModal.loading = false;
@@ -585,6 +587,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to deploy stack', 'error');
                 }
             } catch (error) {
+                console.error('deployStack:', error);
                 this.showToast('Failed to deploy stack', 'error');
             }
         },
@@ -605,6 +608,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to start stack', 'error');
                 }
             } catch (error) {
+                console.error('startStack:', error);
                 this.showToast('Failed to start stack', 'error');
             }
         },
@@ -625,6 +629,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to stop stack', 'error');
                 }
             } catch (error) {
+                console.error('stopStack:', error);
                 this.showToast('Failed to stop stack', 'error');
             }
         },
@@ -640,6 +645,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to load stack details', 'error');
                 }
             } catch (error) {
+                console.error('showDetails:', error);
                 this.showToast('Failed to load stack details', 'error');
             }
         },
@@ -664,6 +670,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to load stack', 'error');
                 }
             } catch (error) {
+                console.error('showEditModal:', error);
                 this.showToast('Failed to load stack for editing', 'error');
             }
         },
@@ -693,6 +700,7 @@ function stacksComponent() {
                     this.editModal.error = data.error || 'Failed to update stack';
                 }
             } catch (error) {
+                console.error('updateStack:', error);
                 this.editModal.error = 'Failed to update stack';
             } finally {
                 this.editModal.loading = false;
@@ -723,6 +731,7 @@ function stacksComponent() {
                     this.showToast(data.error || 'Failed to delete stack', 'error');
                 }
             } catch (error) {
+                console.error('confirmDelete:', error);
                 this.showToast('Failed to delete stack', 'error');
             } finally {
                 this.deleteModal.loading = false;
@@ -788,7 +797,11 @@ function stacksComponent() {
                 const isServicesArray = Array.isArray(parsed.services);
 
                 if (isServicesString || isServicesNumber || isServicesBoolean || isServicesArray) {
-                    const actualType = isServicesString ? 'string' : isServicesNumber ? 'number' : isServicesBoolean ? 'boolean' : 'array';
+                    let actualType;
+                    if (isServicesString) { actualType = 'string'; }
+                    else if (isServicesNumber) { actualType = 'number'; }
+                    else if (isServicesBoolean) { actualType = 'boolean'; }
+                    else { actualType = 'array'; }
                     this.yamlValidation = { status: 'invalid', error: `"services:" must be a mapping (object), not a ${actualType} value` };
                     return;
                 }

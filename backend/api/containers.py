@@ -73,7 +73,7 @@ from backend.extensions import mutation_limit
 logger = logging.getLogger(__name__)
 containers_bp = Blueprint('containers', __name__, url_prefix='/api/containers')
 
-_DOCKER_CONN_ERROR = _DOCKER_CONN_ERROR
+_DOCKER_CONN_ERROR = "Cannot connect to Docker daemon"
 
 
 # =============================================================================
@@ -81,96 +81,82 @@ _DOCKER_CONN_ERROR = _DOCKER_CONN_ERROR
 # =============================================================================
 
 def validate_create_request(data: Dict[str, Any]) -> None:
-    """
-    Validate container creation request data.
-    
-    Args:
-        data: Request JSON data
-        
-    Raises:
-        ValidationError: If validation fails
-        
-    Validates:
-        - Required fields present
-        - Field types correct
-        - Port format valid
-        - Volume format valid
-        - Environment variable format valid
-        - Port conflicts with existing containers
-    """
-    # Required fields
+    """Validate container creation request data. Raises ValidationError on failure."""
     if not data.get('name'):
         raise ValidationError("Container name is required")
-    
     if not data.get('image'):
         raise ValidationError("Container image is required")
-    
-    # Validate name format (Docker naming rules)
+
     name = data['name']
     if not name.replace('-', '').replace('_', '').isalnum():
         raise ValidationError(
             "Container name must contain only alphanumeric characters, hyphens, and underscores"
         )
-    
-    # Validate ports format if provided
-    if 'ports' in data and data['ports']:
-        if not isinstance(data['ports'], dict):
-            raise ValidationError("Ports must be a dictionary mapping container:host")
-        
-        for container_port, host_port in data['ports'].items():
-            # Validate port numbers
-            try:
-                host_port_int = int(host_port)
-                if not (1 <= host_port_int <= 65535):
-                    raise ValidationError(f"Host port {host_port} must be between 1 and 65535")
-            except (ValueError, TypeError):
-                raise ValidationError(f"Invalid host port: {host_port}")
-            
-            # Validate container port format
-            if '/' not in container_port:
-                raise ValidationError(
-                    f"Container port must include protocol (e.g., '80/tcp'): {container_port}"
-                )
-    
-    # Check for port conflicts with existing containers
-    if 'ports' in data and data['ports']:
+
+    if data.get('ports'):
+        _validate_ports_format(data['ports'])
         _check_port_conflicts(data['ports'])
-    
-    # Validate volumes format if provided
-    if 'volumes' in data and data['volumes']:
-        if not isinstance(data['volumes'], dict):
-            raise ValidationError("Volumes must be a dictionary mapping host:container")
-        
-        for host_path, container_config in data['volumes'].items():
-            if not isinstance(container_config, dict):
-                raise ValidationError(
-                    f"Volume config must be a dictionary with 'bind' and 'mode' keys: {host_path}"
-                )
-            
-            if 'bind' not in container_config:
-                raise ValidationError(
-                    f"Volume config must include 'bind' key (container path): {host_path}"
-                )
-    
-    # Validate environment variables format if provided
-    if 'env_vars' in data and data['env_vars']:
-        if not isinstance(data['env_vars'], dict):
-            raise ValidationError("Environment variables must be a dictionary")
-        
-        for key, value in data['env_vars'].items():
-            if not isinstance(key, str) or not isinstance(value, str):
-                raise ValidationError("Environment variable keys and values must be strings")
-    
-    # Validate restart policy if provided
-    if 'restart_policy' in data and data['restart_policy']:
+
+    if data.get('volumes'):
+        _validate_volumes_format(data['volumes'])
+
+    if data.get('env_vars'):
+        _validate_env_vars_format(data['env_vars'])
+
+    if data.get('restart_policy'):
         valid_policies = ['no', 'on-failure', 'always', 'unless-stopped']
         if data['restart_policy'] not in valid_policies:
             raise ValidationError(
                 f"Invalid restart policy: {data['restart_policy']}. "
                 f"Must be one of: {', '.join(valid_policies)}"
             )
-    
-    # Validate resource limits if provided
+
+    _validate_resource_limits(data)
+
+
+def _validate_ports_format(ports: Dict) -> None:
+    """Validate port mapping dict: each entry must be container/proto → valid host port."""
+    if not isinstance(ports, dict):
+        raise ValidationError("Ports must be a dictionary mapping container:host")
+    for container_port, host_port in ports.items():
+        try:
+            host_port_int = int(host_port)
+            if not (1 <= host_port_int <= 65535):
+                raise ValidationError(f"Host port {host_port} must be between 1 and 65535")
+        except (ValueError, TypeError):
+            raise ValidationError(f"Invalid host port: {host_port}")
+        if '/' not in container_port:
+            raise ValidationError(
+                f"Container port must include protocol (e.g., '80/tcp'): {container_port}"
+            )
+
+
+def _validate_volumes_format(volumes: Dict) -> None:
+    """Validate volume mapping dict: each value must be a dict with a 'bind' key."""
+    if not isinstance(volumes, dict):
+        raise ValidationError("Volumes must be a dictionary mapping host:container")
+    for host_path, container_config in volumes.items():
+        if not isinstance(container_config, dict):
+            raise ValidationError(
+                f"Volume config must be a dictionary with 'bind' and 'mode' keys: {host_path}"
+            )
+        if 'bind' not in container_config:
+            raise ValidationError(
+                f"Volume config must include 'bind' key (container path): {host_path}"
+            )
+
+
+def _validate_env_vars_format(env_vars: Dict) -> None:
+    """Validate env vars dict: keys and values must all be strings."""
+    if not isinstance(env_vars, dict):
+        raise ValidationError("Environment variables must be a dictionary")
+    for key, value in env_vars.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValidationError("Environment variable keys and values must be strings")
+
+
+def _validate_resource_limits(data: Dict[str, Any]) -> None:
+    """Validate optional cpu_limit (float > 0) and memory_limit (int > 0)."""
     if 'cpu_limit' in data and data['cpu_limit'] is not None:
         try:
             cpu_limit = float(data['cpu_limit'])
@@ -178,7 +164,6 @@ def validate_create_request(data: Dict[str, Any]) -> None:
                 raise ValidationError("CPU limit must be greater than 0")
         except (ValueError, TypeError):
             raise ValidationError(f"Invalid CPU limit: {data['cpu_limit']}")
-    
     if 'memory_limit' in data and data['memory_limit'] is not None:
         try:
             memory_limit = int(data['memory_limit'])
@@ -248,56 +233,44 @@ def _check_port_conflicts(ports: Dict[str, int], exclude_container_id: Optional[
 
 
 def validate_update_request(data: Dict[str, Any]) -> None:
-    """
-    Validate container update request data (Phase 1: labels only).
-    
-    Args:
-        data: Request JSON data
-        
-    Raises:
-        ValidationError: If validation fails
-        
-    Note:
-        Phase 1 only supports label updates (non-destructive).
-        Full updates via recreate workflow deferred to Task 6.
-    """
+    """Validate container update request (Phase 1: labels and environment only)."""
     if not data:
         raise ValidationError("Update request body cannot be empty")
-    
-    # Phase 1: Only labels and environment are supported
-    allowed_fields = {'labels', 'environment'}
-    provided_fields = set(data.keys())
-    unsupported_fields = provided_fields - allowed_fields
 
-    if unsupported_fields:
+    unsupported = set(data.keys()) - {'labels', 'environment'}
+    if unsupported:
         raise ValidationError(
-            f"Unsupported update fields: {', '.join(unsupported_fields)}. "
+            f"Unsupported update fields: {', '.join(unsupported)}. "
             f"Phase 1 only supports updating: labels, environment. "
             f"Full updates will be available in the UI (Task 6)."
         )
 
-    # Validate labels format
     if 'labels' in data:
-        if not isinstance(data['labels'], dict):
-            raise ValidationError("Labels must be a dictionary")
+        _validate_labels_format(data['labels'])
 
-        for key, value in data['labels'].items():
-            if not isinstance(key, str) or not isinstance(value, str):
-                raise ValidationError("Label keys and values must be strings")
-
-    # Validate environment if provided
     if 'environment' in data:
-        environment = data['environment']
-        if environment is not None and not isinstance(environment, str):
-            raise ValidationError("Environment must be a string or null")
+        _validate_environment_value(data['environment'])
 
-        # Validate against allowed values (case-insensitive)
-        if environment:
-            valid_environments = ['dev', 'test', 'staging', 'prod', 'uat']
-            if environment.lower() not in valid_environments:
-                raise ValidationError(
-                    f"Invalid environment. Must be one of: {', '.join(valid_environments)} (case-insensitive)"
-                )
+
+def _validate_labels_format(labels) -> None:
+    """Validate labels dict: keys and values must all be strings."""
+    if not isinstance(labels, dict):
+        raise ValidationError("Labels must be a dictionary")
+    for key, value in labels.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValidationError("Label keys and values must be strings")
+
+
+def _validate_environment_value(environment) -> None:
+    """Validate the environment field: must be a string from the allowed set, or null."""
+    if environment is not None and not isinstance(environment, str):
+        raise ValidationError("Environment must be a string or null")
+    if environment:
+        valid_environments = ['dev', 'test', 'staging', 'prod', 'uat']
+        if environment.lower() not in valid_environments:
+            raise ValidationError(
+                f"Invalid environment. Must be one of: {', '.join(valid_environments)} (case-insensitive)"
+            )
 
 
 # =============================================================================
@@ -1160,15 +1133,14 @@ def stop_container(container_id: str):
         - Stopped containers can be started again
     """
     try:
-        # Parse query parameters
-        timeout = request.args.get('timeout', 10)
+        timeout = (request.json or {}).get('timeout', 10)
         try:
             timeout = int(timeout)
             if timeout < 0:
                 raise ValidationError("Timeout must be non-negative")
-        except ValueError:
+        except (ValueError, TypeError):
             raise ValidationError(f"Invalid timeout value: {timeout}")
-        
+
         # Stop container via service
         with ContainerManager() as manager:
             container = manager.stop_container(container_id, timeout=timeout)
@@ -1269,15 +1241,14 @@ def restart_container(container_id: str):
         - Works on both running and stopped containers
     """
     try:
-        # Parse query parameters
-        timeout = request.args.get('timeout', 10)
+        timeout = (request.json or {}).get('timeout', 10)
         try:
             timeout = int(timeout)
             if timeout < 0:
                 raise ValidationError("Timeout must be non-negative")
-        except ValueError:
+        except (ValueError, TypeError):
             raise ValidationError(f"Invalid timeout value: {timeout}")
-        
+
         # Restart container via service
         with ContainerManager() as manager:
             container = manager.restart_container(container_id, timeout=timeout)
@@ -1331,6 +1302,49 @@ def restart_container(container_id: str):
         }), 500
 
 
+def _parse_tail_param(tail: str) -> Optional[int]:
+    """Parse the tail query param. Returns None for 'all', capped int otherwise."""
+    if tail == 'all':
+        return None
+    try:
+        tail_int = int(tail)
+    except (ValueError, TypeError):
+        raise ValidationError("Invalid tail parameter. Use 'all' or a positive integer.")
+    if tail_int < 0:
+        raise ValidationError("Invalid tail parameter. Use 'all' or a positive integer.")
+    return min(tail_int, 10000)
+
+
+def _build_log_kwargs(tail_int: Optional[int], timestamps: bool, since, until,
+                      stdout: bool, stderr: bool) -> dict:
+    """Build the kwargs dict for container.logs()."""
+    kwargs: Dict[str, Any] = {'stdout': stdout, 'stderr': stderr, 'timestamps': timestamps}
+    if tail_int is not None:
+        kwargs['tail'] = tail_int
+    if since:
+        kwargs['since'] = since
+    if until:
+        kwargs['until'] = until
+    return kwargs
+
+
+def _build_log_cli_command(container_name: str, tail: str, tail_int: Optional[int],
+                            timestamps: bool, since, until) -> str:
+    """Build the docker logs CLI command string equivalent."""
+    cmd = "docker logs"
+    if timestamps:
+        cmd += " --timestamps"
+    if tail_int:
+        cmd += f" --tail {tail_int}"
+    elif tail == 'all':
+        cmd += " --tail all"
+    if since:
+        cmd += f" --since {since}"
+    if until:
+        cmd += f" --until {until}"
+    return cmd + f" {container_name}"
+
+
 @containers_bp.route('/<container_id>/logs', methods=['GET'])
 # @require_auth(api=True)  # TODO: Re-enable when integrated in app.py
 def get_container_logs(container_id: str):
@@ -1346,110 +1360,26 @@ def get_container_logs(container_id: str):
         until: Unix timestamp or ISO 8601 datetime
         stdout: Include stdout (default: true)
         stderr: Include stderr (default: true)
-
-    Success Response (200):
-    {
-        "success": true,
-        "data": {
-            "logs": "2025-01-31 10:30:00 Container started\\n...",
-            "container_id": "abc123",
-            "container_name": "my-nginx",
-            "line_count": 100,
-            "truncated": false,
-            "cli_command": "docker logs -f --tail 100 my-nginx"
-        }
-    }
-
-    Error Responses:
-    - 400: Invalid parameters
-    - 404: Container not found
-    - 500: Docker error
-
-    CLI Equivalent:
-        docker logs my-nginx
-        docker logs --tail 100 my-nginx
-        docker logs --since 2025-01-31T00:00:00 my-nginx
-        docker logs -f my-nginx  # follow (not supported in this endpoint)
-
-    Educational Notes:
-        - Logs are from container stdout/stderr
-        - Logs persist even after container stops
-        - Use tail parameter to limit output for large logs
-        - Timestamps help with debugging and correlation
     """
+    tail = request.args.get('tail', default='100', type=str)
+    timestamps = request.args.get('timestamps', default='false', type=str).lower() == 'true'
+    since = request.args.get('since', default=None, type=str)
+    until = request.args.get('until', default=None, type=str)
+    stdout = request.args.get('stdout', default='true', type=str).lower() == 'true'
+    stderr = request.args.get('stderr', default='true', type=str).lower() == 'true'
+
     try:
-        # Parse query parameters
-        tail = request.args.get('tail', default='100', type=str)
-        timestamps = request.args.get('timestamps', default='false', type=str).lower() == 'true'
-        since = request.args.get('since', default=None, type=str)
-        until = request.args.get('until', default=None, type=str)
-        stdout = request.args.get('stdout', default='true', type=str).lower() == 'true'
-        stderr = request.args.get('stderr', default='true', type=str).lower() == 'true'
+        tail_int = _parse_tail_param(tail)
+    except ValidationError as e:
+        return jsonify({"success": False, "error": str(e), "error_type": "ValidationError"}), 400
 
-        # Validate tail parameter
-        if tail == 'all':
-            tail_int = None
-        else:
-            try:
-                tail_int = int(tail)
-                if tail_int < 0:
-                    raise ValueError("Tail must be positive")
-                if tail_int > 10000:
-                    tail_int = 10000  # Cap at 10k lines
-            except ValueError:
-                return jsonify({
-                    "success": False,
-                    "error": "Invalid tail parameter. Use 'all' or a positive integer.",
-                    "error_type": "ValidationError"
-                }), 400
-
-        # Get Docker client
+    try:
         client = get_docker_client()
-
-        # Get container
-        try:
-            container = client.containers.get(container_id)
-        except docker.errors.NotFound:
-            return jsonify({
-                "success": False,
-                "error": f"Container '{container_id}' not found",
-                "error_type": "NotFoundError"
-            }), 404
-
-        # Fetch logs
-        log_kwargs = {
-            'stdout': stdout,
-            'stderr': stderr,
-            'timestamps': timestamps
-        }
-
-        if tail_int is not None:
-            log_kwargs['tail'] = tail_int
-        if since:
-            log_kwargs['since'] = since
-        if until:
-            log_kwargs['until'] = until
-
+        container = client.containers.get(container_id)
+        log_kwargs = _build_log_kwargs(tail_int, timestamps, since, until, stdout, stderr)
         logs = container.logs(**log_kwargs).decode('utf-8', errors='replace')
-
-        # Count lines
         log_lines = logs.split('\n') if logs else []
         line_count = len([line for line in log_lines if line.strip()])
-
-        # Build CLI command equivalent
-        cli_command = "docker logs"
-        if timestamps:
-            cli_command += " --timestamps"
-        if tail_int:
-            cli_command += f" --tail {tail_int}"
-        elif tail == 'all':
-            cli_command += " --tail all"
-        if since:
-            cli_command += f" --since {since}"
-        if until:
-            cli_command += f" --until {until}"
-        cli_command += f" {container.name}"
-
         return jsonify({
             "success": True,
             "data": {
@@ -1458,10 +1388,15 @@ def get_container_logs(container_id: str):
                 "container_name": container.name,
                 "line_count": line_count,
                 "truncated": tail_int is not None and line_count >= tail_int,
-                "cli_command": cli_command
+                "cli_command": _build_log_cli_command(container.name, tail, tail_int, timestamps, since, until)
             }
         }), 200
-
+    except docker.errors.NotFound:
+        return jsonify({
+            "success": False,
+            "error": f"Container '{container_id}' not found",
+            "error_type": "NotFoundError"
+        }), 404
     except DockerConnectionError as e:
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
@@ -1469,7 +1404,6 @@ def get_container_logs(container_id: str):
             "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
-
     except Exception as e:
         logger.exception(f"Unexpected error fetching logs for {container_id}: {e}")
         return jsonify({

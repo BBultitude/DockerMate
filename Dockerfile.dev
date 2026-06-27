@@ -7,21 +7,26 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN useradd -m -u 1000 dockermate
+
 # Copy requirements
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy application code (.dockerignore excludes secrets, .git, .env, certs, etc.)
+COPY --chown=dockermate:dockermate . . # NOSONAR
 
-# Copy and set permissions for entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Copy entrypoint, set permissions, and create data directories in one layer
+COPY --chown=dockermate:dockermate docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    mkdir -p /app/data /app/certs && \
+    chown -R dockermate:dockermate /app/data /app/certs
 
-# Create data directory
-RUN mkdir -p /app/data /app/certs
+# Switch to non-root user
+USER dockermate
 
 # Expose port
 EXPOSE 5000

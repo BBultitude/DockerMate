@@ -37,7 +37,7 @@ Educational Notes:
 import logging
 import psutil
 import docker
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 from sqlalchemy.orm import Session
 
@@ -189,108 +189,70 @@ class HealthCollector:
             db.rollback()
             return {}
 
+    def _collect_running_stats(self, container) -> dict:
+        """Collect CPU, memory, network, and block I/O stats for a running container."""
+        result = {
+            'cpu_percent': None, 'memory_usage': None, 'memory_limit': None,
+            'memory_percent': None, 'net_rx': None, 'net_tx': None,
+            'block_read': None, 'block_write': None,
+        }
+        try:
+            stats = container.stats(stream=False)
+            cpu_stats = stats.get('cpu_stats', {})
+            precpu_stats = stats.get('precpu_stats', {})
+            cpu_delta = (cpu_stats.get('cpu_usage', {}).get('total_usage', 0) -
+                         precpu_stats.get('cpu_usage', {}).get('total_usage', 0))
+            system_delta = (cpu_stats.get('system_cpu_usage', 0) -
+                            precpu_stats.get('system_cpu_usage', 0))
+            if system_delta > 0 and cpu_delta >= 0:
+                result['cpu_percent'] = (cpu_delta / system_delta) * cpu_stats.get('online_cpus', 1) * 100.0
+
+            mem_stats = stats.get('memory_stats', {})
+            result['memory_usage'] = mem_stats.get('usage', 0)
+            result['memory_limit'] = mem_stats.get('limit', 0)
+            if result['memory_limit'] and result['memory_usage'] is not None:
+                result['memory_percent'] = (result['memory_usage'] / result['memory_limit']) * 100.0
+
+            networks = stats.get('networks', {})
+            if networks:
+                result['net_rx'] = sum(i.get('rx_bytes', 0) for i in networks.values())
+                result['net_tx'] = sum(i.get('tx_bytes', 0) for i in networks.values())
+
+            blkio = stats.get('blkio_stats', {}).get('io_service_bytes_recursive', [])
+            if blkio:
+                result['block_read'] = sum(i.get('value', 0) for i in blkio if i.get('op') == 'Read')
+                result['block_write'] = sum(i.get('value', 0) for i in blkio if i.get('op') == 'Write')
+        except Exception as e:
+            logger.debug(f"Failed to get stats for container {container.name}: {e}")
+        return result
+
+    def _get_container_health_status(self, container) -> str:
+        """Return container health check status string."""
+        try:
+            container.reload()
+            health = container.attrs.get('State', {}).get('Health')
+            if health:
+                return health.get('Status', 'none')
+        except Exception:
+            pass
+        return 'none'
+
     def collect_container_metrics(self, db: Session) -> List[Dict]:
-        """Collect per-container health metrics and store to database
-
-        Collects (for running containers only):
-            - CPU usage percentage
-            - Memory usage (bytes, limit, percentage)
-            - Network I/O (rx/tx bytes)
-            - Block I/O (read/write bytes)
-            - Health check status
-            - Exit code (for exited containers)
-
-        Args:
-            db: SQLAlchemy database session
-
-        Returns:
-            list: List of container metrics in JSON-serializable format
-
-        Raises:
-            Exception: Logs error but doesn't raise to prevent worker crash
-        """
+        """Collect per-container health metrics and store to database."""
         metrics = []
-
         if not self.client:
             logger.warning("Docker client not available, skipping container metrics collection")
             return metrics
 
         try:
             containers = self.client.containers.list(all=True)
-
             for container in containers:
                 try:
-                    # Skip DockerMate itself to avoid circular metrics
                     if 'dockermate' in container.name.lower():
                         continue
 
-                    # Initialize metrics (will be None for non-running containers)
-                    cpu_percent = None
-                    memory_usage = None
-                    memory_limit = None
-                    memory_percent = None
-                    net_rx = None
-                    net_tx = None
-                    block_read = None
-                    block_write = None
-
-                    # ===== Collect Stats for Running Containers =====
-
-                    if container.status == 'running':
-                        try:
-                            # Get stats (stream=False for single snapshot)
-                            stats = container.stats(stream=False)
-
-                            # Calculate CPU percentage
-                            # Formula: (cpu_delta / system_delta) * num_cpus * 100
-                            cpu_stats = stats.get('cpu_stats', {})
-                            precpu_stats = stats.get('precpu_stats', {})
-
-                            cpu_delta = cpu_stats.get('cpu_usage', {}).get('total_usage', 0) - \
-                                        precpu_stats.get('cpu_usage', {}).get('total_usage', 0)
-                            system_delta = cpu_stats.get('system_cpu_usage', 0) - \
-                                           precpu_stats.get('system_cpu_usage', 0)
-                            cpu_count = cpu_stats.get('online_cpus', 1)
-
-                            if system_delta > 0 and cpu_delta >= 0:
-                                cpu_percent = (cpu_delta / system_delta) * cpu_count * 100.0
-
-                            # Memory stats
-                            mem_stats = stats.get('memory_stats', {})
-                            memory_usage = mem_stats.get('usage', 0)
-                            memory_limit = mem_stats.get('limit', 0)
-
-                            if memory_limit > 0 and memory_usage >= 0:
-                                memory_percent = (memory_usage / memory_limit) * 100.0
-
-                            # Network I/O (sum across all interfaces)
-                            networks = stats.get('networks', {})
-                            if networks:
-                                net_rx = sum(iface.get('rx_bytes', 0) for iface in networks.values())
-                                net_tx = sum(iface.get('tx_bytes', 0) for iface in networks.values())
-
-                            # Block I/O
-                            blkio = stats.get('blkio_stats', {}).get('io_service_bytes_recursive', [])
-                            if blkio:
-                                block_read = sum(item.get('value', 0) for item in blkio if item.get('op') == 'Read')
-                                block_write = sum(item.get('value', 0) for item in blkio if item.get('op') == 'Write')
-
-                        except Exception as stats_error:
-                            logger.debug(f"Failed to get stats for container {container.name}: {stats_error}")
-                            # Continue with None values
-
-                    # ===== Health Check Status =====
-
-                    health_status = 'none'
-                    try:
-                        container.reload()
-                        health = container.attrs.get('State', {}).get('Health')
-                        if health:
-                            health_status = health.get('Status', 'none')
-                    except Exception:
-                        pass
-
-                    # ===== Exit Code =====
+                    stats = self._collect_running_stats(container) if container.status == 'running' else {}
+                    health_status = self._get_container_health_status(container)
 
                     exit_code = None
                     if container.status == 'exited':
@@ -299,36 +261,29 @@ class HealthCollector:
                         except Exception:
                             pass
 
-                    # ===== Store to Database =====
-
                     container_metric = ContainerHealth(
                         container_id=container.id,
                         container_name=container.name,
-                        cpu_usage_percent=cpu_percent,
-                        memory_usage_bytes=memory_usage,
-                        memory_limit_bytes=memory_limit,
-                        memory_usage_percent=memory_percent,
-                        network_rx_bytes=net_rx,
-                        network_tx_bytes=net_tx,
-                        block_read_bytes=block_read,
-                        block_write_bytes=block_write,
+                        cpu_usage_percent=stats.get('cpu_percent'),
+                        memory_usage_bytes=stats.get('memory_usage'),
+                        memory_limit_bytes=stats.get('memory_limit'),
+                        memory_usage_percent=stats.get('memory_percent'),
+                        network_rx_bytes=stats.get('net_rx'),
+                        network_tx_bytes=stats.get('net_tx'),
+                        block_read_bytes=stats.get('block_read'),
+                        block_write_bytes=stats.get('block_write'),
                         status=container.status,
                         health_status=health_status,
-                        exit_code=exit_code
+                        exit_code=exit_code,
                     )
-
                     db.add(container_metric)
                     metrics.append(container_metric.to_dict())
-
                 except Exception as container_error:
                     logger.debug(f"Failed to collect metrics for container {container.name}: {container_error}")
                     continue
 
-            # Commit all container metrics at once
             db.commit()
-
             logger.info(f"Collected metrics for {len(metrics)} containers")
-
         except Exception as e:
             logger.error(f"Failed to collect container metrics: {e}", exc_info=True)
             db.rollback()
@@ -350,7 +305,7 @@ class HealthCollector:
             Exception: Logs error but doesn't raise to prevent worker crash
         """
         try:
-            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
             # Delete old system metrics
             deleted_system = db.query(HealthMetric).filter(

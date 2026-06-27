@@ -139,7 +139,7 @@ class HostConfig(Base):
         Returns:
             str: Message describing limit status
         """
-        at_limit, level = self.is_at_container_limit(current_count)
+        _, level = self.is_at_container_limit(current_count)
         remaining = self.max_containers - current_count
         percentage = (current_count / self.max_containers) * 100
         

@@ -182,6 +182,134 @@ def get_hardware_profile():
             db.close()
 
 
+def _hc_database():
+    import sqlalchemy
+    db = None
+    try:
+        db = SessionLocal()
+        db.execute(sqlalchemy.text("SELECT 1"))
+        return "ok", []
+    except Exception as e:
+        logger.error(f"Health check — database: {e}")
+        return "error", [{"domain": "infrastructure", "message": "Database connection failed"}]
+    finally:
+        if db:
+            db.close()
+
+
+def _hc_docker():
+    try:
+        from backend.utils.docker_client import get_docker_client
+        client = get_docker_client()
+        client.ping()
+        return "ok", client, []
+    except Exception as e:
+        logger.error(f"Health check — docker: {e}")
+        return "error", None, [{"domain": "infrastructure", "message": "Docker daemon is not reachable"}]
+
+
+def _hc_containers(client):
+    if not client:
+        return "ok", []
+    try:
+        exited_nonzero, unhealthy = [], []
+        for c in client.containers.list(all=True):
+            if 'dockermate' in (c.name or '').lower():
+                continue
+            if c.status == 'exited':
+                try:
+                    c.reload()
+                    if c.attrs.get('State', {}).get('ExitCode', 0) != 0:
+                        exited_nonzero.append(c.name.lstrip('/'))
+                except Exception:
+                    pass
+            try:
+                health = c.attrs.get('State', {}).get('Health')
+                if health and health.get('Status') == 'unhealthy':
+                    unhealthy.append(c.name.lstrip('/'))
+            except Exception:
+                pass
+        warns = []
+        if exited_nonzero:
+            warns.append({"domain": "containers",
+                          "message": f"{len(exited_nonzero)} container(s) exited with non-zero exit code"})
+        if unhealthy:
+            warns.append({"domain": "containers",
+                          "message": f"{len(unhealthy)} container(s) failing health check: {', '.join(unhealthy)}"})
+        return ("warning" if warns else "ok"), warns
+    except Exception as e:
+        logger.warning(f"Containers health check: {e}")
+        return "ok", []
+
+
+def _hc_images(client):
+    try:
+        dangling_count = sum(
+            1 for img in (client.images.list() if client else [])
+            if not img.tags or img.tags == ['<none>:<none>']
+        )
+        from backend.models.image import Image
+        db = SessionLocal()
+        updates_available = db.query(Image).filter(Image.update_available == True).count()
+        db.close()
+        warns = []
+        if dangling_count:
+            warns.append({"domain": "images", "message": f"{dangling_count} dangling image(s) present"})
+        if updates_available:
+            warns.append({"domain": "images", "message": f"{updates_available} image(s) with updates available"})
+        return ("warning" if warns else "ok"), warns
+    except Exception as e:
+        logger.warning(f"Images health check: {e}")
+        return "ok", []
+
+
+def _hc_networks():
+    try:
+        from backend.services.network_manager import NetworkManager
+        with NetworkManager() as mgr:
+            networks = mgr.list_networks()
+        oversized = [n for n in networks if n.get('oversized')]
+        if oversized:
+            msg = f"{len(oversized)} oversized network(s): {', '.join(n['name'] for n in oversized)}"
+            return "warning", [{"domain": "networks", "message": msg}]
+        return "ok", []
+    except Exception as e:
+        logger.warning(f"Networks health check: {e}")
+        return "ok", []
+
+
+def _hc_volumes():
+    try:
+        from backend.services.volume_manager import VolumeManager
+        with VolumeManager() as mgr:
+            volumes_result = mgr.list_volumes(include_external=True)
+        unused = [v for v in volumes_result.get('volumes', []) if v.get('containers_using', 0) == 0]
+        if len(unused) > 5:
+            msg = f"{len(unused)} unused volumes consuming disk space"
+            return "warning", [{"domain": "volumes", "message": msg}]
+        return "ok", []
+    except Exception as e:
+        logger.warning(f"Volumes health check: {e}")
+        return "ok", []
+
+
+def _hc_capacity(client):
+    try:
+        db = SessionLocal()
+        config = HostConfig.get_or_create(db)
+        db.close()
+        if client and config.max_containers:
+            total = len(client.containers.list(all=True))
+            pct = round((total / config.max_containers) * 100)
+            if pct >= 80:
+                msg = f"Capacity at {pct}% ({total}/{config.max_containers} containers)"
+                return "warning", [{"domain": "dockermate", "message": msg}]
+        return "ok", []
+    except Exception as e:
+        logger.warning(f"DockerMate capacity check: {e}")
+        return "ok", []
+
+
 @system_bp.route('/health', methods=['GET'])
 def health_check():
     """
@@ -211,154 +339,29 @@ def health_check():
         ]
     }
     """
-    import sqlalchemy
-    checks = {}
-    warnings = []
+    checks, warnings = {}, []
 
-    # ------------------------------------------------------------------
-    # Infrastructure: database + docker daemon
-    # ------------------------------------------------------------------
-    db = None
-    try:
-        db = SessionLocal()
-        db.execute(sqlalchemy.text("SELECT 1"))
-        checks["database"] = "ok"
-    except Exception as e:
-        logger.error(f"Health check — database: {e}")
-        checks["database"] = "error"
-        warnings.append({"domain": "infrastructure", "message": "Database connection failed"})
-    finally:
-        if db:
-            db.close()
+    checks["database"], db_warns = _hc_database()
+    warnings.extend(db_warns)
 
-    client = None
-    try:
-        from backend.utils.docker_client import get_docker_client
-        client = get_docker_client()
-        client.ping()
-        checks["docker"] = "ok"
-    except Exception as e:
-        logger.error(f"Health check — docker: {e}")
-        checks["docker"] = "error"
-        warnings.append({"domain": "infrastructure", "message": "Docker daemon is not reachable"})
+    checks["docker"], client, docker_warns = _hc_docker()
+    warnings.extend(docker_warns)
 
-    # ------------------------------------------------------------------
-    # Containers: exited non-zero, failing health-checks
-    # ------------------------------------------------------------------
-    checks["containers"] = "ok"
-    if client:
-        try:
-            all_containers = client.containers.list(all=True)
-            exited_nonzero = []
-            unhealthy = []
-            for c in all_containers:
-                if 'dockermate' in (c.name or '').lower():
-                    continue
-                if c.status == 'exited':
-                    try:
-                        c.reload()
-                        if c.attrs.get('State', {}).get('ExitCode', 0) != 0:
-                            exited_nonzero.append(c.name.lstrip('/'))
-                    except Exception:
-                        pass
-                # Health-check failures (only present when a HEALTHCHECK is defined)
-                try:
-                    health = c.attrs.get('State', {}).get('Health')
-                    if health and health.get('Status') == 'unhealthy':
-                        unhealthy.append(c.name.lstrip('/'))
-                except Exception:
-                    pass
+    checks["containers"], cont_warns = _hc_containers(client)
+    warnings.extend(cont_warns)
 
-            if exited_nonzero or unhealthy:
-                checks["containers"] = "warning"
-                if exited_nonzero:
-                    warnings.append({"domain": "containers",
-                                     "message": f"{len(exited_nonzero)} container(s) exited with non-zero exit code"})
-                if unhealthy:
-                    warnings.append({"domain": "containers",
-                                     "message": f"{len(unhealthy)} container(s) failing health check: {', '.join(unhealthy)}"})
-        except Exception as e:
-            logger.warning(f"Containers health check: {e}")
+    checks["images"], img_warns = _hc_images(client)
+    warnings.extend(img_warns)
 
-    # ------------------------------------------------------------------
-    # Images: dangling + updates available
-    # ------------------------------------------------------------------
-    checks["images"] = "ok"
-    try:
-        dangling_count = 0
-        if client:
-            for img in client.images.list():
-                if not img.tags or img.tags == ['<none>:<none>']:
-                    dangling_count += 1
+    checks["networks"], net_warns = _hc_networks()
+    warnings.extend(net_warns)
 
-        from backend.models.image import Image
-        db = SessionLocal()
-        updates_available = db.query(Image).filter(Image.update_available == True).count()
-        db.close()
+    checks["volumes"], vol_warns = _hc_volumes()
+    warnings.extend(vol_warns)
 
-        if dangling_count or updates_available:
-            checks["images"] = "warning"
-            if dangling_count:
-                warnings.append({"domain": "images", "message": f"{dangling_count} dangling image(s) present"})
-            if updates_available:
-                warnings.append({"domain": "images", "message": f"{updates_available} image(s) with updates available"})
-    except Exception as e:
-        logger.warning(f"Images health check: {e}")
+    checks["dockermate"], cap_warns = _hc_capacity(client)
+    warnings.extend(cap_warns)
 
-    # ------------------------------------------------------------------
-    # Networks: oversized detection
-    # ------------------------------------------------------------------
-    checks["networks"] = "ok"
-    try:
-        from backend.services.network_manager import NetworkManager
-        with NetworkManager() as mgr:
-            networks = mgr.list_networks()
-        oversized = [n for n in networks if n.get('oversized')]
-        if oversized:
-            checks["networks"] = "warning"
-            warnings.append({"domain": "networks",
-                             "message": f"{len(oversized)} oversized network(s): {', '.join(n['name'] for n in oversized)}"})
-    except Exception as e:
-        logger.warning(f"Networks health check: {e}")
-
-    # ------------------------------------------------------------------
-    # Volumes: check for excessive unused volumes
-    # ------------------------------------------------------------------
-    checks["volumes"] = "ok"
-    try:
-        from backend.services.volume_manager import VolumeManager
-        with VolumeManager() as mgr:
-            volumes_result = mgr.list_volumes(include_external=True)
-        volumes = volumes_result.get('volumes', [])
-        unused = [v for v in volumes if v.get('containers_using', 0) == 0]
-        if len(unused) > 5:
-            checks["volumes"] = "warning"
-            warnings.append({"domain": "volumes",
-                             "message": f"{len(unused)} unused volumes consuming disk space"})
-    except Exception as e:
-        logger.warning(f"Volumes health check: {e}")
-
-    # ------------------------------------------------------------------
-    # DockerMate: capacity check
-    # ------------------------------------------------------------------
-    checks["dockermate"] = "ok"
-    try:
-        db = SessionLocal()
-        config = HostConfig.get_or_create(db)
-        if client:
-            total = len(client.containers.list(all=True))
-            pct = round((total / config.max_containers) * 100) if config.max_containers else 0
-            if pct >= 80:
-                checks["dockermate"] = "warning"
-                warnings.append({"domain": "dockermate",
-                                 "message": f"Capacity at {pct}% ({total}/{config.max_containers} containers)"})
-        db.close()
-    except Exception as e:
-        logger.warning(f"DockerMate capacity check: {e}")
-
-    # ------------------------------------------------------------------
-    # Derive overall status
-    # ------------------------------------------------------------------
     if "error" in checks.values():
         status = "unhealthy"
     elif "warning" in checks.values():
@@ -469,7 +472,7 @@ def get_health_metrics():
         - Identify peak usage periods
     """
     from flask import request
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from backend.models.health_metric import HealthMetric
 
     try:
@@ -487,7 +490,7 @@ def get_health_metrics():
 
         # Query metrics within time range
         db = SessionLocal()
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         all_metrics = db.query(HealthMetric).filter(
             HealthMetric.timestamp >= cutoff
@@ -586,14 +589,14 @@ def get_container_health(container_id):
         - Diagnose container performance issues
     """
     from flask import request
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from backend.models.container_health import ContainerHealth
 
     try:
         hours = min(int(request.args.get('hours', 24)), 168)  # Max 7 days
 
         db = SessionLocal()
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         # Query metrics for this container
         metrics_query = db.query(ContainerHealth).filter(

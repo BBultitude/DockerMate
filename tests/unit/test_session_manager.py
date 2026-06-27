@@ -7,7 +7,7 @@ Run with: pytest tests/unit/test_session_manager.py -v
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.auth.session_manager import SessionManager
 from backend.models.database import SessionLocal
 from backend.models.session import Session as SessionModel
@@ -64,7 +64,7 @@ class TestSessionCreation:
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
             
             # Check expiry is approximately 8 hours from now
-            expected_expiry = datetime.utcnow() + timedelta(hours=8)
+            expected_expiry = datetime.now(timezone.utc) + timedelta(hours=8)
             time_diff = abs((session.expires_at - expected_expiry).total_seconds())
             
             # Should be within 5 seconds (account for test execution time)
@@ -85,7 +85,7 @@ class TestSessionCreation:
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
             
             # Check expiry is approximately 7 days from now
-            expected_expiry = datetime.utcnow() + timedelta(days=7)
+            expected_expiry = datetime.now(timezone.utc) + timedelta(days=7)
             time_diff = abs((session.expires_at - expected_expiry).total_seconds())
             
             # Should be within 5 seconds
@@ -164,7 +164,7 @@ class TestSessionValidation:
         db = SessionLocal()
         try:
             session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
-            session.expires_at = datetime.utcnow() - timedelta(hours=1)
+            session.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
             db.commit()
         finally:
             db.close()
@@ -272,7 +272,7 @@ def expired_session(db_setup):
     db = SessionLocal()
     try:
         session = db.query(SessionModel).filter_by(token_hash=token_hash).first()
-        session.expires_at = datetime.utcnow() - timedelta(hours=1)
+        session.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
     finally:
         db.close()

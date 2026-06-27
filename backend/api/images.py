@@ -30,11 +30,10 @@ from backend.utils.exceptions import (
     DockerConnectionError
 )
 
-# Configure logging
 logger = logging.getLogger(__name__)
-
-# Create Blueprint
 images_bp = Blueprint('images', __name__, url_prefix='/api/images')
+
+_MSG_UNEXPECTED_ERROR = "An unexpected error occurred"
 
 
 @images_bp.route('', methods=['GET'])
@@ -95,7 +94,7 @@ def list_images():
         logger.exception("Unexpected error listing images")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -156,7 +155,7 @@ def get_image(name_or_id: str):
         logger.exception(f"Error getting image {name_or_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -240,7 +239,7 @@ def pull_image():
         logger.exception("Unexpected error pulling image")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -300,7 +299,7 @@ def remove_image(name_or_id: str):
         logger.exception(f"Unexpected error removing image {name_or_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -389,7 +388,7 @@ def tag_image(name_or_id: str):
         logger.exception(f"Unexpected error tagging image {name_or_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -434,10 +433,10 @@ def check_updates():
             "message": "Update check complete"
         }), 200
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error checking for updates")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500

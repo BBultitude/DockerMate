@@ -17,7 +17,7 @@ import os
 import sys
 import tempfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Test output formatting
 GREEN = '\033[92m'
@@ -227,8 +227,8 @@ def test_database_model():
             cert_path='/test/cert.pem',
             key_path='/test/key.pem',
             domain='test.local',
-            issued_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=825),
+            issued_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=825),
             is_active=True
         )
         
@@ -241,7 +241,7 @@ def test_database_model():
         assert cert.needs_renewal(days_before=30) == False
         
         # Test needs renewal with short expiry
-        cert.expires_at = datetime.utcnow() + timedelta(days=20)
+        cert.expires_at = datetime.now(timezone.utc) + timedelta(days=20)
         assert cert.needs_renewal(days_before=30) == True
         
         # Test get_certificate_type_display
@@ -249,7 +249,7 @@ def test_database_model():
         assert 'Self-Signed' in display
         
         print_test("SSLCertificate database model", True,
-                  f"Renewal detection working")
+                  "Renewal detection working")
         return True
         
     except Exception as e:

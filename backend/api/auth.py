@@ -223,7 +223,8 @@ def logout():
             "message": "Logged out successfully",
             "redirect": "/login"
         }))
-        response.set_cookie(_SESSION_COOKIE, '', expires=0)
+        secure_cookie = current_app.config.get('DOCKERMATE_SSL_MODE', 'self-signed') != 'disabled'  # NOSONAR
+        response.set_cookie(_SESSION_COOKIE, '', expires=0, httponly=True, secure=secure_cookie, samesite='Strict')
         return response
 
     except Exception as e:

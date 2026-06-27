@@ -57,7 +57,7 @@ Educational Notes:
 import logging
 import json
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from docker.errors import NotFound, APIError, ImageNotFound
@@ -131,10 +131,10 @@ class ContainerManager:
     def _get_host_config(self) -> HostConfig:
         """
         Get or cache host configuration for hardware limits.
-        
+
         Returns:
             HostConfig: Hardware profile configuration
-        
+
         Educational:
             - Lazy loading: Only fetches when needed
             - Caching: Avoids repeated database queries
@@ -143,7 +143,137 @@ class ContainerManager:
         if self._host_config is None:
             self._host_config = HostConfig.get_or_create(self.db)
         return self._host_config
-    
+
+    # =========================================================================
+    # SHARED PRIVATE HELPERS
+    # =========================================================================
+
+    def _extract_port_list(self, network_settings: dict) -> list:
+        """Extract Docker port bindings into a deduplicated list of dicts."""
+        ports_list = []
+        seen_ports: set = set()
+        for container_port, host_bindings in network_settings.get('Ports', {}).items():
+            if not host_bindings:
+                continue
+            port_parts = container_port.split('/')
+            port_num = port_parts[0]
+            protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
+            for binding in host_bindings:
+                host_port = binding.get('HostPort', '')
+                port_key = f"{port_num}/{protocol}:{host_port}"
+                if port_key not in seen_ports:
+                    seen_ports.add(port_key)
+                    ports_list.append({
+                        'container': port_num,
+                        'host': host_port,
+                        'protocol': protocol,
+                        'host_ip': binding.get('HostIp', '0.0.0.0'),
+                    })
+        return ports_list
+
+    def _parse_docker_timestamp(self, ts_str: str) -> Optional[datetime]:
+        """Parse a Docker timestamp string, returning None on failure."""
+        if not ts_str:
+            return None
+        try:
+            return datetime.fromisoformat(ts_str.rstrip('Z'))
+        except Exception:
+            return None
+
+    def _read_docker_recreate_config(self, attrs: dict) -> dict:
+        """Extract the config fields needed to recreate a container from Docker attrs."""
+        config = attrs.get('Config', {})
+        host = attrs.get('HostConfig', {})
+        network_settings = attrs.get('NetworkSettings', {})
+        network_ports = network_settings.get('Ports') or {}
+        return {
+            'env_vars': config.get('Env') or [],
+            'labels': config.get('Labels') or {},
+            'restart_name': host.get('RestartPolicy', {}).get('Name', 'no'),
+            'nano_cpus': host.get('NanoCpus', 0),
+            'memory': host.get('Memory', 0),
+            'port_bindings': {k: v for k, v in network_ports.items() if v},
+            'binds': host.get('Binds') or [],
+            'networks': list(network_settings.get('Networks', {}).keys()),
+        }
+
+    def _build_recreate_kwargs(self, name: str, image: str, cfg: dict) -> dict:
+        """Build container.create() kwargs from a recreate-config dict."""
+        kwargs: dict = {
+            'name': name,
+            'image': image,
+            'detach': True,
+            'environment': cfg['env_vars'],
+            'labels': cfg['labels'],
+        }
+        if cfg.get('port_bindings'):
+            kwargs['ports'] = cfg['port_bindings']
+        if cfg.get('binds'):
+            kwargs['volumes'] = cfg['binds']
+        if cfg.get('restart_name') and cfg['restart_name'] != 'no':
+            kwargs['restart_policy'] = {'Name': cfg['restart_name']}
+        if cfg.get('nano_cpus'):
+            kwargs['nano_cpus'] = cfg['nano_cpus']
+        if cfg.get('memory'):
+            kwargs['mem_limit'] = cfg['memory']
+        return kwargs
+
+    def _apply_recreate_overrides(self, cfg: dict, ports, volumes, environment,
+                                   networks, restart_policy, cpu_limit, memory_limit, labels) -> list:
+        """Apply optional override parameters to a recreate config dict. Returns list of changed fields."""
+        changes = []
+        if ports is not None:
+            cfg['port_bindings'] = ports
+            changes.append('ports')
+        if volumes is not None:
+            cfg['binds'] = volumes
+            changes.append('volumes')
+        if environment is not None:
+            cfg['env_vars'] = [f"{k}={v}" for k, v in environment.items()]
+            changes.append('environment')
+        if networks is not None:
+            cfg['networks'] = networks
+            changes.append('networks')
+        if restart_policy is not None:
+            valid_policies = ['no', 'always', 'unless-stopped', 'on-failure']
+            if restart_policy not in valid_policies:
+                raise ValidationError(f"Invalid restart policy. Must be one of: {', '.join(valid_policies)}")
+            cfg['restart_name'] = restart_policy
+            changes.append('restart_policy')
+        if cpu_limit is not None:
+            if cpu_limit <= 0 or cpu_limit > 64:
+                raise ValidationError("CPU limit must be between 0 and 64 cores")
+            cfg['nano_cpus'] = int(cpu_limit * 1_000_000_000)
+            changes.append('cpu_limit')
+        if memory_limit is not None:
+            if memory_limit <= 0:
+                raise ValidationError("Memory limit must be positive")
+            cfg['memory'] = memory_limit * 1024 * 1024
+            changes.append('memory_limit')
+        if labels is not None:
+            cfg['labels'].update(labels)
+            changes.append('labels')
+        return changes
+
+    def _resolve_container_from_db(self, name_or_id: str) -> 'Container':
+        """Resolve a container from the database, raising ContainerNotFoundError if absent."""
+        db_container = self.db.query(Container).filter(
+            ((Container.name == name_or_id) | (Container.container_id == name_or_id)) &
+            (Container.state != 'removed')
+        ).order_by(Container.created_at.desc()).first()
+        if not db_container:
+            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
+        return db_container
+
+    def _stop_and_remove_docker(self, docker_container, container_name: str) -> None:
+        """Stop (if running) and remove a Docker container, raising ContainerOperationError on failure."""
+        try:
+            if docker_container.status == 'running':
+                docker_container.stop(timeout=10)
+            docker_container.remove()
+        except APIError as e:
+            raise ContainerOperationError(f"Failed to remove container '{container_name}': {e.explanation}")
+
     # =========================================================================
     # CREATE OPERATION
     # =========================================================================
@@ -324,7 +454,7 @@ class ContainerManager:
         # Step 9: Add flag for frontend health polling
         if auto_start:
             container_data['health_check_pending'] = True
-            container_data['health_check_started_at'] = datetime.utcnow().isoformat()
+            container_data['health_check_started_at'] = datetime.now(timezone.utc).isoformat()
         
         logger.info(f"Container creation complete: {name}")
         return container_data
@@ -490,7 +620,7 @@ class ContainerManager:
             if state.get('Running') and state.get('StartedAt'):
                 try:
                     started_at = datetime.fromisoformat(state.get('StartedAt').rstrip('Z'))
-                    uptime_seconds = int((datetime.utcnow() - started_at).total_seconds())
+                    uptime_seconds = int((datetime.now(timezone.utc) - started_at).total_seconds())
                 except Exception as e:
                     logger.warning(f"Failed to calculate uptime: {e}")
             
@@ -555,139 +685,73 @@ class ContainerManager:
         config = attrs.get('Config', {})
         state = attrs.get('State', {})
         network_settings = attrs.get('NetworkSettings', {})
-        
-        # TASK 7 FIX: Extract port mappings from Docker
-        ports_list = []
-        port_bindings = network_settings.get('Ports', {})
-        seen_ports = set()  # Track to avoid IPv4/IPv6 duplicates
-
-        for container_port, host_bindings in port_bindings.items():
-            if host_bindings:
-                # Parse protocol from container_port (e.g., "80/tcp" -> port=80, protocol=tcp)
-                port_parts = container_port.split('/')
-                port_num = port_parts[0]
-                protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
-
-                for binding in host_bindings:
-                    host_port = binding.get('HostPort', '')
-                    # Create unique key to avoid duplicates (IPv4 and IPv6 both map to same port)
-                    port_key = f"{port_num}/{protocol}:{host_port}"
-
-                    if port_key not in seen_ports:
-                        seen_ports.add(port_key)
-                        ports_list.append({
-                            'container': port_num,  # Just the port number
-                            'host': host_port,
-                            'protocol': protocol,  # Protocol as separate field
-                            'host_ip': binding.get('HostIp', '0.0.0.0')
-                        })
-        
-        # TASK 7 FIX: Extract volume mounts from Docker
-        volumes_list = []
-        for mount in attrs.get('Mounts', []):
-            volumes_list.append({
-                'source': mount.get('Source', ''),
-                'destination': mount.get('Destination', ''),
-                'mode': mount.get('Mode', ''),
-                'type': mount.get('Type', ''),
-                'rw': mount.get('RW', True)
-            })
-        
-        # TASK 7 FIX: Extract environment variables from Docker
-        env_vars_list = config.get('Env', [])
-
-        # FEAT-021: Extract command from Docker
-        command = config.get('Cmd')  # Can be None, string, or list
-
-        # Extract resource limits from Docker
         host_config = attrs.get('HostConfig', {})
-        nano_cpus = host_config.get('NanoCpus', 0)
-        cpu_limit = nano_cpus / 1e9 if nano_cpus else None  # Convert nano CPUs to cores
-        memory_limit = host_config.get('Memory', 0) or None  # Bytes
 
-        # Check if container already exists in database
+        ports_list = self._extract_port_list(network_settings)
+        volumes_list = [
+            {
+                'source': m.get('Source', ''),
+                'destination': m.get('Destination', ''),
+                'mode': m.get('Mode', ''),
+                'type': m.get('Type', ''),
+                'rw': m.get('RW', True),
+            }
+            for m in attrs.get('Mounts', [])
+        ]
+
+        nano_cpus = host_config.get('NanoCpus', 0)
+        cpu_limit = nano_cpus / 1e9 if nano_cpus else None
+        memory_limit = host_config.get('Memory', 0) or None
+        restart_policy = host_config.get('RestartPolicy', {}).get('Name', 'no')
+
         existing = self.db.query(Container).filter(
             Container.container_id == docker_container.id
         ).first()
-        
+
         if existing:
-            # Update existing record
             existing.name = docker_container.name.lstrip('/')
             existing.state = docker_container.status
             existing.image_name = config.get('Image', '')
-            existing.restart_policy = attrs.get('HostConfig', {}).get(
-                'RestartPolicy', {}
-            ).get('Name', 'no')
-            existing.ports_json = json.dumps(ports_list)  # TASK 7 FIX: Store ports
-            existing.cpu_limit = cpu_limit  # Store resource limits
+            existing.restart_policy = restart_policy
+            existing.ports_json = json.dumps(ports_list)
+            existing.cpu_limit = cpu_limit
             existing.memory_limit = memory_limit
-            existing.updated_at = datetime.utcnow()
-            
-            # Update timestamps based on state
+            existing.updated_at = datetime.now(timezone.utc)
             if state.get('Running'):
-                if not existing.started_at or state.get('StartedAt'):
-                    try:
-                        existing.started_at = datetime.fromisoformat(
-                            state.get('StartedAt', '').rstrip('Z')
-                        )
-                    except Exception:
-                        existing.started_at = datetime.utcnow()
+                ts = self._parse_docker_timestamp(state.get('StartedAt', ''))
+                existing.started_at = ts or datetime.now(timezone.utc)
             elif state.get('Status') in ['exited', 'dead']:
-                if state.get('FinishedAt'):
-                    try:
-                        existing.stopped_at = datetime.fromisoformat(
-                            state.get('FinishedAt', '').rstrip('Z')
-                        )
-                    except Exception:
-                        pass
-            
+                ts = self._parse_docker_timestamp(state.get('FinishedAt', ''))
+                if ts:
+                    existing.stopped_at = ts
             container_record = existing
         else:
-            # Create new record
-            created_at = datetime.utcnow()
-            if attrs.get('Created'):
-                try:
-                    created_at = datetime.fromisoformat(attrs.get('Created').rstrip('Z'))
-                except Exception:
-                    pass
-            
+            created_at = self._parse_docker_timestamp(attrs.get('Created', '')) or datetime.now(timezone.utc)
             container_record = Container(
                 container_id=docker_container.id,
                 name=docker_container.name.lstrip('/'),
                 state=docker_container.status,
                 environment=environment,
                 image_name=config.get('Image', ''),
-                restart_policy=attrs.get('HostConfig', {}).get(
-                    'RestartPolicy', {}
-                ).get('Name', 'no'),
-                ports_json=json.dumps(ports_list),  # TASK 7 FIX: Store ports
-                cpu_limit=cpu_limit,  # Store resource limits
+                restart_policy=restart_policy,
+                ports_json=json.dumps(ports_list),
+                cpu_limit=cpu_limit,
                 memory_limit=memory_limit,
-                auto_start=False,  # Will be set by API if needed
-                created_at=created_at
+                auto_start=False,
+                created_at=created_at,
             )
-            
-            # Set started_at if running
             if state.get('Running') and state.get('StartedAt'):
-                try:
-                    container_record.started_at = datetime.fromisoformat(
-                        state.get('StartedAt', '').rstrip('Z')
-                    )
-                except Exception:
-                    pass
-            
+                container_record.started_at = self._parse_docker_timestamp(state.get('StartedAt', ''))
             self.db.add(container_record)
-        
+
         self.db.commit()
         self.db.refresh(container_record)
-        
-        # TASK 7 FIX: Return dict with additional runtime metadata
+
         result = container_record.to_dict()
         result['ports'] = ports_list
         result['volumes'] = volumes_list
-        result['env_vars'] = env_vars_list
-        result['command'] = command  # FEAT-021: Include command in response
-
+        result['env_vars'] = config.get('Env', [])
+        result['command'] = config.get('Cmd')
         return result
     
     # =========================================================================
@@ -897,35 +961,11 @@ class ContainerManager:
                     # Parse ports from JSON
                     try:
                         container_data['ports'] = json.loads(db_container.ports_json or '[]')
-                    except:
+                    except Exception:
                         container_data['ports'] = []
             else:
                 # For unmanaged containers, extract ports from Docker directly
-                network_settings = attrs.get('NetworkSettings', {})
-                ports_list = []
-                port_bindings = network_settings.get('Ports', {})
-                seen_ports = set()
-
-                for container_port, host_bindings in port_bindings.items():
-                    if host_bindings:
-                        port_parts = container_port.split('/')
-                        port_num = port_parts[0]
-                        protocol = port_parts[1] if len(port_parts) > 1 else 'tcp'
-
-                        for binding in host_bindings:
-                            host_port = binding.get('HostPort', '')
-                            port_key = f"{port_num}/{protocol}:{host_port}"
-
-                            if port_key not in seen_ports:
-                                seen_ports.add(port_key)
-                                ports_list.append({
-                                    'container': port_num,
-                                    'host': host_port,
-                                    'protocol': protocol,
-                                    'host_ip': binding.get('HostIp', '0.0.0.0')
-                                })
-
-                container_data['ports'] = ports_list
+                container_data['ports'] = self._extract_port_list(attrs.get('NetworkSettings', {}))
                 container_data['environment'] = None
 
             # Apply environment filter (only for managed containers)
@@ -1177,88 +1217,33 @@ class ContainerManager:
         Raises:
             ContainerNotFoundError | ContainerOperationError | ValidationError
         """
-        from backend.models.update_history import UpdateHistory
-
-        # --- resolve container from DB (skip removed/dead entries) ---
-        db_container = self.db.query(Container).filter(
-            ((Container.name == name_or_id) |
-             (Container.container_id == name_or_id)) &
-            (Container.state != 'removed')
-        ).order_by(Container.created_at.desc()).first()
-        if not db_container:
-            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
-
+        db_container = self._resolve_container_from_db(name_or_id)
         client = get_docker_client()
 
-        # --- read live config from Docker ---
         try:
             old_docker = client.containers.get(db_container.container_id)
         except NotFound:
             raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
 
-        attrs   = old_docker.attrs
-        config  = attrs.get('Config', {})
-        host    = attrs.get('HostConfig', {})
-        old_image_name = config.get('Image', db_container.image_name)
+        cfg = self._read_docker_recreate_config(old_docker.attrs)
+        old_image_name = old_docker.attrs.get('Config', {}).get('Image', db_container.image_name)
 
-        # extract everything we need to recreate
-        env_vars      = config.get('Env') or []
-        labels        = config.get('Labels') or {}
-        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
-        nano_cpus     = host.get('NanoCpus', 0)
-        memory        = host.get('Memory', 0)
-
-        # ports: Docker returns {container_port/proto: [{HostIp, HostPort}]}
-        port_bindings = {}
-        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
-        for cport, bindings in network_ports.items():
-            if bindings:
-                port_bindings[cport] = bindings
-
-        # volumes
-        binds = host.get('Binds') or []
-
-        # --- pull latest ---
+        repo, tag = old_image_name.rsplit(':', 1) if ':' in old_image_name else (old_image_name, 'latest')
         logger.info(f"Pulling latest {old_image_name} for update…")
         try:
-            if ':' in old_image_name:
-                repo, tag = old_image_name.rsplit(':', 1)
-            else:
-                repo, tag = old_image_name, 'latest'
             new_image_obj = client.images.pull(repo, tag=tag)
             new_digest = new_image_obj.attrs.get('RepoDigests', [None])[0]
         except APIError as e:
             self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
             raise ContainerOperationError(f"Pull failed: {e.explanation}")
 
-        # --- stop & remove old container ---
         try:
-            if old_docker.status == 'running':
-                old_docker.stop(timeout=10)
-            old_docker.remove()
-        except APIError as e:
+            self._stop_and_remove_docker(old_docker, db_container.name)
+        except ContainerOperationError as e:
             self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
-            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+            raise
 
-        # --- recreate ---
-        create_kwargs = {
-            'name':        db_container.name,
-            'image':       old_image_name,
-            'detach':      True,
-            'environment': env_vars,
-            'labels':      labels,
-        }
-        if port_bindings:
-            create_kwargs['ports'] = port_bindings
-        if binds:
-            create_kwargs['volumes'] = binds
-        if restart_name and restart_name != 'no':
-            create_kwargs['restart_policy'] = {'Name': restart_name}
-        if nano_cpus:
-            create_kwargs['nano_cpus'] = nano_cpus
-        if memory:
-            create_kwargs['mem_limit'] = memory
-
+        create_kwargs = self._build_recreate_kwargs(db_container.name, old_image_name, cfg)
         try:
             new_docker = client.containers.create(**create_kwargs)
             new_docker.start()
@@ -1266,11 +1251,9 @@ class ContainerManager:
             self._record_update_history(db_container, old_image_name, old_image_name, status='failed', error=str(e))
             raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
 
-        # --- sync DB ---
         new_docker.reload()
         self._sync_database_state(new_docker, db_container.environment)
 
-        # --- history record ---
         old_digest_str = None
         try:
             old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
@@ -1279,18 +1262,16 @@ class ContainerManager:
             pass
         self._record_update_history(
             db_container, old_image_name, old_image_name,
-            old_digest=old_digest_str,
-            new_digest=new_digest,
-            status='success'
+            old_digest=old_digest_str, new_digest=new_digest, status='success'
         )
 
         logger.info(f"Container '{db_container.name}' updated successfully")
         return {
             'container_id': new_docker.id,
-            'name':         db_container.name,
-            'old_image':    old_image_name,
-            'new_image':    old_image_name,
-            'status':       'success'
+            'name': db_container.name,
+            'old_image': old_image_name,
+            'new_image': old_image_name,
+            'status': 'success',
         }
 
     # =========================================================================
@@ -1321,54 +1302,19 @@ class ContainerManager:
         Raises:
             ContainerNotFoundError | ContainerOperationError | ValidationError
         """
-        from backend.models.update_history import UpdateHistory
-
-        # --- resolve from DB ---
-        db_container = self.db.query(Container).filter(
-            ((Container.name == name_or_id) |
-             (Container.container_id == name_or_id)) &
-            (Container.state != 'removed')
-        ).order_by(Container.created_at.desc()).first()
-        if not db_container:
-            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
-
+        db_container = self._resolve_container_from_db(name_or_id)
         client = get_docker_client()
 
-        # --- read live config ---
         try:
             old_docker = client.containers.get(db_container.container_id)
         except NotFound:
             raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
 
-        attrs   = old_docker.attrs
-        config  = attrs.get('Config', {})
-        host    = attrs.get('HostConfig', {})
-        old_image_name = config.get('Image', db_container.image_name)
-
-        # Parse repo from current image
-        if ':' in old_image_name:
-            repo, old_tag = old_image_name.rsplit(':', 1)
-        else:
-            repo, old_tag = old_image_name, 'latest'
-
+        cfg = self._read_docker_recreate_config(old_docker.attrs)
+        old_image_name = old_docker.attrs.get('Config', {}).get('Image', db_container.image_name)
+        repo = old_image_name.rsplit(':', 1)[0] if ':' in old_image_name else old_image_name
         new_image_name = f"{repo}:{new_tag}"
 
-        # extract recreate config (same block as update_container_image)
-        env_vars      = config.get('Env') or []
-        labels        = config.get('Labels') or {}
-        restart_name  = host.get('RestartPolicy', {}).get('Name', 'no')
-        nano_cpus     = host.get('NanoCpus', 0)
-        memory        = host.get('Memory', 0)
-
-        port_bindings = {}
-        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
-        for cport, bindings in network_ports.items():
-            if bindings:
-                port_bindings[cport] = bindings
-
-        binds = host.get('Binds') or []
-
-        # --- pull new tag ---
         logger.info(f"Pulling {new_image_name} for retag…")
         try:
             new_image_obj = client.images.pull(repo, tag=new_tag)
@@ -1377,34 +1323,13 @@ class ContainerManager:
             self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
             raise ContainerOperationError(f"Pull failed: {e.explanation}")
 
-        # --- stop & remove old ---
         try:
-            if old_docker.status == 'running':
-                old_docker.stop(timeout=10)
-            old_docker.remove()
-        except APIError as e:
+            self._stop_and_remove_docker(old_docker, db_container.name)
+        except ContainerOperationError as e:
             self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
-            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+            raise
 
-        # --- recreate with new image ---
-        create_kwargs = {
-            'name':        db_container.name,
-            'image':       new_image_name,
-            'detach':      True,
-            'environment': env_vars,
-            'labels':      labels,
-        }
-        if port_bindings:
-            create_kwargs['ports'] = port_bindings
-        if binds:
-            create_kwargs['volumes'] = binds
-        if restart_name and restart_name != 'no':
-            create_kwargs['restart_policy'] = {'Name': restart_name}
-        if nano_cpus:
-            create_kwargs['nano_cpus'] = nano_cpus
-        if memory:
-            create_kwargs['mem_limit'] = memory
-
+        create_kwargs = self._build_recreate_kwargs(db_container.name, new_image_name, cfg)
         try:
             new_docker = client.containers.create(**create_kwargs)
             new_docker.start()
@@ -1412,11 +1337,9 @@ class ContainerManager:
             self._record_update_history(db_container, old_image_name, new_image_name, status='failed', error=str(e))
             raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
 
-        # --- sync DB ---
         new_docker.reload()
         self._sync_database_state(new_docker, db_container.environment)
 
-        # --- history record ---
         old_digest_str = None
         try:
             old_digests = client.images.get(old_image_name).attrs.get('RepoDigests', [])
@@ -1425,18 +1348,16 @@ class ContainerManager:
             pass
         self._record_update_history(
             db_container, old_image_name, new_image_name,
-            old_digest=old_digest_str,
-            new_digest=new_digest,
-            status='success'
+            old_digest=old_digest_str, new_digest=new_digest, status='success'
         )
 
         logger.info(f"Container '{db_container.name}' retagged {old_image_name} → {new_image_name}")
         return {
             'container_id': new_docker.id,
-            'name':         db_container.name,
-            'old_image':    old_image_name,
-            'new_image':    new_image_name,
-            'status':       'success'
+            'name': db_container.name,
+            'old_image': old_image_name,
+            'new_image': new_image_name,
+            'status': 'success',
         }
 
     # =========================================================================
@@ -1509,194 +1430,61 @@ class ContainerManager:
             docker rm <container>
             docker run [new config] <image>
         """
-        from backend.models.update_history import UpdateHistory
-
-        # Resolve container from DB
-        db_container = self.db.query(Container).filter(
-            ((Container.name == name_or_id) |
-             (Container.container_id == name_or_id)) &
-            (Container.state != 'removed')
-        ).order_by(Container.created_at.desc()).first()
-
-        if not db_container:
-            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
-
+        db_container = self._resolve_container_from_db(name_or_id)
         client = get_docker_client()
 
-        # Get current Docker container
         try:
             old_docker = client.containers.get(db_container.container_id)
         except NotFound:
             raise ContainerNotFoundError(f"Container '{name_or_id}' not found in Docker daemon")
 
-        # Extract current configuration
-        attrs = old_docker.attrs
-        config = attrs.get('Config', {})
-        host_config = attrs.get('HostConfig', {})
-        network_settings = attrs.get('NetworkSettings', {})
+        original_cfg = self._read_docker_recreate_config(old_docker.attrs)
+        old_image = old_docker.attrs.get('Config', {}).get('Image', db_container.image_name)
 
-        old_image = config.get('Image', db_container.image_name)
+        # Merge overrides into a copy of current config
+        current_config = dict(original_cfg)
+        changes = self._apply_recreate_overrides(
+            current_config, ports, volumes, environment,
+            networks, restart_policy, cpu_limit, memory_limit, labels
+        )
 
-        # Build current config
-        current_config = {
-            'env_vars': config.get('Env') or [],
-            'labels': config.get('Labels') or {},
-            'restart_policy': host_config.get('RestartPolicy', {}).get('Name', 'no'),
-            'nano_cpus': host_config.get('NanoCpus', 0),
-            'memory': host_config.get('Memory', 0),
-            'port_bindings': {},
-            'binds': host_config.get('Binds') or [],
-            'networks': list(network_settings.get('Networks', {}).keys())
-        }
-
-        # Extract port bindings
-        network_ports = network_settings.get('Ports') or {}
-        for cport, bindings in network_ports.items():
-            if bindings:
-                current_config['port_bindings'][cport] = bindings
-
-        # Track changes for history
-        changes = []
-
-        # Merge new configuration (only override if provided)
-        if ports is not None:
-            current_config['port_bindings'] = ports
-            changes.append('ports')
-
-        if volumes is not None:
-            current_config['binds'] = volumes
-            changes.append('volumes')
-
-        if environment is not None:
-            # Convert dict to list of KEY=VALUE strings
-            env_list = [f"{k}={v}" for k, v in environment.items()]
-            current_config['env_vars'] = env_list
-            changes.append('environment')
-
-        if networks is not None:
-            current_config['networks'] = networks
-            changes.append('networks')
-
-        if restart_policy is not None:
-            # Validate restart policy
-            valid_policies = ['no', 'always', 'unless-stopped', 'on-failure']
-            if restart_policy not in valid_policies:
-                raise ValidationError(f"Invalid restart policy. Must be one of: {', '.join(valid_policies)}")
-            current_config['restart_policy'] = restart_policy
-            changes.append('restart_policy')
-
-        if cpu_limit is not None:
-            # Validate CPU limit
-            if cpu_limit <= 0 or cpu_limit > 64:
-                raise ValidationError("CPU limit must be between 0 and 64 cores")
-            current_config['nano_cpus'] = int(cpu_limit * 1_000_000_000)  # Convert to nanocpus
-            changes.append('cpu_limit')
-
-        if memory_limit is not None:
-            # Validate memory limit
-            if memory_limit <= 0:
-                raise ValidationError("Memory limit must be positive")
-            current_config['memory'] = memory_limit * 1024 * 1024  # Convert MB to bytes
-            changes.append('memory_limit')
-
-        if labels is not None:
-            current_config['labels'].update(labels)
-            changes.append('labels')
-
-        # Stop and remove old container
         logger.info(f"Stopping and removing container '{db_container.name}' for reconfiguration")
-        try:
-            if old_docker.status == 'running':
-                old_docker.stop(timeout=10)
-            old_docker.remove()
-        except APIError as e:
-            raise ContainerOperationError(f"Failed to remove old container: {e.explanation}")
+        self._stop_and_remove_docker(old_docker, db_container.name)
 
-        # Build create kwargs
-        create_kwargs = {
-            'name': db_container.name,
-            'image': old_image,
-            'detach': True,
-            'environment': current_config['env_vars'],
-            'labels': current_config['labels'],
-        }
-
-        if current_config['port_bindings']:
-            create_kwargs['ports'] = current_config['port_bindings']
-
-        if current_config['binds']:
-            create_kwargs['volumes'] = current_config['binds']
-
-        if current_config['restart_policy'] and current_config['restart_policy'] != 'no':
-            create_kwargs['restart_policy'] = {'Name': current_config['restart_policy']}
-
-        if current_config['nano_cpus']:
-            create_kwargs['nano_cpus'] = current_config['nano_cpus']
-
-        if current_config['memory']:
-            create_kwargs['mem_limit'] = current_config['memory']
-
-        # Create new container
+        create_kwargs = self._build_recreate_kwargs(db_container.name, old_image, current_config)
         logger.info(f"Creating container '{db_container.name}' with new configuration")
         try:
             new_docker = client.containers.create(**create_kwargs)
-
-            # Connect to networks if specified
-            if current_config['networks']:
-                for network_name in current_config['networks']:
-                    if network_name != 'bridge':  # Skip default bridge network
-                        try:
-                            network = client.networks.get(network_name)
-                            network.connect(new_docker)
-                        except Exception as e:
-                            logger.warning(f"Failed to connect to network {network_name}: {e}")
-
+            for network_name in current_config.get('networks', []):
+                if network_name != 'bridge':
+                    try:
+                        client.networks.get(network_name).connect(new_docker)
+                    except Exception as e:
+                        logger.warning(f"Failed to connect to network {network_name}: {e}")
             new_docker.start()
         except APIError as e:
-            # Try to rollback - recreate with old config
             logger.error(f"Failed to recreate container: {e.explanation}")
             try:
-                rollback_kwargs = {
-                    'name': db_container.name,
-                    'image': old_image,
-                    'detach': True,
-                    'environment': config.get('Env') or [],
-                    'labels': config.get('Labels') or {},
-                }
-                if network_ports:
-                    rollback_kwargs['ports'] = network_ports
-                if host_config.get('Binds'):
-                    rollback_kwargs['volumes'] = host_config.get('Binds')
-
-                rollback_container = client.containers.create(**rollback_kwargs)
-                rollback_container.start()
-                logger.info(f"Rolled back to original configuration")
+                rollback_kwargs = self._build_recreate_kwargs(db_container.name, old_image, original_cfg)
+                rb = client.containers.create(**rollback_kwargs)
+                rb.start()
+                logger.info("Rolled back to original configuration")
             except Exception as rollback_error:
                 logger.error(f"Rollback failed: {rollback_error}")
-
             raise ContainerOperationError(f"Failed to recreate container: {e.explanation}")
 
-        # Sync to database
         new_docker.reload()
         self._sync_database_state(new_docker, db_container.environment)
-
-        # Record in update history
-        self._record_update_history(
-            db_container,
-            old_image,
-            old_image,  # Same image, just different config
-            status='success'
-        )
+        self._record_update_history(db_container, old_image, old_image, status='success')
 
         logger.info(f"Container '{db_container.name}' reconfigured successfully. Changes: {', '.join(changes)}")
-
         return {
             'container_id': new_docker.id,
             'name': db_container.name,
             'changes': changes,
             'old_container_id': db_container.container_id,
             'status': 'success',
-            'message': f"Container reconfigured: {', '.join(changes)}"
+            'message': f"Container reconfigured: {', '.join(changes)}",
         }
 
     # =========================================================================
@@ -1720,15 +1508,7 @@ class ContainerManager:
         """
         from backend.models.update_history import UpdateHistory
 
-        db_container = self.db.query(Container).filter(
-            ((Container.name == name_or_id) |
-             (Container.container_id == name_or_id)) &
-            (Container.state != 'removed')
-        ).order_by(Container.created_at.desc()).first()
-        if not db_container:
-            raise ContainerNotFoundError(f"Container '{name_or_id}' not found")
-
-        # Find the last successful update to know what old_image was
+        db_container = self._resolve_container_from_db(name_or_id)
         history = (
             self.db.query(UpdateHistory)
             .filter(UpdateHistory.container_name == db_container.name)
@@ -1742,91 +1522,46 @@ class ContainerManager:
         target_image = history.old_image
         client = get_docker_client()
 
-        # Verify the old image is still locally available
         try:
             client.images.get(target_image)
         except NotFound:
             raise ContainerOperationError(
-                f"Rollback image '{target_image}' no longer exists locally. "
-                f"Cannot roll back."
+                f"Rollback image '{target_image}' no longer exists locally. Cannot roll back."
             )
 
-        # --- read live config ---
         try:
             current_docker = client.containers.get(db_container.container_id)
         except NotFound:
             raise ContainerNotFoundError(f"Container '{name_or_id}' not in Docker daemon")
 
-        attrs  = current_docker.attrs
-        config = attrs.get('Config', {})
-        host   = attrs.get('HostConfig', {})
+        cfg = self._read_docker_recreate_config(current_docker.attrs)
+        current_image = current_docker.attrs.get('Config', {}).get('Image', db_container.image_name)
 
-        env_vars     = config.get('Env') or []
-        labels       = config.get('Labels') or {}
-        restart_name = host.get('RestartPolicy', {}).get('Name', 'no')
-        nano_cpus    = host.get('NanoCpus', 0)
-        memory       = host.get('Memory', 0)
-        binds        = host.get('Binds') or []
-        network_ports = attrs.get('NetworkSettings', {}).get('Ports') or {}
-        port_bindings = {k: v for k, v in network_ports.items() if v}
+        self._stop_and_remove_docker(current_docker, db_container.name)
 
-        current_image = config.get('Image', db_container.image_name)
-
-        # --- stop & remove ---
-        try:
-            if current_docker.status == 'running':
-                current_docker.stop(timeout=10)
-            current_docker.remove()
-        except APIError as e:
-            raise ContainerOperationError(f"Failed to remove current container: {e.explanation}")
-
-        # --- recreate with old image ---
-        create_kwargs = {
-            'name':        db_container.name,
-            'image':       target_image,
-            'detach':      True,
-            'environment': env_vars,
-            'labels':      labels,
-        }
-        if port_bindings:
-            create_kwargs['ports'] = port_bindings
-        if binds:
-            create_kwargs['volumes'] = binds
-        if restart_name and restart_name != 'no':
-            create_kwargs['restart_policy'] = {'Name': restart_name}
-        if nano_cpus:
-            create_kwargs['nano_cpus'] = nano_cpus
-        if memory:
-            create_kwargs['mem_limit'] = memory
-
+        create_kwargs = self._build_recreate_kwargs(db_container.name, target_image, cfg)
         try:
             new_docker = client.containers.create(**create_kwargs)
             new_docker.start()
         except APIError as e:
             raise ContainerOperationError(f"Rollback recreate failed: {e.explanation}")
 
-        # --- sync + history ---
         new_docker.reload()
         self._sync_database_state(new_docker, db_container.environment)
 
-        # Mark the original update history entry as rolled_back
         history.status = 'rolled_back'
         self.db.commit()
-
-        # Write a new history record for the rollback itself
         self._record_update_history(
             db_container, current_image, target_image,
-            old_digest=history.new_digest,
-            new_digest=history.old_digest,
-            status='success'
+            old_digest=history.new_digest, new_digest=history.old_digest, status='success'
         )
 
         logger.info(f"Container '{db_container.name}' rolled back to {target_image}")
         return {
-            'container_id':   new_docker.id,
-            'name':           db_container.name,
+            'container_id': new_docker.id,
+            'name': db_container.name,
             'rolled_back_to': target_image,
-            'status':         'success'
+            'status': 'success',
         }
 
     # =========================================================================
@@ -1922,8 +1657,8 @@ class ContainerManager:
         
         # Update database state
         container.state = 'removed'
-        container.stopped_at = datetime.utcnow()
-        container.updated_at = datetime.utcnow()
+        container.stopped_at = datetime.now(timezone.utc)
+        container.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         
         logger.info(f"Container deletion complete: {name_or_id}")
@@ -1985,8 +1720,8 @@ class ContainerManager:
             
             # Update database
             container.state = 'running'
-            container.started_at = datetime.utcnow()
-            container.updated_at = datetime.utcnow()
+            container.started_at = datetime.now(timezone.utc)
+            container.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             
             # Sync and return state
@@ -2050,8 +1785,8 @@ class ContainerManager:
             
             # Update database
             container.state = 'exited'
-            container.stopped_at = datetime.utcnow()
-            container.updated_at = datetime.utcnow()
+            container.stopped_at = datetime.now(timezone.utc)
+            container.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             
             # Sync and return state
@@ -2116,8 +1851,8 @@ class ContainerManager:
             
             # Update database
             container.state = 'running'
-            container.started_at = datetime.utcnow()
-            container.updated_at = datetime.utcnow()
+            container.started_at = datetime.now(timezone.utc)
+            container.updated_at = datetime.now(timezone.utc)
             self.db.commit()
             
             # Sync and return state

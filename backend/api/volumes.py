@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 # Create Blueprint
 volumes_bp = Blueprint('volumes', __name__, url_prefix='/api/volumes')
 
+_MSG_UNEXPECTED_ERROR = "An unexpected error occurred"
+
 
 @volumes_bp.route('', methods=['GET'])
 def list_volumes():
@@ -100,7 +102,7 @@ def list_volumes():
         logger.exception("Unexpected error listing volumes")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -172,7 +174,7 @@ def get_volume(volume_id):
         logger.exception(f"Unexpected error getting volume {volume_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -251,7 +253,7 @@ def create_volume():
         logger.exception("Unexpected error creating volume")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -316,7 +318,7 @@ def delete_volume(volume_id):
         logger.exception(f"Unexpected error deleting volume {volume_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -371,7 +373,7 @@ def adopt_volume(volume_id):
         logger.exception(f"Unexpected error adopting volume {volume_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -425,7 +427,7 @@ def release_volume(volume_id):
         logger.exception(f"Unexpected error releasing volume {volume_id}")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500
 
@@ -471,6 +473,6 @@ def prune_volumes():
         logger.exception("Unexpected error pruning volumes")
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred",
+            "error": _MSG_UNEXPECTED_ERROR,
             "error_type": "ServerError"
         }), 500

@@ -96,7 +96,7 @@
                             <template x-for="container in containerMetrics" :key="container.id">
                                 <tr class="border-b border-slate-700 hover:bg-slate-750">
                                     <td class="py-3">
-                                        <a :href="'/containers#' + container.id" class="text-blue-400 hover:underline" x-text="container.name"></a>
+                                        <a :href="'/containers#' + container.id" class="text-blue-400 hover:underline" x-text="container.name">Container</a>
                                     </td>
                                     <td class="text-right">
                                         <span :class="getCPUColor(container.cpu_percent)" x-text="formatPercent(container.cpu_percent)"></span>
@@ -126,7 +126,7 @@
                         <!-- Header -->
                         <div class="flex items-center gap-3 mb-3">
                             <span :class="domain.status === 'ok' ? 'text-green-400' : domain.status === 'warning' ? 'text-yellow-400' : 'text-red-400'">●</span>
-                            <h3 class="text-lg font-semibold text-white" x-text="domain.label"></h3>
+                            <h3 class="text-lg font-semibold text-white" x-text="domain.label">Health Domain</h3>
                             <span class="text-xs px-2 py-0.5 rounded-full"
                                   :class="domain.status === 'ok'      ? 'bg-green-900  text-green-300'  :
                                           domain.status === 'warning' ? 'bg-yellow-900 text-yellow-300' :
@@ -222,8 +222,10 @@ function healthPage() {
             if (this.checks.docker !== undefined || this.checks.database !== undefined) {
                 const dStatus = this.checks.docker || 'ok';
                 const dbStatus = this.checks.database || 'ok';
-                const infraStatus = (dStatus === 'error' || dbStatus === 'error')  ? 'error'   :
-                                    (dStatus === 'warning' || dbStatus === 'warning') ? 'warning' : 'ok';
+                let infraStatus;
+                if (dStatus === 'error' || dbStatus === 'error') { infraStatus = 'error'; }
+                else if (dStatus === 'warning' || dbStatus === 'warning') { infraStatus = 'warning'; }
+                else { infraStatus = 'ok'; }
                 result.push({
                     key:      'infrastructure',
                     label:    labels.infrastructure,
@@ -497,7 +499,7 @@ function healthPage() {
 
         // Formatters
         formatPercent(value) {
-            return value != null ? `${value.toFixed(1)}%` : '-';
+            return value == null ? '-' : `${value.toFixed(1)}%`;
         },
 
         formatMemory(container) {

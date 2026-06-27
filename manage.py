@@ -57,7 +57,7 @@ def reset_password():
     """
     import getpass
     import logging
-    from datetime import datetime
+    from datetime import datetime, timezone
     from backend.models.database import SessionLocal, init_db
     from backend.models.user import User
     from backend.auth.password_manager import PasswordManager
@@ -83,7 +83,7 @@ def reset_password():
             temp_password = PasswordManager.generate_temp_password()
             user.password_hash = PasswordManager.hash_password(temp_password)
             user.force_password_change = True
-            user.password_reset_at = datetime.utcnow()
+            user.password_reset_at = datetime.now(timezone.utc)
             db.commit()
             logger.info("Password reset via CLI (temporary password)")
             print(f"\n  ✓  Temporary password set:  {temp_password}")
@@ -111,7 +111,7 @@ def reset_password():
 
             user.password_hash = PasswordManager.hash_password(new_password)
             user.force_password_change = False
-            user.password_reset_at = datetime.utcnow()
+            user.password_reset_at = datetime.now(timezone.utc)
             db.commit()
             logger.info("Password reset via CLI (new password)")
             print("\n  ✓  Password reset successfully.\n")
@@ -119,79 +119,71 @@ def reset_password():
         db.close()
 
 
+def _handle_db_subcommand(subcommand: str) -> None:
+    """Execute a Flask-Migrate db subcommand (must be called inside app context)."""
+    from flask_migrate import upgrade, downgrade, history, current
+
+    if subcommand == 'init':
+        print("Initializing migrations...")
+        from flask_migrate import init
+        init()
+        print("✓ Migrations initialized in 'migrations/' directory")
+    elif subcommand == 'migrate':
+        message = sys.argv[3] if len(sys.argv) > 3 else "Auto-generated migration"
+        print(f"Generating migration: {message}")
+        from flask_migrate import migrate as run_migrate
+        run_migrate(message=message)
+        print("✓ Migration generated. Review it in migrations/versions/")
+    elif subcommand == 'upgrade':
+        revision = sys.argv[3] if len(sys.argv) > 3 else 'head'
+        print(f"Upgrading database to {revision}...")
+        upgrade(revision=revision)
+        print("✓ Database upgraded successfully")
+    elif subcommand == 'downgrade':
+        revision = sys.argv[3] if len(sys.argv) > 3 else '-1'
+        print(f"Downgrading database to {revision}...")
+        downgrade(revision=revision)
+        print("✓ Database downgraded successfully")
+    elif subcommand == 'history':
+        print("Migration history:")
+        history()
+    elif subcommand == 'current':
+        print("Current migration version:")
+        current()
+    else:
+        print(f"Unknown subcommand: {subcommand}")
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
-
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
 
     command = sys.argv[1]
 
-    # reset-password is self-contained — no Flask app context needed
     if command == 'reset-password':
         reset_password()
         sys.exit(0)
 
-    # All other commands need the Flask app + Flask-Migrate context
-    # Imports are lazy so that 'reset-password' above works without flask_migrate
     from flask import Flask
-    from flask_migrate import Migrate, upgrade, downgrade, history, current
+    from flask_migrate import Migrate
     from flask_sqlalchemy import SQLAlchemy
 
-    db_path = os.environ.get('DATABASE_PATH', '/tmp/dockermate.db')
+    db_path = os.environ.get('DATABASE_PATH', '/tmp/dockermate.db')  # NOSONAR
     app = Flask(__name__)
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db = SQLAlchemy(app)
-    migrate = Migrate(app, db)
+    _ = Migrate(app, db)
 
     with app.app_context():
         if command == 'db':
-            # Flask-Migrate commands
             if len(sys.argv) < 3:
                 print("Usage: python manage.py db [init|migrate|upgrade|downgrade|history|current]")
                 sys.exit(1)
-
-            subcommand = sys.argv[2]
-
-            if subcommand == 'init':
-                print("Initializing migrations...")
-                from flask_migrate import init
-                init()
-                print("✓ Migrations initialized in 'migrations/' directory")
-
-            elif subcommand == 'migrate':
-                message = sys.argv[3] if len(sys.argv) > 3 else "Auto-generated migration"
-                print(f"Generating migration: {message}")
-                from flask_migrate import migrate as run_migrate
-                run_migrate(message=message)
-                print("✓ Migration generated. Review it in migrations/versions/")
-
-            elif subcommand == 'upgrade':
-                revision = sys.argv[3] if len(sys.argv) > 3 else 'head'
-                print(f"Upgrading database to {revision}...")
-                upgrade(revision=revision)
-                print("✓ Database upgraded successfully")
-
-            elif subcommand == 'downgrade':
-                revision = sys.argv[3] if len(sys.argv) > 3 else '-1'
-                print(f"Downgrading database to {revision}...")
-                downgrade(revision=revision)
-                print("✓ Database downgraded successfully")
-
-            elif subcommand == 'history':
-                print("Migration history:")
-                history()
-
-            elif subcommand == 'current':
-                print("Current migration version:")
-                current()
-
-            else:
-                print(f"Unknown subcommand: {subcommand}")
-                sys.exit(1)
-
+            _handle_db_subcommand(sys.argv[2])
         else:
             print(f"Unknown command: {command}")
             print(__doc__)

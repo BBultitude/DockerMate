@@ -90,7 +90,7 @@ class TestSystemResourceDetection:
         mock_vm.return_value.total = 16 * 1024 ** 3  # 16 GB in bytes
         
         result = get_ram_gb()
-        assert result == 16.0
+        assert result == 16
     
     @patch('psutil.virtual_memory')
     def test_get_ram_gb_rounds_to_2_decimals(self, mock_vm):
@@ -107,7 +107,7 @@ class TestSystemResourceDetection:
         mock_vm.side_effect = Exception("Detection failed")
         
         result = get_ram_gb()
-        assert result == 8.0  # Default fallback
+        assert result == 8  # Default fallback
 
 
 class TestHardwareProfileClassification:
@@ -205,7 +205,7 @@ class TestDetectHardwareProfile:
         
         # Check detected specs are included
         assert profile['cpu_cores'] == 8
-        assert profile['ram_gb'] == 32.0
+        assert profile['ram_gb'] == 32
         assert profile['is_raspberry_pi'] is False
         
         # Check profile classification
@@ -258,12 +258,12 @@ class TestUpdateHostConfig:
         mock_db = MagicMock()
         mock_config = MagicMock()
         
-        result = update_host_config(mock_db, mock_config)
+        _ = = update_host_config(mock_db, mock_config)
         
         # Verify all fields were set
         assert mock_config.profile_name == 'MEDIUM_SERVER'
         assert mock_config.cpu_cores == 8
-        assert mock_config.ram_gb == 32.0
+        assert mock_config.ram_gb == 32
         assert mock_config.is_raspberry_pi is False
         assert mock_config.max_containers == 50
         

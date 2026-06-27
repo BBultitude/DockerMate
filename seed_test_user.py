@@ -16,7 +16,7 @@ WARNING: This is for DEVELOPMENT ONLY. Do not use in production.
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,8 +63,8 @@ def seed_test_user():
             username='admin',
             password_hash=password_hash,
             force_password_change=False,  # Don't force change for testing
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
         
         # Add to database

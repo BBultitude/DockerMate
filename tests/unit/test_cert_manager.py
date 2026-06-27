@@ -11,7 +11,7 @@ import pytest
 import os
 import tempfile
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from backend.ssl.cert_manager import CertificateManager
@@ -66,7 +66,7 @@ class TestCertificateGeneration:
         cert = x509.load_pem_x509_certificate(cert_data)
         
         # Check validity period
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         not_before = cert.not_valid_before
         not_after = cert.not_valid_after
         

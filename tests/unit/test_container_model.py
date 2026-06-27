@@ -15,7 +15,7 @@ Test Coverage:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.models.database import Base
@@ -82,7 +82,7 @@ class TestContainerModel:
         assert container.state == 'created'
         
         # Resource usage defaults to 0
-        assert container.cpu_usage == 0.0
+        assert container.cpu_usage == 0
         assert container.memory_usage == 0
         
         # Restart policy defaults to 'no'
@@ -126,9 +126,9 @@ class TestContainerModel:
         db_session.add(container)
         db_session.commit()
         
-        assert container.cpu_limit == 2.0
+        assert container.cpu_limit == 2
         assert container.memory_limit == 536870912
-        assert container.cpu_usage == 45.5
+        assert container.cpu_usage == pytest.approx(45.5)
         assert container.memory_usage == 268435456
     
     def test_container_repr(self, db_session):
@@ -161,7 +161,7 @@ class TestContainerState:
         db_session.commit()
         
         # Update to running
-        test_time = datetime.utcnow()
+        test_time = datetime.now(timezone.utc)
         container.update_state('running', test_time)
         
         assert container.state == 'running'
@@ -180,7 +180,7 @@ class TestContainerState:
         db_session.commit()
         
         # Update to exited
-        test_time = datetime.utcnow()
+        test_time = datetime.now(timezone.utc)
         container.update_state('exited', test_time)
         
         assert container.state == 'exited'
@@ -198,9 +198,9 @@ class TestContainerState:
         db_session.add(container)
         db_session.commit()
         
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         container.update_state('running')
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
         
         assert container.state == 'running'
         assert before <= container.started_at <= after
@@ -250,7 +250,7 @@ class TestContainerProperties:
     
     def test_uptime_seconds_running(self, db_session):
         """Test uptime calculation for running container."""
-        start_time = datetime.utcnow() - timedelta(seconds=300)  # Started 5 minutes ago
+        start_time = datetime.now(timezone.utc) - timedelta(seconds=300)  # Started 5 minutes ago
         
         container = Container(
             container_id='uptime123abc45' * 5 + 'abcd',
@@ -297,7 +297,7 @@ class TestContainerProperties:
             memory_usage=268435456  # 256 MB
         )
         
-        assert container.memory_usage_mb == 256.0
+        assert container.memory_usage_mb == 256
     
     def test_memory_usage_mb_none(self, db_session):
         """Test memory usage returns 0.0 when None."""
@@ -308,7 +308,7 @@ class TestContainerProperties:
             image_name='nginx:latest'
         )
         
-        assert container.memory_usage_mb == 0.0
+        assert container.memory_usage_mb == 0
     
     def test_memory_limit_mb(self, db_session):
         """Test memory limit conversion to MB."""
@@ -320,7 +320,7 @@ class TestContainerProperties:
             memory_limit=536870912  # 512 MB
         )
         
-        assert container.memory_limit_mb == 512.0
+        assert container.memory_limit_mb == 512
     
     def test_memory_limit_mb_none(self, db_session):
         """Test memory limit returns None when unlimited."""
@@ -351,7 +351,7 @@ class TestContainerResources:
         
         container.update_resources(cpu_usage=75.5, memory_usage=314572800)
         
-        assert container.cpu_usage == 75.5
+        assert container.cpu_usage == pytest.approx(75.5)
         assert container.memory_usage == 314572800
     
     def test_update_resources_cpu_only(self, db_session):
@@ -370,7 +370,7 @@ class TestContainerResources:
         original_memory = container.memory_usage
         container.update_resources(cpu_usage=50.0)
         
-        assert container.cpu_usage == 50.0
+        assert container.cpu_usage == 50
         assert container.memory_usage == original_memory
     
     def test_update_resources_memory_only(self, db_session):
@@ -406,7 +406,7 @@ class TestContainerResources:
         
         original_time = container.updated_at
         
-        # Sleep not needed - datetime.utcnow() will be different
+        # Sleep not needed - datetime.now(timezone.utc) will be different
         container.update_resources(cpu_usage=10.0)
         
         assert container.updated_at >= original_time
@@ -586,9 +586,9 @@ class TestContainerEdgeCases:
         db_session.add(container)
         db_session.commit()
         
-        assert container.cpu_usage == 0.0
+        assert container.cpu_usage == 0
         assert container.memory_usage == 0
-        assert container.memory_usage_mb == 0.0
+        assert container.memory_usage_mb == 0
     
     def test_large_memory_values(self, db_session):
         """Test containers with large memory values."""
@@ -607,4 +607,4 @@ class TestContainerEdgeCases:
         db_session.commit()
         
         assert container.memory_limit == large_memory
-        assert container.memory_limit_mb == 16384.0  # 16 GB = 16384 MB
+        assert container.memory_limit_mb == 16384  # 16 GB = 16384 MB

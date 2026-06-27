@@ -56,7 +56,7 @@ class TestHostConfigModel:
         assert result is not None
         assert result.profile_name == 'MEDIUM_SERVER'
         assert result.cpu_cores == 8
-        assert result.ram_gb == 32.0
+        assert result.ram_gb == 32
     
     def test_host_config_default_values(self, db_session):
         """Test that default values are set correctly"""
@@ -142,7 +142,7 @@ class TestHostConfigSingleton:
         assert config2.id == 1
         assert config2.profile_name == 'MEDIUM_SERVER'
         assert config2.cpu_cores == 8
-        assert config2.ram_gb == 32.0
+        assert config2.ram_gb == 32
     
     def test_only_one_config_exists(self, db_session):
         """Test that only one HostConfig row exists"""
@@ -344,7 +344,7 @@ class TestHostConfigSerialization:
         
         assert data['profile_name'] == 'MEDIUM_SERVER'
         assert data['cpu_cores'] == 8
-        assert data['ram_gb'] == 32.0
+        assert data['ram_gb'] == 32
         assert data['is_raspberry_pi'] is False
         assert data['max_containers'] == 50
         assert data['container_limit_warning_threshold'] == 75
@@ -392,7 +392,7 @@ class TestRaspberryPiLimits:
         )
         
         # 12 containers = 80% of 15
-        at_limit, level = config.is_at_container_limit(current_count=12)
+        _, level = config.is_at_container_limit(current_count=12)
         assert level in ['warning', 'critical']  # Should be warning
         
         # 14 containers = 93% of 15

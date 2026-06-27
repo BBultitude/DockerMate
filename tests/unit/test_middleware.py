@@ -24,7 +24,7 @@ Run tests:
 import pytest
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask
 from backend.auth.middleware import require_auth, is_authenticated, get_current_session_info
 from backend.auth.session_manager import SessionManager
@@ -76,7 +76,7 @@ class TestRequireAuthDecorator:
         
         db = SessionLocal()
         session = db.query(SessionModel).first()
-        session.expires_at = datetime.utcnow() - timedelta(hours=1)
+        session.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
         db.close()
         
@@ -193,11 +193,11 @@ class TestMiddlewareEdgeCases:
         app.config['TESTING'] = True
         
         # Add login route that middleware expects
-        @app.route('/login')
+        @app.route('/login', methods=['GET'])
         def login_page():
             return "Login page"
-        
-        @app.route('/multi-protected')
+
+        @app.route('/multi-protected', methods=['GET'])
         @require_auth()
         def multi_protected():
             return "Multi protected"
@@ -218,7 +218,7 @@ class TestMiddlewareEdgeCases:
         """Test that @require_auth preserves function name and docstring"""
         app = Flask(__name__)
         
-        @app.route('/test')
+        @app.route('/test', methods=['GET'])
         @require_auth()
         def test_function():
             """Test docstring"""

@@ -10,7 +10,7 @@ Run with: pytest tests/unit/test_database.py -v
 import pytest
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.models.database import Base, get_db
@@ -67,7 +67,7 @@ class TestUserModel:
     
     def test_user_default_values(self, db_session):
         """Test that user has correct default values"""
-        user = User(password_hash='test_hash')
+        user = User(password_hash='test_hash')  # NOSONAR
         db_session.add(user)
         db_session.commit()
         
@@ -80,19 +80,19 @@ class TestUserModel:
     
     def test_user_timestamps(self, db_session):
         """Test that timestamps are set correctly"""
-        user = User(password_hash='test_hash')
+        user = User(password_hash='test_hash')  # NOSONAR
         db_session.add(user)
         db_session.commit()
         
         # Timestamps should be recent
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         assert (now - user.created_at).total_seconds() < 1
         assert (now - user.updated_at).total_seconds() < 1
     
     def test_user_force_password_change(self, db_session):
         """Test force password change flag"""
         user = User(
-            password_hash='test_hash',
+            password_hash='test_hash',  # NOSONAR
             force_password_change=True
         )
         db_session.add(user)
@@ -117,7 +117,7 @@ class TestSessionModel:
     
     def test_create_session(self, db_session):
         """Test creating a session"""
-        expires_at = datetime.utcnow() + timedelta(hours=8)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
         
         session = SessionModel(
             token_hash='a' * 64,
@@ -133,7 +133,7 @@ class TestSessionModel:
     
     def test_session_default_values(self, db_session):
         """Test that session has correct default values"""
-        expires_at = datetime.utcnow() + timedelta(hours=8)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
         
         session = SessionModel(
             token_hash='b' * 64,
@@ -150,7 +150,7 @@ class TestSessionModel:
     
     def test_session_with_metadata(self, db_session):
         """Test session with IP and user agent"""
-        expires_at = datetime.utcnow() + timedelta(hours=8)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
         
         session = SessionModel(
             token_hash='c' * 64,
@@ -265,12 +265,12 @@ class TestDatabaseRelationships:
     def test_multiple_sessions_per_user(self, db_session):
         """Test that user can have multiple sessions"""
         # Create user
-        user = User(password_hash='test_hash')
+        user = User(password_hash='test_hash')  # NOSONAR
         db_session.add(user)
         db_session.commit()
         
         # Create multiple sessions
-        expires_at = datetime.utcnow() + timedelta(hours=8)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
         for i in range(3):
             session = SessionModel(
                 token_hash=str(i) * 64,

@@ -20,7 +20,7 @@ Design Principles:
 - Support hardware profile limits from Task 1
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, BigInteger, Boolean, DateTime, Text, Index
 from backend.models.database import Base
 
@@ -154,7 +154,7 @@ class Container(Base):
     created_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         comment='When container was created in Docker'
     )
     
@@ -174,8 +174,8 @@ class Container(Base):
     updated_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         comment='When record was last updated in DockerMate'
     )
     
@@ -198,9 +198,9 @@ class Container(Base):
         if 'auto_start' not in kwargs:
             kwargs['auto_start'] = False
         if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.utcnow()
+            kwargs['created_at'] = datetime.now(timezone.utc)
         if 'updated_at' not in kwargs:
-            kwargs['updated_at'] = datetime.utcnow()
+            kwargs['updated_at'] = datetime.now(timezone.utc)
         
         super().__init__(**kwargs)
 
@@ -263,7 +263,7 @@ class Container(Base):
         """
         if not self.is_running or not self.started_at:
             return 0
-        return int((datetime.utcnow() - self.started_at).total_seconds())
+        return int((datetime.now(timezone.utc) - self.started_at).total_seconds())
     
     @property
     def memory_usage_mb(self):
@@ -305,7 +305,7 @@ class Container(Base):
         self.state = new_state
         
         if timestamp is None:
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
         
         # Set appropriate lifecycle timestamp based on state
         if new_state == 'running':
@@ -331,7 +331,7 @@ class Container(Base):
         if memory_usage is not None:
             self.memory_usage = memory_usage
         
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     @staticmethod
     def validate_state(state):

@@ -332,7 +332,7 @@ class TestDockerClientContext:
         
         # Use context manager with exception
         with pytest.raises(ValueError):
-            with DockerClientContext() as client:
+            with DockerClientContext():
                 raise ValueError("Test error")
         
         # Context manager should not suppress exception

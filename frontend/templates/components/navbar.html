@@ -117,7 +117,7 @@ function navbar() {
                 
                 if (response.ok) {
                     // Successful logout - redirect to login page
-                    window.location.href = '/login';
+                    globalThis.location.href = '/login';
                 } else {
                     // Server returned error status
                     const data = await response.json().catch(() => ({}));

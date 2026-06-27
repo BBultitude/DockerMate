@@ -83,64 +83,44 @@ class MetricsWorker:
             else:
                 logger.info("✓ MetricsWorker stopped")
 
+    def _run_collection_cycle(self, db) -> None:
+        """Execute one metrics collection cycle (system + container + optional cleanup)."""
+        try:
+            self.collector.collect_system_metrics(db)
+        except Exception as e:
+            logger.error(f"Error collecting system metrics: {e}")
+        try:
+            self.collector.collect_container_metrics(db)
+        except Exception as e:
+            logger.error(f"Error collecting container metrics: {e}")
+        if random.random() < (1.0 / 1440):  # NOSONAR: probabilistic jitter, not security
+            try:
+                logger.info("Running daily metrics cleanup...")
+                self.collector.cleanup_old_metrics(db, retention_days=7)
+            except Exception as e:
+                logger.error(f"Error during metrics cleanup: {e}")
+
     def _collect_loop(self):
-        """Main collection loop
-
-        Runs continuously while self.running is True.
-        Collects metrics, then sleeps for interval.
-
-        Error handling:
-            - Catches and logs all exceptions
-            - Continues running after errors
-            - Prevents worker crash from stopping metrics collection
-        """
+        """Main collection loop — runs continuously while self.running is True."""
         logger.info("MetricsWorker collection loop started")
-
         while self.running:
             db = None
-
             try:
-                # Create new database session for this collection cycle
                 db = SessionLocal()
-
-                # Collect system-wide metrics
-                try:
-                    self.collector.collect_system_metrics(db)
-                except Exception as sys_error:
-                    logger.error(f"Error collecting system metrics: {sys_error}")
-
-                # Collect per-container metrics
-                try:
-                    self.collector.collect_container_metrics(db)
-                except Exception as cont_error:
-                    logger.error(f"Error collecting container metrics: {cont_error}")
-
-                # Cleanup old metrics (probabilistically ~once per day)
-                # At 60s interval: 1440 collections per day
-                # Probability: 1/1440 = 0.000694
-                if random.random() < (1.0 / 1440):
-                    try:
-                        logger.info("Running daily metrics cleanup...")
-                        self.collector.cleanup_old_metrics(db, retention_days=7)
-                    except Exception as cleanup_error:
-                        logger.error(f"Error during metrics cleanup: {cleanup_error}")
-
+                self._run_collection_cycle(db)
             except Exception as e:
                 logger.error(f"Error in metrics collection loop: {e}", exc_info=True)
-
             finally:
-                # Always close database session
                 if db:
                     try:
                         db.close()
-                    except Exception as close_error:
-                        logger.error(f"Error closing database session: {close_error}")
+                    except Exception as e:
+                        logger.error(f"Error closing database session: {e}")
 
-            # Sleep for interval (check self.running periodically for fast shutdown)
-            sleep_interval = 0
-            while sleep_interval < self.interval and self.running:
-                time.sleep(min(1, self.interval - sleep_interval))
-                sleep_interval += 1
+            elapsed = 0
+            while elapsed < self.interval and self.running:
+                time.sleep(min(1, self.interval - elapsed))
+                elapsed += 1
 
         logger.info("MetricsWorker collection loop stopped")
 

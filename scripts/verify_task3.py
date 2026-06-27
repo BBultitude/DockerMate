@@ -38,7 +38,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 # Colors for output
@@ -241,7 +241,7 @@ def test_session_manager():
             
             expired_session = Session(
                 token_hash=token_hash,
-                expires_at=datetime.utcnow() - timedelta(hours=1)
+                expires_at=datetime.now(timezone.utc) - timedelta(hours=1)
             )
             db.add(expired_session)
             db.commit()
@@ -349,7 +349,7 @@ def test_integration():
         print("\n  Simulating full authentication flow...")
         
         # Step 1: User enters password
-        entered_password = "MySecurePass2024!"
+        entered_password = "MySecurePass2024!"  # NOSONAR
         print_info("Step 1: User enters password")
         
         # Step 2: Create test user with known password if doesn't exist

@@ -240,7 +240,7 @@ class TestCreateContainer:
         manager = ContainerManager(db=db_session)
         
         # Create container with pull_if_missing=True
-        result = manager.create_container(
+        _ = = manager.create_container(
             name='test-nginx',
             image='nginx:latest',
             auto_start=False,
@@ -265,7 +265,7 @@ class TestCreateContainer:
         manager = ContainerManager(db=db_session)
         
         # Create container with full config
-        result = manager.create_container(
+        _ = = manager.create_container(
             name='test-nginx',
             image='nginx:latest',
             environment='prod',
@@ -582,7 +582,7 @@ class TestUpdateContainer:
         
         # Update labels
         manager = ContainerManager(db=db_session)
-        result = manager.update_container(
+        _ = = manager.update_container(
             'test-nginx',
             labels={'version': '2.0', 'env': 'production'}
         )
@@ -773,7 +773,7 @@ class TestLifecycleOperations:
         
         # Start container
         manager = ContainerManager(db=db_session)
-        result = manager.start_container('test-nginx')
+        _ = = manager.start_container('test-nginx')
         
         # Verify Docker start called
         mock_docker_container.start.assert_called_once()
@@ -807,7 +807,7 @@ class TestLifecycleOperations:
         
         # Try to start
         manager = ContainerManager(db=db_session)
-        result = manager.start_container('test-nginx')
+        _ = = manager.start_container('test-nginx')
         
         # Verify start not called (already running)
         mock_docker_container.start.assert_not_called()
@@ -844,7 +844,7 @@ class TestLifecycleOperations:
         
         # Stop container
         manager = ContainerManager(db=db_session)
-        result = manager.stop_container('test-nginx', timeout=5)
+        _ = = manager.stop_container('test-nginx', timeout=5)
         
         # Verify Docker stop called with timeout
         mock_docker_container.stop.assert_called_once_with(timeout=5)
@@ -875,7 +875,7 @@ class TestLifecycleOperations:
         
         # Restart container
         manager = ContainerManager(db=db_session)
-        result = manager.restart_container('test-nginx', timeout=5)
+        _ = = manager.restart_container('test-nginx', timeout=5)
         
         # Verify Docker restart called
         mock_docker_container.restart.assert_called_once_with(timeout=5)

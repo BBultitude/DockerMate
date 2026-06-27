@@ -28,6 +28,7 @@ Educational Notes:
 
 import pytest
 import json
+import secrets
 from unittest.mock import Mock, MagicMock, patch
 from flask import Flask
 
@@ -80,7 +81,7 @@ def app():
     
     app = Flask(__name__)
     app.config['TESTING'] = True
-    app.config['SECRET_KEY'] = 'test_secret_key'
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
     
     # Register containers blueprint
     app.register_blueprint(containers_bp)

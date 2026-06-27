@@ -299,7 +299,7 @@ if __name__ == "__main__":
         # Create new user
         user = User(
             username='admin',
-            password_hash='$2b$12$test_hash_not_real'  # Fake hash for testing
+            password_hash='$2b$12$test_hash_not_real'  # Fake hash for testing  # NOSONAR
         )
         db.add(user)
         db.commit()

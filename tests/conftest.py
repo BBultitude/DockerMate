@@ -20,6 +20,7 @@ Usage:
 
 import pytest
 import os
+import secrets
 import tempfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -202,34 +203,34 @@ def test_app(db_setup):
     """
     app = Flask(__name__)
     app.config['TESTING'] = True
-    app.config['SECRET_KEY'] = 'test_secret_key_for_testing_only'
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
     app.config['WTF_CSRF_ENABLED'] = False  # Disable CSRF for testing
     
     # Import and register routes
     from backend.auth.middleware import require_auth, is_authenticated, get_current_session_info
     
     # Add test routes
-    @app.route('/login')
+    @app.route('/login', methods=['GET', 'POST'])
     def login_page():
         return "Login page"
-    
-    @app.route('/protected-page')
+
+    @app.route('/protected-page', methods=['GET'])
     @require_auth()
     def protected_page():
         return "Protected content"
-    
-    @app.route('/protected-api')
+
+    @app.route('/protected-api', methods=['GET'])
     @require_auth(api=True)
     def protected_api():
         return {"message": "Protected API response"}
-    
-    @app.route('/check-status')
+
+    @app.route('/check-status', methods=['GET'])
     def check_status():
         if is_authenticated():
             return "Logged in"
         return "Not logged in"
-    
-    @app.route('/session-info')
+
+    @app.route('/session-info', methods=['GET'])
     @require_auth()
     def session_info():
         info = get_current_session_info()

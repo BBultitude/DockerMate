@@ -46,7 +46,7 @@
 
             <!-- CLI Equivalent -->
             <div class="border-t border-slate-700 pt-4 mb-4">
-                <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                <p class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</p>
                 <div class="bg-slate-900 rounded p-3">
                     <code class="text-xs text-green-400 font-mono break-all">
                         docker rm<span x-show="deleteModal.isRunning"> -f</span> <span x-text="deleteModal.containerName"></span>
@@ -82,8 +82,8 @@
             <p class="text-slate-400 text-sm mb-1">Container: <strong class="text-white" x-text="retagModal.container?.name"></strong></p>
             <p class="text-slate-400 text-sm mb-4">Current image: <code class="text-indigo-300" x-text="retagModal.currentImage"></code></p>
 
-            <label class="block text-slate-300 text-sm font-medium mb-1">New tag</label>
-            <input type="text"
+            <label for="retag-new-tag" class="block text-slate-300 text-sm font-medium mb-1">New tag</label>
+            <input id="retag-new-tag" type="text"
                    x-model="retagModal.newTag"
                    placeholder="e.g. 1.29, latest"
                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 mb-2">
@@ -92,7 +92,7 @@
 
             <!-- CLI Equivalent -->
             <div class="border-t border-slate-700 pt-4 mt-4 mb-4">
-                <label class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</label>
+                <p class="block text-sm text-slate-400 mb-2">Docker CLI Equivalent</p>
                 <div class="space-y-2">
                     <div class="bg-slate-900 rounded p-3">
                         <p class="text-xs text-slate-500 mb-1">1. Pull new image:</p>
@@ -229,15 +229,15 @@
                     <h4 class="text-white font-semibold mb-2">⚡ Resource Limits</h4>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-slate-300 text-sm mb-1">CPU Limit (cores)</label>
-                            <input type="number" step="0.1" min="0" max="64"
+                            <label for="reconfig-cpu-limit" class="block text-slate-300 text-sm mb-1">CPU Limit (cores)</label>
+                            <input id="reconfig-cpu-limit" type="number" step="0.1" min="0" max="64"
                                    x-model="reconfigureModal.cpuLimit"
                                    placeholder="e.g., 1.5"
                                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white">
                         </div>
                         <div>
-                            <label class="block text-slate-300 text-sm mb-1">Memory Limit (MB)</label>
-                            <input type="number" step="1" min="0"
+                            <label for="reconfig-memory-limit" class="block text-slate-300 text-sm mb-1">Memory Limit (MB)</label>
+                            <input id="reconfig-memory-limit" type="number" step="1" min="0"
                                    x-model="reconfigureModal.memoryLimit"
                                    placeholder="e.g., 512"
                                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white">
@@ -275,9 +275,7 @@
          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
          @click.self="!bulkModal.loading && closeBulkModal()">
         <div class="bg-slate-800 rounded-lg p-6 max-w-2xl w-full mx-4 border border-slate-700 max-h-[90vh] overflow-y-auto">
-            <h3 class="text-xl font-bold text-white mb-4">
-                <span x-text="bulkModal.completed ? 'Bulk Operation Results' : 'Confirm Bulk Operation'"></span>
-            </h3>
+            <h3 class="text-xl font-bold text-white mb-4" x-text="bulkModal.completed ? 'Bulk Operation Results' : 'Confirm Bulk Operation'">Bulk Operation</h3>
 
             <!-- Confirmation View -->
             <div x-show="!bulkModal.completed">
@@ -377,11 +375,11 @@
                 <!-- Basic Information -->
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-slate-400 text-sm">Name</label>
+                        <p class="text-slate-400 text-sm">Name</p>
                         <div class="text-white font-medium" x-text="detailsModal.container?.name"></div>
                     </div>
                     <div>
-                        <label class="text-slate-400 text-sm">Status</label>
+                        <p class="text-slate-400 text-sm">Status</p>
                         <div>
                             <span :class="{
                                 'bg-green-900 text-green-300': detailsModal.container?.state === 'running',
@@ -392,11 +390,11 @@
                         </div>
                     </div>
                     <div>
-                        <label class="text-slate-400 text-sm">Image</label>
+                        <p class="text-slate-400 text-sm">Image</p>
                         <div class="text-white font-mono text-sm" x-text="detailsModal.container?.image_name"></div>
                     </div>
                     <div>
-                        <label class="text-slate-400 text-sm">Environment</label>
+                        <p class="text-slate-400 text-sm">Environment</p>
                         <div>
                             <span :class="{
                                 'bg-green-900 text-green-300': detailsModal.container?.environment === 'dev',
@@ -416,7 +414,7 @@
 
                 <!-- Resource Limits -->
                 <div x-show="detailsModal.container?.cpu_limit || detailsModal.container?.memory_limit">
-                    <label class="text-slate-400 text-sm">Resource Limits</label>
+                    <p class="text-slate-400 text-sm">Resource Limits</p>
                     <div class="mt-1 bg-slate-900 rounded p-3">
                         <div class="grid grid-cols-2 gap-4">
                             <div x-show="detailsModal.container?.cpu_limit">
@@ -437,7 +435,7 @@
 
                 <!-- Ports -->
                 <div x-show="detailsModal.container?.ports && detailsModal.container.ports.length > 0">
-                    <label class="text-slate-400 text-sm">Port Mappings</label>
+                    <p class="text-slate-400 text-sm">Port Mappings</p>
                     <div class="mt-1 bg-slate-900 rounded p-3 space-y-1">
                         <template x-for="(port, index) in detailsModal.container?.ports" :key="`port-${index}`">
                             <div class="text-white font-mono text-sm">
@@ -452,7 +450,7 @@
 
                 <!-- Environment Variables -->
                 <div x-show="detailsModal.container?.env_vars && detailsModal.container.env_vars.length > 0">
-                    <label class="text-slate-400 text-sm">Environment Variables</label>
+                    <p class="text-slate-400 text-sm">Environment Variables</p>
                     <div class="mt-1 bg-slate-900 rounded p-3 max-h-40 overflow-y-auto">
                         <template x-for="(env, index) in detailsModal.container?.env_vars" :key="`env-${index}`">
                             <div class="text-white font-mono text-sm" x-text="env"></div>
@@ -462,7 +460,7 @@
 
                 <!-- Command (FEAT-021) -->
                 <div x-show="detailsModal.container?.command">
-                    <label class="text-slate-400 text-sm">Command Override</label>
+                    <p class="text-slate-400 text-sm">Command Override</p>
                     <div class="mt-1 bg-slate-900 rounded p-3">
                         <div class="text-white font-mono text-sm" x-text="Array.isArray(detailsModal.container?.command) ? detailsModal.container.command.join(' ') : detailsModal.container?.command"></div>
                     </div>
@@ -473,7 +471,7 @@
 
                 <!-- Volumes -->
                 <div x-show="detailsModal.container?.volumes && detailsModal.container.volumes.length > 0">
-                    <label class="text-slate-400 text-sm">Volume Mounts</label>
+                    <p class="text-slate-400 text-sm">Volume Mounts</p>
                     <div class="mt-1 bg-slate-900 rounded p-3">
                         <template x-for="(volume, index) in detailsModal.container?.volumes" :key="`volume-${index}`">
                             <div class="text-white font-mono text-sm" x-text="volume.source + ':' + volume.destination + ':' + volume.mode"></div>
@@ -483,7 +481,7 @@
                 
                 <!-- CLI Command Equivalent -->
                 <div>
-                    <label class="text-slate-400 text-sm">Docker CLI Equivalent</label>
+                    <p class="text-slate-400 text-sm">Docker CLI Equivalent</p>
                     <div class="mt-1 bg-slate-900 rounded p-3 overflow-x-auto">
                         <pre class="text-green-400 font-mono text-xs whitespace-pre-wrap" x-text="generateDockerCommand(detailsModal.container)"></pre>
                     </div>
@@ -518,8 +516,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <!-- Tail Lines -->
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">Lines</label>
-                        <select x-model="logsModal.tail" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                        <label for="logs-lines-count" class="block text-xs text-slate-400 mb-1">Lines</label>
+                        <select id="logs-lines-count" x-model="logsModal.tail" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
                             <option value="100">Last 100</option>
                             <option value="500">Last 500</option>
                             <option value="1000">Last 1000</option>
@@ -529,8 +527,8 @@
 
                     <!-- Timestamps -->
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">Timestamps</label>
-                        <select x-model="logsModal.timestamps" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                        <label for="logs-timestamps" class="block text-xs text-slate-400 mb-1">Timestamps</label>
+                        <select id="logs-timestamps" x-model="logsModal.timestamps" @change="fetchLogs()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
                             <option value="false">Hide</option>
                             <option value="true">Show</option>
                         </select>
@@ -538,8 +536,8 @@
 
                     <!-- Auto-refresh -->
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">Auto-refresh</label>
-                        <select x-model="logsModal.autoRefresh" @change="toggleAutoRefresh()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                        <label for="logs-auto-refresh" class="block text-xs text-slate-400 mb-1">Auto-refresh</label>
+                        <select id="logs-auto-refresh" x-model="logsModal.autoRefresh" @change="toggleAutoRefresh()" class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
                             <option value="false">Off</option>
                             <option value="5">5 seconds</option>
                             <option value="10">10 seconds</option>
@@ -632,10 +630,10 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <!-- Container Name -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-container-name" class="block text-sm font-medium text-slate-300 mb-1">
                                 Container Name <span class="text-red-400">*</span>
                             </label>
-                            <input type="text" 
+                            <input id="create-container-name" type="text"
                                    x-model="createModal.formData.name"
                                    required
                                    placeholder="my-container"
@@ -647,10 +645,10 @@
                         
                         <!-- Image Name -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-image-name" class="block text-sm font-medium text-slate-300 mb-1">
                                 Image Name <span class="text-red-400">*</span>
                             </label>
-                            <input type="text" 
+                            <input id="create-image-name" type="text"
                                    x-model="createModal.formData.image"
                                    required
                                    placeholder="nginx:latest"
@@ -662,10 +660,10 @@
 
                         <!-- Command (Optional) -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-command" class="block text-sm font-medium text-slate-300 mb-1">
                                 Command <span class="text-slate-500">(optional)</span>
                             </label>
-                            <input type="text"
+                            <input id="create-command" type="text"
                                    x-model="createModal.formData.command"
                                    placeholder="Leave blank for image default, or: tunnel run --token xxx"
                                    class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm">
@@ -678,10 +676,10 @@
 
                         <!-- Environment Tag -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-environment" class="block text-sm font-medium text-slate-300 mb-1">
                                 Environment <span class="text-red-400">*</span>
                             </label>
-                            <select x-model="createModal.formData.environment"
+                            <select id="create-environment" x-model="createModal.formData.environment"
                                     required
                                     class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="DEV">Development (DEV)</option>
@@ -693,10 +691,10 @@
                         
                         <!-- Restart Policy -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-restart-policy" class="block text-sm font-medium text-slate-300 mb-1">
                                 Restart Policy
                             </label>
-                            <select x-model="createModal.formData.restart_policy"
+                            <select id="create-restart-policy" x-model="createModal.formData.restart_policy"
                                     class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="no">No restart</option>
                                 <option value="on-failure">On failure only</option>
@@ -708,8 +706,8 @@
 
                         <!-- Network -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">Network</label>
-                            <select x-model="createModal.formData.network"
+                            <label for="create-network" class="block text-sm font-medium text-slate-300 mb-1">Network</label>
+                            <select id="create-network" x-model="createModal.formData.network"
                                     class="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="">Default (bridge)</option>
                                 <template x-for="net in createModal.networks" :key="net.network_id">
@@ -880,10 +878,10 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <!-- CPU Limit -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-cpu-limit" class="block text-sm font-medium text-slate-300 mb-1">
                                 CPU Limit (cores)
                             </label>
-                            <input type="number" 
+                            <input id="create-cpu-limit" type="number"
                                    x-model="createModal.formData.cpu_limit"
                                    step="0.1"
                                    min="0.1"
@@ -894,10 +892,10 @@
                         
                         <!-- Memory Limit -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">
+                            <label for="create-memory-limit" class="block text-sm font-medium text-slate-300 mb-1">
                                 Memory Limit (MB)
                             </label>
-                            <input type="number" 
+                            <input id="create-memory-limit" type="number"
                                    x-model="createModal.formData.memory_limit"
                                    min="4"
                                    placeholder="512"
@@ -1005,8 +1003,8 @@
             <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <!-- Search -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Search</label>
-                    <input type="text"
+                    <label for="filter-search" class="block text-sm text-slate-400 mb-1">Search</label>
+                    <input id="filter-search" type="text"
                            x-model="filters.search"
                            @input="applyFilters()"
                            placeholder="Name or image..."
@@ -1015,8 +1013,8 @@
 
                 <!-- Status Filter -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Status</label>
-                    <select x-model="filters.status"
+                    <label for="filter-status" class="block text-sm text-slate-400 mb-1">Status</label>
+                    <select id="filter-status" x-model="filters.status"
                             @change="applyFilters()"
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Statuses</option>
@@ -1029,8 +1027,8 @@
 
                 <!-- Environment Filter -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Environment</label>
-                    <select x-model="filters.environment"
+                    <label for="filter-environment" class="block text-sm text-slate-400 mb-1">Environment</label>
+                    <select id="filter-environment" x-model="filters.environment"
                             @change="applyFilters()"
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Environments</option>
@@ -1043,8 +1041,8 @@
 
                 <!-- Image Filter -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Image</label>
-                    <select x-model="filters.image"
+                    <label for="filter-image" class="block text-sm text-slate-400 mb-1">Image</label>
+                    <select id="filter-image" x-model="filters.image"
                             @change="applyFilters()"
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Images</option>
@@ -1056,8 +1054,8 @@
 
                 <!-- Managed Status Filter (UI-008) -->
                 <div>
-                    <label class="block text-sm text-slate-400 mb-1">Managed Status</label>
-                    <select x-model="filters.managedStatus"
+                    <label for="filter-managed-status" class="block text-sm text-slate-400 mb-1">Managed Status</label>
+                    <select id="filter-managed-status" x-model="filters.managedStatus"
                             @change="applyFilters()"
                             class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="all">All Containers</option>
@@ -1138,7 +1136,7 @@
                             <!-- Container Info -->
                             <div class="flex-1">
                                 <div class="flex items-center space-x-3">
-                                    <h3 class="text-xl font-semibold text-white" x-text="container.name"></h3>
+                                    <h3 class="text-xl font-semibold text-white" x-text="container.name">Container</h3>
                                 <span :class="{
                                     'bg-green-900 text-green-300': container.state === 'running',
                                     'bg-red-900 text-red-300': container.state === 'exited',
@@ -1409,8 +1407,7 @@ function containersComponent() {
         // Health check polling state (Task 7 Fix - Issue 4)
         healthCheckPolling: {}, // { containerName: { intervalId, attempts, startTime } }
         
-        // Delete modal state
-        deleteModal: {
+        deleteModal: { // state for the delete confirmation modal
             show: false,
             containerId: null,
             containerName: '',
@@ -1645,8 +1642,8 @@ function containersComponent() {
                     const imageText = (container.image_name || '').toLowerCase();
 
                     // Split text into words (by spaces, hyphens, colons, slashes)
-                    const nameWords = nameText.split(/[\s\-:\/]+/);
-                    const imageWords = imageText.split(/[\s\-:\/]+/);
+                    const nameWords = nameText.split(/[\s\-:/]+/);
+                    const imageWords = imageText.split(/[\s\-:/]+/);
 
                     // Match if any word starts with the search term OR exact substring match in name
                     searchMatch = nameWords.some(word => word.startsWith(searchLower)) ||
@@ -1660,12 +1657,10 @@ function containersComponent() {
 
                 // Environment filter
                 let envMatch = true;
-                if (this.filters.environment === 'all') {
-                    envMatch = true;
-                } else if (this.filters.environment === 'none') {
+                if (this.filters.environment === 'none') {
                     // Match containers with no environment tag (null, undefined, or empty string)
                     envMatch = !container.environment || container.environment === '';
-                } else {
+                } else if (this.filters.environment !== 'all') {
                     // Match specific environment (DEV, STG, PROD)
                     envMatch = container.environment === this.filters.environment;
                 }
@@ -1746,15 +1741,15 @@ function containersComponent() {
             if (this.filters.image !== 'all') params.set('image', this.filters.image);
             if (this.filters.managedStatus !== 'all') params.set('managed', this.filters.managedStatus);
 
-            const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
-            window.history.replaceState({}, '', newURL);
+            const newURL = params.toString() ? `?${params.toString()}` : globalThis.location.pathname;
+            globalThis.history.replaceState({}, '', newURL);
         },
 
         /**
          * Load filters from URL query parameters
          */
         loadFiltersFromURL() {
-            const params = new URLSearchParams(window.location.search);
+            const params = new URLSearchParams(globalThis.location.search);
 
             this.filters.search = params.get('search') || '';
             this.filters.status = params.get('status') || 'all';
@@ -1893,6 +1888,7 @@ function containersComponent() {
                         this.healthCheckPolling[containerName].timeoutId = timeoutId;
                     }
                 } catch (error) {
+                    console.error('healthCheck:', error);
                     if (attempts >= maxAttempts) {
                         this.stopHealthCheckPolling(containerName);
                     } else {
@@ -2041,7 +2037,7 @@ function containersComponent() {
                 if (data.success) {
                     this.createModal.networks = data.data.filter(n => n.driver === 'bridge');
                 }
-            } catch (e) { /* non-fatal */ }
+            } catch (e) { console.error('loadAvailableNetworks:', e); }
         },
         
         /**
@@ -2249,7 +2245,7 @@ function containersComponent() {
                         if (port.container && port.host) {
                             // Combine port number with protocol (e.g., "80/tcp")
                             const portKey = `${port.container}/${port.protocol || 'tcp'}`;
-                            requestData.ports[portKey] = parseInt(port.host);
+                            requestData.ports[portKey] = Number.parseInt(port.host);
                         }
                     });
                 }
@@ -2279,14 +2275,14 @@ function containersComponent() {
                 
                 // Add resource limits if specified
                 if (this.createModal.formData.cpu_limit) {
-                    requestData.cpu_limit = parseFloat(this.createModal.formData.cpu_limit);
+                    requestData.cpu_limit = Number.parseFloat(this.createModal.formData.cpu_limit);
                 }
 
                 if (this.createModal.formData.memory_limit) {
                     // Convert MB to bytes for API (backend expects bytes per API spec)
                     // User enters MB in form → API receives bytes → Docker receives bytes
                     const MB_TO_BYTES = 1024 * 1024;
-                    requestData.memory_limit = parseInt(this.createModal.formData.memory_limit) * MB_TO_BYTES;
+                    requestData.memory_limit = Number.parseInt(this.createModal.formData.memory_limit) * MB_TO_BYTES;
                 }
                 
                 // Make API request
@@ -2320,15 +2316,12 @@ function containersComponent() {
                     if (this.createModal.formData.auto_start) {
                         this.startHealthCheckPolling(containerName);
                     }
+                } else if (data.error_type === 'validation_error') {
+                    this.createModal.errorMessage = data.message;
+                } else if (data.error_type === 'docker_error') {
+                    this.createModal.errorMessage = `Docker error: ${data.message}`;
                 } else {
-                    // Handle API validation errors
-                    if (data.error_type === 'validation_error') {
-                        this.createModal.errorMessage = data.message;
-                    } else if (data.error_type === 'docker_error') {
-                        this.createModal.errorMessage = `Docker error: ${data.message}`;
-                    } else {
-                        this.createModal.errorMessage = data.message;
-                    }
+                    this.createModal.errorMessage = data.message;
                 }
             } catch (error) {
                 this.createModal.errorMessage = `Failed to create container: ${error.message}`;
@@ -2493,15 +2486,15 @@ function containersComponent() {
             }
 
             const blob = new Blob([logs], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-').slice(0, -5);
             a.download = `${this.logsModal.containerName}_${timestamp}.log`;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            a.remove();
+            URL.revokeObjectURL(url);
 
             this.showToast('Logs downloaded successfully', 'success');
         },
@@ -2518,7 +2511,7 @@ function containersComponent() {
 
             // Set new interval if enabled
             if (this.logsModal.autoRefresh !== 'false') {
-                const intervalSeconds = parseInt(this.logsModal.autoRefresh);
+                const intervalSeconds = Number.parseInt(this.logsModal.autoRefresh);
                 this.logsModal.autoRefreshInterval = setInterval(() => {
                     this.fetchLogs();
                 }, intervalSeconds * 1000);
@@ -2533,6 +2526,7 @@ function containersComponent() {
                 await navigator.clipboard.writeText(this.logsModal.cliCommand);
                 this.showToast('CLI command copied to clipboard', 'success');
             } catch (error) {
+                console.error('copyCliCommand:', error);
                 this.showToast('Failed to copy to clipboard', 'error');
             }
         },
@@ -2808,10 +2802,10 @@ function containersComponent() {
 
                 // Resource limits
                 if (this.reconfigureModal.cpuLimit) {
-                    payload.cpu_limit = parseFloat(this.reconfigureModal.cpuLimit);
+                    payload.cpu_limit = Number.parseFloat(this.reconfigureModal.cpuLimit);
                 }
                 if (this.reconfigureModal.memoryLimit) {
-                    payload.memory_limit = parseInt(this.reconfigureModal.memoryLimit);
+                    payload.memory_limit = Number.parseInt(this.reconfigureModal.memoryLimit);
                 }
 
                 // Validate at least one change

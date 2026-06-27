@@ -277,14 +277,8 @@ class PasswordManager:
         # Check for common weak patterns that should be rejected
         password_lower = password.lower()
         
-        # Check 1: Weak base words with only number/symbol padding
-        # Catches: password123, 123password, admin!, !@#admin123, etc.
-        # Pattern explanation:
-        # - ^[\d!@#$...]* = starts with any number of digits/symbols
-        # - (password|admin|...) = followed by a weak base word
-        # - [\d!@#$...]* = followed by any number of digits/symbols
-        # - $ = end of string
-        weak_pattern = r'^[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*(password|admin|welcome|letmein|qwerty|monkey|dragon|master|login|user)[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*$'  # NOSONAR: not a hardcoded credential, this is a weak-pattern detection regex
+        # Check 1: Weak base words with only number/symbol padding (password123, admin!, etc.)
+        weak_pattern = r'^[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*(password|admin|welcome|letmein|qwerty|monkey|dragon|master|login|user)[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*$'  # NOSONAR
         
         if re.match(weak_pattern, password_lower):
             issues.append("Don't use common words (password, admin, etc.) with just numbers/symbols")
@@ -376,9 +370,9 @@ class PasswordManager:
         # Add random 2-digit number
         number = secrets.randbelow(100)
         
-        # Format: word1-word2-word3-number
+        # Format: word1-word2-word3-number  # NOSONAR
         # Example: correct-horse-battery-42
-        temp_password = f"{word1}-{word2}-{word3}-{number}"
+        temp_password = f"{word1}-{word2}-{word3}-{number}"  # NOSONAR
         
         # Capitalize first letter to meet uppercase requirement
         temp_password = temp_password[0].upper() + temp_password[1:]
@@ -436,7 +430,7 @@ if __name__ == "__main__":
     hashed = PasswordManager.hash_password(password)
     print(f"   Original: {password}")
     print(f"   Hashed:   {hashed[:20]}... ({len(hashed)} chars)")
-    print(f"   ✅ Hash generated")
+    print("   ✅ Hash generated")
     
     # Test 2: Password verification
     print("\n2. Testing password verification...")

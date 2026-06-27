@@ -44,6 +44,7 @@
         <!-- Search & Filter Bar -->
         <div x-show="!loading && images.length > 0" class="flex flex-col sm:flex-row gap-3 mb-4">
             <input type="text"
+                   aria-label="Search images"
                    x-model="searchTerm"
                    placeholder="Search images…"
                    class="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
@@ -101,7 +102,7 @@
                         <div class="flex-1">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="flex flex-col">
-                                    <h3 class="text-xl font-semibold text-white font-mono" x-text="image.full_name"></h3>
+                                    <h3 class="text-xl font-semibold text-white font-mono" x-text="image.full_name">Image</h3>
                                     <span x-show="image.tag === '<none>' && image.previous_tag"
                                           class="text-yellow-400 text-sm mt-1">
                                         (was <span x-text="image.repository + ':' + image.previous_tag"></span>)
@@ -168,8 +169,8 @@
 
             <form @submit.prevent="pullImage()">
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">Repository</label>
-                    <input type="text"
+                    <label for="pull-repository" class="block text-sm text-slate-400 mb-2">Repository</label>
+                    <input id="pull-repository" type="text"
                            x-model="pullForm.repository"
                            placeholder="e.g., nginx, ghcr.io/user/image, quay.io/repo/image"
                            required
@@ -180,8 +181,8 @@
                 </div>
 
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">Tag</label>
-                    <input type="text"
+                    <label for="pull-tag" class="block text-sm text-slate-400 mb-2">Tag</label>
+                    <input id="pull-tag" type="text"
                            x-model="pullForm.tag"
                            placeholder="e.g., latest, alpine, 8.0"
                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
@@ -223,8 +224,8 @@
 
             <form @submit.prevent="tagImage()">
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">New Repository</label>
-                    <input type="text"
+                    <label for="tag-repository" class="block text-sm text-slate-400 mb-2">New Repository</label>
+                    <input id="tag-repository" type="text"
                            x-model="tagForm.repository"
                            placeholder="e.g., my-nginx"
                            required
@@ -232,8 +233,8 @@
                 </div>
 
                 <div class="mb-4">
-                    <label class="block text-sm text-slate-400 mb-2">New Tag</label>
-                    <input type="text"
+                    <label for="tag-new-tag" class="block text-sm text-slate-400 mb-2">New Tag</label>
+                    <input id="tag-new-tag" type="text"
                            x-model="tagForm.tag"
                            placeholder="e.g., v1.0"
                            class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white">
@@ -274,8 +275,8 @@
             </p>
 
             <div class="mb-4">
-                <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                    <input type="checkbox" x-model="deleteModal.force" class="rounded">
+                <label for="img-delete-force" class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                    <input type="checkbox" id="img-delete-force" x-model="deleteModal.force" class="rounded">
                     <span>Force delete (remove even if containers are using it)</span>
                 </label>
             </div>

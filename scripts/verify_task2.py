@@ -38,7 +38,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import hashlib
 import json
@@ -126,7 +126,7 @@ def test_user_model():
         print("\n  Creating user...")
         user = User(
             username='admin',
-            password_hash='$2b$12$test_hash_not_real_for_testing'
+            password_hash='$2b$12$test_hash_not_real_for_testing'  # NOSONAR
         )
         db.add(user)
         db.commit()
@@ -205,7 +205,7 @@ def test_session_model():
         
         session1 = Session(
             token_hash=hash1,
-            expires_at=datetime.utcnow() + timedelta(hours=8),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
             user_agent='Test Browser 1.0',
             ip_address='192.168.1.100'
         )
@@ -220,7 +220,7 @@ def test_session_model():
         
         session2 = Session(
             token_hash=hash2,
-            expires_at=datetime.utcnow() - timedelta(hours=1),
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
             user_agent='Test Browser 1.0',
             ip_address='192.168.1.101'
         )

@@ -92,7 +92,7 @@
                     <div class="flex justify-between items-start">
                         <div class="flex-1">
                             <div class="flex items-center gap-3 flex-wrap">
-                                <h3 class="text-lg font-semibold text-white font-mono" x-text="network.name"></h3>
+                                <h3 class="text-lg font-semibold text-white font-mono" x-text="network.name">Network</h3>
                                 <!-- Managed badge -->
                                 <span x-show="network.managed"
                                       class="px-2 py-0.5 bg-green-900 text-green-300 rounded text-xs font-medium">
@@ -325,16 +325,16 @@
                 <div class="space-y-4">
                     <!-- Name -->
                     <div>
-                        <label class="block text-sm text-slate-300 mb-1">Network Name <span class="text-red-400">*</span></label>
-                        <input x-model="createForm.name"
+                        <label for="network-create-name" class="block text-sm text-slate-300 mb-1">Network Name <span class="text-red-400">*</span></label>
+                        <input id="network-create-name" x-model="createForm.name"
                                type="text" placeholder="e.g. app-backend"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                     </div>
 
                     <!-- Driver -->
                     <div>
-                        <label class="block text-sm text-slate-300 mb-1">Driver</label>
-                        <select x-model="createForm.driver" @change="createForm.subnet = ''; createForm.subnetSize = ''; subnetValidation = null"
+                        <label for="network-create-driver" class="block text-sm text-slate-300 mb-1">Driver</label>
+                        <select id="network-create-driver" x-model="createForm.driver" @change="createForm.subnet = ''; createForm.subnetSize = ''; subnetValidation = null"
                                 class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
                             <option value="bridge">bridge (default — isolated network)</option>
                             <option value="host">host (shares host networking)</option>
@@ -344,8 +344,8 @@
 
                     <!-- Size picker (bridge networks only) -->
                     <div x-show="createForm.driver === 'bridge'">
-                        <label class="block text-sm text-slate-300 mb-1">How many IPs do you need?</label>
-                        <select x-model="createForm.subnetSize" @change="applySubnetSize()"
+                        <label for="network-create-subnet-size" class="block text-sm text-slate-300 mb-1">How many IPs do you need?</label>
+                        <select id="network-create-subnet-size" x-model="createForm.subnetSize" @change="applySubnetSize()"
                                 class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
                             <option value="">— skip (let Docker decide) —</option>
                             <option value="29">/29  — up to 5 containers</option>
@@ -360,8 +360,8 @@
 
                     <!-- Network-number picker: which /N block within the free base? -->
                     <div x-show="createForm.subnetSize && networkNumberOptions.length > 1">
-                        <label class="block text-sm text-slate-300 mb-1">Network address</label>
-                        <select x-model="createForm.networkBase" @change="applyNetworkBase()"
+                        <label for="network-create-base" class="block text-sm text-slate-300 mb-1">Network address</label>
+                        <select id="network-create-base" x-model="createForm.networkBase" @change="applyNetworkBase()"
                                 class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-500">
                             <template x-for="opt in networkNumberOptions" :key="opt.value">
                                 <option :value="opt.value" x-text="opt.label"></option>
@@ -399,12 +399,12 @@
 
                     <!-- Manual CIDR override (shown for bridge; auto-filled by size picker, editable) -->
                     <div x-show="createForm.driver === 'bridge'">
-                        <label class="block text-sm text-slate-300 mb-1">
+                        <label for="network-create-subnet" class="block text-sm text-slate-300 mb-1">
                             Subnet (CIDR)
                             <span x-show="createForm.subnetSize" class="text-slate-500 font-normal text-xs">— auto-filled, edit if needed</span>
                             <span x-show="!createForm.subnetSize" class="text-slate-500 font-normal text-xs">— or type a custom CIDR here</span>
                         </label>
-                        <input x-model="createForm.subnet"
+                        <input id="network-create-subnet" x-model="createForm.subnet"
                                @input.debounce.500ms="validateSubnet()"
                                type="text" placeholder="e.g. 172.20.0.0/24"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
@@ -417,16 +417,16 @@
 
                     <!-- Gateway — only shown when user typed a custom CIDR (size picker handles it automatically) -->
                     <div x-show="createForm.subnet && !createForm.subnetSize">
-                        <label class="block text-sm text-slate-300 mb-1">Gateway <span class="text-slate-500 font-normal text-xs">— leave empty for auto</span></label>
-                        <input x-model="createForm.gateway"
+                        <label for="network-create-gateway" class="block text-sm text-slate-300 mb-1">Gateway <span class="text-slate-500 font-normal text-xs">— leave empty for auto</span></label>
+                        <input id="network-create-gateway" x-model="createForm.gateway"
                                type="text" placeholder="e.g. 172.20.0.1"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                     </div>
 
                     <!-- Purpose -->
                     <div>
-                        <label class="block text-sm text-slate-300 mb-1">Purpose / Description</label>
-                        <input x-model="createForm.purpose"
+                        <label for="network-create-purpose" class="block text-sm text-slate-300 mb-1">Purpose / Description</label>
+                        <input id="network-create-purpose" x-model="createForm.purpose"
                                type="text" placeholder="What is this network for?"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                     </div>
@@ -488,28 +488,28 @@
                 </div>
                 <div class="space-y-3">
                     <div>
-                        <label class="block text-sm text-slate-300 mb-1">Range Name <span class="text-red-400">*</span></label>
-                        <input x-model="reserveForm.range_name"
+                        <label for="reserve-range-name" class="block text-sm text-slate-300 mb-1">Range Name <span class="text-red-400">*</span></label>
+                        <input id="reserve-range-name" x-model="reserveForm.range_name"
                                type="text" placeholder="e.g. Web services"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                     </div>
                     <div class="flex gap-3">
                         <div class="flex-1">
-                            <label class="block text-sm text-slate-300 mb-1">Start IP <span class="text-red-400">*</span></label>
-                            <input x-model="reserveForm.start_ip"
+                            <label for="reserve-start-ip" class="block text-sm text-slate-300 mb-1">Start IP <span class="text-red-400">*</span></label>
+                            <input id="reserve-start-ip" x-model="reserveForm.start_ip"
                                    type="text" placeholder="e.g. 172.20.0.10"
                                    class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                         </div>
                         <div class="flex-1">
-                            <label class="block text-sm text-slate-300 mb-1">End IP <span class="text-red-400">*</span></label>
-                            <input x-model="reserveForm.end_ip"
+                            <label for="reserve-end-ip" class="block text-sm text-slate-300 mb-1">End IP <span class="text-red-400">*</span></label>
+                            <input id="reserve-end-ip" x-model="reserveForm.end_ip"
                                    type="text" placeholder="e.g. 172.20.0.19"
                                    class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                         </div>
                     </div>
                     <div>
-                        <label class="block text-sm text-slate-300 mb-1">Description</label>
-                        <input x-model="reserveForm.description"
+                        <label for="reserve-description" class="block text-sm text-slate-300 mb-1">Description</label>
+                        <input id="reserve-description" x-model="reserveForm.description"
                                type="text" placeholder="What are these IPs for?"
                                class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500">
                     </div>
@@ -685,10 +685,10 @@ function networksComponent() {
             const subnet = this.createForm.subnet;
             if (!subnet || !subnet.includes('/')) return null;
             const [ipStr, prefixStr] = subnet.split('/');
-            const prefix = parseInt(prefixStr);
-            if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+            const prefix = Number.parseInt(prefixStr);
+            if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return null;
             const parts = ipStr.split('.').map(Number);
-            if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) return null;
+            if (parts.length !== 4 || parts.some(p => Number.isNaN(p) || p < 0 || p > 255)) return null;
 
             const ipInt  = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
             const mask   = prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0;
@@ -710,7 +710,7 @@ function networksComponent() {
 
         // Valid network-number offsets for the chosen prefix within the free base
         get networkNumberOptions() {
-            const size = parseInt(this.createForm.subnetSize);
+            const size = Number.parseInt(this.createForm.subnetSize);
             if (!size || size > 30 || size < 24) return [];
             if (!this.recommendation) return [];
 
@@ -767,7 +767,7 @@ function networksComponent() {
             const cMap   = {};
             cNodes.forEach(c => { cMap[c.container_id] = c; });
 
-            const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            const esc = s => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 
             let s = `<svg viewBox="0 0 ${w} 380" class="w-full" style="min-width:${Math.min(w,600)}px">`;
             s += '<defs><marker id="dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4"><circle cx="5" cy="5" r="4" fill="rgba(148,163,184,0.5)"/></marker></defs>';
@@ -840,7 +840,7 @@ function networksComponent() {
                     this.recommendation = data.data;
                 }
             } catch (e) {
-                // non-fatal
+                console.error('loadSubnetRecommendation:', e);
             }
         },
 
@@ -1044,6 +1044,7 @@ function networksComponent() {
                 const data = await res.json();
                 this.allContainers = data.success ? data.data : [];
             } catch (e) {
+                console.error('loadAllContainers:', e);
                 this.allContainers = [];
             } finally {
                 this.connectLoading = false;
@@ -1117,7 +1118,7 @@ function networksComponent() {
                 const details = await Promise.all(promises);
                 // Merge oversized flag before filtering so indices stay aligned
                 this.topologyData = details
-                    .map((d, i) => d !== null ? { ...d, oversized: this.filteredNetworks[i]?.oversized || false } : null)
+                    .map((d, i) => d === null ? null : { ...d, oversized: this.filteredNetworks[i]?.oversized || false })
                     .filter(d => d !== null);
             } catch (e) {
                 this.showToast('Failed to load topology: ' + e.message, 'error');

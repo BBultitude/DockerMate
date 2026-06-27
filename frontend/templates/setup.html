@@ -108,13 +108,14 @@ function setupPage() {
                     this.success = true;
                     // Redirect to login after 2 seconds
                     setTimeout(() => {
-                        window.location.href = '/login';
+                        globalThis.location.href = '/login';
                     }, 2000);
                 } else {
                     this.errors = data.errors || ['Setup failed'];
                     this.loading = false;
                 }
             } catch (error) {
+                console.error('setup:', error);
                 this.errors = ['Setup failed. Please try again.'];
                 this.loading = false;
             }

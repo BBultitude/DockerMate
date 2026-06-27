@@ -89,8 +89,8 @@ class SSLCertificate(Base):
         if not self.expires_at:
             return None
         
-        from datetime import datetime
-        delta = self.expires_at - datetime.utcnow()
+        from datetime import datetime, timezone
+        delta = self.expires_at - datetime.now(timezone.utc)
         return delta.days
     
     def needs_renewal(self, days_before=30):

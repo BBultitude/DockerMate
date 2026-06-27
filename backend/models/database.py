@@ -50,7 +50,7 @@ try:
     DATABASE_PATH = Config.DATABASE_PATH
 except ImportError:
     # Fallback for standalone testing
-    DATABASE_PATH = os.getenv('DATABASE_PATH', '/tmp/dockermate.db')
+    DATABASE_PATH = os.getenv('DATABASE_PATH', '/tmp/dockermate.db')  # NOSONAR
 
 # Construct SQLite connection string
 # Format: sqlite:///path/to/database.db

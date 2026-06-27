@@ -165,7 +165,7 @@ def force_https():
         return
 
     # Redirect to HTTPS
-    url = request.url.replace('http://', 'https://', 1)
+    url = request.url.replace('http://', 'https://', 1)  # NOSONAR
     return redirect(url, code=301)
 
 
@@ -304,7 +304,7 @@ def login_page():
     return render_template('login.html')
 
 
-@app.route('/setup', methods=['GET', 'POST'])
+@app.route('/setup', methods=['GET', 'POST'])  # NOSONAR
 def setup_page():
     """
     Initial setup page
@@ -542,7 +542,7 @@ if __name__ == '__main__':
         logger.warning("First time setup - running HTTP for initial config")
         logger.info("Visit http://localhost:5000/setup to complete setup")
         # Run HTTP only for initial setup
-        app.run(host='0.0.0.0', port=5000, debug=False)  # NOSONAR: intentional for Docker container
+        app.run(host='0.0.0.0', port=5000, debug=False)  # NOSONAR
     else:
         logger.info("Starting DockerMate with HTTPS...")
         try:
@@ -552,7 +552,7 @@ if __name__ == '__main__':
             logger.info("DockerMate is running!")
             logger.info("Access at: https://localhost:5000")
             logger.info("=" * 50)
-            app.run(host='0.0.0.0', port=5000, ssl_context=context, debug=False)  # NOSONAR: intentional for Docker container
+            app.run(host='0.0.0.0', port=5000, ssl_context=context, debug=False)  # NOSONAR
         except Exception as e:
             logger.error(f"Failed to start server: {e}")
             raise

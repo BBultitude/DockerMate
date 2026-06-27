@@ -40,6 +40,8 @@ from backend.utils.docker_client import get_docker_client
 
 logger = logging.getLogger(__name__)
 
+_MSG_NETWORK_NOT_FOUND = 'Network not found'
+
 # ---------------------------------------------------------------------------
 # Hardware-aware subnet recommendations
 # ---------------------------------------------------------------------------
@@ -163,6 +165,7 @@ class NetworkManager:
             if driver == 'unknown' and net.name in ('bridge', 'host', 'none'):
                 driver = net.name
 
+            oversized = not is_default and bool(subnet) and _is_oversized(subnet, container_count)
             entry: Dict[str, Any] = {
                 'network_id': net_id,
                 'name': net.name,
@@ -172,11 +175,7 @@ class NetworkManager:
                 'container_count': container_count,
                 'managed': db_net.managed if db_net else False,
                 'purpose': db_net.purpose if db_net else None,
-                'oversized': (
-                    False if is_default
-                    else _is_oversized(subnet, container_count) if subnet
-                    else False
-                ),
+                'oversized': oversized,
                 'docker_cli_create': _build_cli_create(net.name, driver, subnet, gateway) if not is_default else None,
             }
             results.append(entry)
@@ -190,61 +189,63 @@ class NetworkManager:
     # Get single network
     # ------------------------------------------------------------------
 
+    def _get_containers_raw(self, client, net) -> dict:
+        """Return the Containers dict for a network, using fallback filter query if empty."""
+        containers_raw = net.attrs.get('Containers', {})
+        if containers_raw:
+            return containers_raw
+        result: dict = {}
+        try:
+            for c in client.containers.list(all=True, filters={'network': [net.id]}):
+                c.reload()
+                for _, net_info in c.attrs.get('NetworkSettings', {}).get('Networks', {}).items():
+                    if net_info.get('NetworkID') == net.id:
+                        result[c.id] = {
+                            'Name': c.attrs.get('Name', ''),
+                            'IPv4Address': net_info.get('IPAddress', ''),
+                            'IPv6Address': net_info.get('IPv6Address', ''),
+                        }
+                        break
+        except Exception:
+            pass
+        return result
+
+    def _normalize_driver(self, net) -> str:
+        """Return the network driver, defaulting to the network name for built-in networks."""
+        driver = net.attrs.get('Driver') or 'unknown'
+        if driver == 'unknown' and net.name in ('bridge', 'host', 'none'):
+            return net.name
+        return driver
+
     def get_network(self, network_id: str) -> Optional[Dict[str, Any]]:
         """Full details for one network including connected containers."""
         client = get_docker_client()
         try:
             net = client.networks.get(network_id)
-            net.reload()   # populate Containers dict (may be omitted by list)
+            net.reload()
         except Exception:
             return None
 
         ipam_config = net.attrs.get('IPAM', {}).get('Config', [])
         subnet = ipam_config[0].get('Subnet') if ipam_config else None
         gateway = ipam_config[0].get('Gateway') if ipam_config else None
-
         db_net = self.db.query(Network).filter_by(network_id=network_id).first()
-
-        # Cross-reference with DB to tag managed vs external containers
         managed_ids = {c.container_id for c in self.db.query(Container).all()}
 
-        containers_raw = net.attrs.get('Containers', {})
-
-        # Fallback: Docker's Containers dict is unreliable for host/none
-        # networks.  Use the network filter on containers instead.
-        if not containers_raw:
-            try:
-                for c in client.containers.list(all=True, filters={'network': [net.id]}):
-                    c.reload()
-                    for _, net_info in c.attrs.get('NetworkSettings', {}).get('Networks', {}).items():
-                        if net_info.get('NetworkID') == net.id:
-                            containers_raw[c.id] = {
-                                'Name': c.attrs.get('Name', ''),
-                                'IPv4Address': net_info.get('IPAddress', ''),
-                                'IPv6Address': net_info.get('IPv6Address', ''),
-                            }
-                            break
-            except Exception:
-                pass
-
-        containers = []
-        for cid, cinfo in containers_raw.items():
-            containers.append({
+        containers_raw = self._get_containers_raw(client, net)
+        containers = [
+            {
                 'container_id': cid,
                 'name': cinfo.get('Name', '').lstrip('/'),
                 'ipv4_address': cinfo.get('IPv4Address', ''),
                 'ipv6_address': cinfo.get('IPv6Address', ''),
                 'managed': cid in managed_ids,
-            })
-
+            }
+            for cid, cinfo in containers_raw.items()
+        ]
         container_count = len(containers)
-
         is_default = net.name in ('bridge', 'host', 'none')
-
-        # Driver — some Docker versions return null for built-in networks
-        driver = net.attrs.get('Driver') or 'unknown'
-        if driver == 'unknown' and net.name in ('bridge', 'host', 'none'):
-            driver = net.name
+        driver = self._normalize_driver(net)
 
         return {
             'network_id': net.id,
@@ -257,11 +258,7 @@ class NetworkManager:
             'containers': containers,
             'managed': db_net.managed if db_net else False,
             'purpose': db_net.purpose if db_net else None,
-            'oversized': (
-                False if is_default
-                else _is_oversized(subnet, container_count) if subnet
-                else False
-            ),
+            'oversized': not is_default and bool(subnet) and _is_oversized(subnet, container_count),
             'options': net.attrs.get('Options', {}),
             'docker_cli_create': _build_cli_create(net.name, driver, subnet, gateway) if not is_default else None,
         }
@@ -369,7 +366,7 @@ class NetworkManager:
         try:
             net = client.networks.get(network_id)
         except Exception:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
 
         # Safety: refuse to delete default Docker networks
         if net.name in ('bridge', 'host', 'none'):
@@ -450,7 +447,7 @@ class NetworkManager:
                     return {
                         'valid': False,
                         'reason': (
-                            f"Subnet overlaps with existing network "
+                            "Subnet overlaps with existing network "
                             f"'{existing_net.name}' ({existing_subnet_str})"
                         )
                     }
@@ -512,6 +509,26 @@ class NetworkManager:
     # IP Reservations
     # ------------------------------------------------------------------
 
+    def _build_reservations(self, db_net) -> tuple:
+        """Return (reservations_list, reserved_ips_set) from DB for a network."""
+        if not db_net:
+            return [], set()
+        rows = (
+            self.db.query(IPReservation)
+            .filter_by(network_id=db_net.id)
+            .order_by(IPReservation.range_name, IPReservation.ip_address)
+            .all()
+        )
+        reserved_ips: set = set()
+        ranges: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            reserved_ips.add(row.ip_address)
+            key = row.range_name or '__single__'
+            if key not in ranges:
+                ranges[key] = {'range_name': row.range_name, 'description': row.description, 'ips': []}
+            ranges[key]['ips'].append(row.ip_address)
+        return list(ranges.values()), reserved_ips
+
     def get_ip_allocations(self, network_id: str) -> Optional[Dict[str, Any]]:
         """
         Return a full IP-allocation snapshot for a single network.
@@ -555,28 +572,7 @@ class NetworkManager:
 
         # --- reserved IPs (from DB) ---
         db_net = self.db.query(Network).filter_by(network_id=network_id).first()
-        reservations: List[Dict[str, Any]] = []
-        reserved_ips: set = set()
-        if db_net:
-            rows = (
-                self.db.query(IPReservation)
-                .filter_by(network_id=db_net.id)
-                .order_by(IPReservation.range_name, IPReservation.ip_address)
-                .all()
-            )
-            # Group by range_name for the response
-            ranges: Dict[str, Dict[str, Any]] = {}
-            for row in rows:
-                reserved_ips.add(row.ip_address)
-                key = row.range_name or '__single__'
-                if key not in ranges:
-                    ranges[key] = {
-                        'range_name': row.range_name,
-                        'description': row.description,
-                        'ips': [],
-                    }
-                ranges[key]['ips'].append(row.ip_address)
-            reservations = list(ranges.values())
+        reservations, reserved_ips = self._build_reservations(db_net)
 
         # --- compute free and utilisation ---
         # "assignable" = subnet hosts minus the two locked addresses:
@@ -710,7 +706,7 @@ class NetworkManager:
         """
         db_net = self.db.query(Network).filter_by(network_id=network_id).first()
         if not db_net:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
 
         rows = (
             self.db.query(IPReservation)
@@ -738,7 +734,7 @@ class NetworkManager:
         try:
             net = client.networks.get(network_id)
         except Exception:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
 
         if net.name in ('bridge', 'host', 'none'):
             return {'success': False, 'error': f"Use Docker directly to connect to default network '{net.name}'"}
@@ -762,7 +758,7 @@ class NetworkManager:
         try:
             net = client.networks.get(network_id)
         except Exception:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
 
         try:
             container = client.containers.get(container_id)
@@ -791,7 +787,7 @@ class NetworkManager:
         """
         net = self.db.query(Network).filter(Network.network_id == network_id).first()
         if not net:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
         if net.name in ('bridge', 'host', 'none'):
             return {'success': False, 'error': 'Default networks cannot be adopted'}
         if net.managed:
@@ -813,7 +809,7 @@ class NetworkManager:
         """
         net = self.db.query(Network).filter(Network.network_id == network_id).first()
         if not net:
-            return {'success': False, 'error': 'Network not found'}
+            return {'success': False, 'error': _MSG_NETWORK_NOT_FOUND}
         if net.name in ('bridge', 'host', 'none'):
             return {'success': False, 'error': 'Default networks cannot be released'}
         if not net.managed:
@@ -828,6 +824,63 @@ class NetworkManager:
     # Documentation generation
     # ------------------------------------------------------------------
 
+    def _doc_network_header(self, net: Dict[str, Any]) -> List[str]:
+        """Return Markdown lines for a network's metadata section."""
+        name = net['name']
+        tags = (
+            (['Managed'] if net.get('managed') else []) +
+            (['Default'] if name in ('bridge', 'host', 'none') else []) +
+            (['Oversized'] if net.get('oversized') else [])
+        )
+        tag_str = f" [{', '.join(tags)}]" if tags else ''
+        lines = ['---', '', f'## {name}{tag_str}', '',
+                 f'- **Driver:** {net.get("driver", "unknown")}']
+        for key, label in (('subnet', 'Subnet'), ('gateway', 'Gateway'), ('purpose', 'Purpose')):
+            if net.get(key):
+                lines.append(f'- **{label}:** {net[key]}')
+        lines.append(f'- **Containers:** {net.get("container_count", 0)}')
+        if net.get('docker_cli_create'):
+            lines.append(f'- **Create command:** `{net["docker_cli_create"]}`')
+        lines.append('')
+        return lines
+
+    def _doc_containers_section(self, detail: Optional[Dict[str, Any]]) -> List[str]:
+        """Return Markdown lines for the connected containers table, or empty list."""
+        if not detail or not detail.get('containers'):
+            return []
+        lines = ['### Connected Containers', '', '| Container | IP Address |', '|-----------|------------|']
+        for c in detail['containers']:
+            lines.append(f'| `{c["name"]}` | `{c.get("ipv4_address", "—")}` |')
+        lines.append('')
+        return lines
+
+    def _doc_ip_allocation_section(self, alloc: Optional[Dict[str, Any]]) -> List[str]:
+        """Return Markdown lines for IP allocation stats and reserved ranges."""
+        if not alloc:
+            return []
+        lines = [
+            '### IP Allocation', '',
+            '| Metric | Value |', '|--------|-------|',
+            f'| Usable range | `{alloc["first_usable"]}` – `{alloc["last_usable"]}` |',
+            f'| Total usable | {alloc["total_usable"]} |',
+            f'| Assigned | {alloc["assigned_count"]} |',
+            f'| Reserved | {alloc["reserved_count"]} |',
+            f'| Free | {alloc["free_count"]} |',
+            f'| Utilisation | {alloc["utilisation_pct"]}% |', '',
+        ]
+        if alloc.get('reserved'):
+            lines += ['### Reserved Ranges', '', '| Range Name | IPs | Description |', '|------------|-----|-------------|']
+            for res in alloc['reserved']:
+                ips = res['ips']
+                ip_display = ips[0] if len(ips) == 1 else f'{ips[0]} – {ips[-1]}'
+                lines.append(
+                    f'| {res.get("range_name") or "Single"} '
+                    f'| `{ip_display}` ({len(ips)}) '
+                    f'| {res.get("description") or "—"} |'
+                )
+            lines.append('')
+        return lines
+
     def generate_docs(self) -> str:
         """
         Assemble a Markdown report covering every network on the host:
@@ -839,82 +892,18 @@ class NetworkManager:
         from datetime import datetime, timezone
 
         networks = self.list_networks()
-        lines: List[str] = []
-        lines.append('# DockerMate — Network Documentation')
-        lines.append(f'Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}')
-        lines.append('')
+        lines: List[str] = [
+            '# DockerMate — Network Documentation',
+            f'Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}',
+            '',
+        ]
 
         for net in networks:
             net_id = net['network_id']
-            name = net['name']
-            tags = []
-            if net.get('managed'):
-                tags.append('Managed')
-            if name in ('bridge', 'host', 'none'):
-                tags.append('Default')
-            if net.get('oversized'):
-                tags.append('Oversized')
-            tag_str = f" [{', '.join(tags)}]" if tags else ''
-
-            lines.append('---')
-            lines.append('')
-            lines.append(f'## {name}{tag_str}')
-            lines.append('')
-            lines.append(f'- **Driver:** {net.get("driver", "unknown")}')
+            lines.extend(self._doc_network_header(net))
+            lines.extend(self._doc_containers_section(self.get_network(net_id)))
             if net.get('subnet'):
-                lines.append(f'- **Subnet:** {net["subnet"]}')
-            if net.get('gateway'):
-                lines.append(f'- **Gateway:** {net["gateway"]}')
-            if net.get('purpose'):
-                lines.append(f'- **Purpose:** {net["purpose"]}')
-            lines.append(f'- **Containers:** {net.get("container_count", 0)}')
-            if net.get('docker_cli_create'):
-                lines.append(f'- **Create command:** `{net["docker_cli_create"]}`')
-            lines.append('')
-
-            # --- full detail (containers + IP stats) via get_network ---
-            detail = self.get_network(net_id)
-            if detail and detail.get('containers'):
-                lines.append('### Connected Containers')
-                lines.append('')
-                lines.append('| Container | IP Address |')
-                lines.append('|-----------|------------|')
-                for c in detail['containers']:
-                    lines.append(f'| `{c["name"]}` | `{c.get("ipv4_address", "—")}` |')
-                lines.append('')
-
-            # --- IP allocation stats (only if subnet exists) ---
-            if net.get('subnet'):
-                alloc = self.get_ip_allocations(net_id)
-                if alloc:
-                    lines.append('### IP Allocation')
-                    lines.append('')
-                    lines.append(f'| Metric | Value |')
-                    lines.append(f'|--------|-------|')
-                    lines.append(f'| Usable range | `{alloc["first_usable"]}` – `{alloc["last_usable"]}` |')
-                    lines.append(f'| Total usable | {alloc["total_usable"]} |')
-                    lines.append(f'| Assigned | {alloc["assigned_count"]} |')
-                    lines.append(f'| Reserved | {alloc["reserved_count"]} |')
-                    lines.append(f'| Free | {alloc["free_count"]} |')
-                    lines.append(f'| Utilisation | {alloc["utilisation_pct"]}% |')
-                    lines.append('')
-
-                    if alloc.get('reserved'):
-                        lines.append('### Reserved Ranges')
-                        lines.append('')
-                        lines.append('| Range Name | IPs | Description |')
-                        lines.append('|------------|-----|-------------|')
-                        for res in alloc['reserved']:
-                            ip_display = (
-                                res['ips'][0] if len(res['ips']) == 1
-                                else f'{res["ips"][0]} – {res["ips"][-1]}'
-                            )
-                            lines.append(
-                                f'| {res.get("range_name") or "Single"} '
-                                f'| `{ip_display}` ({len(res["ips"])}) '
-                                f'| {res.get("description") or "—"} |'
-                            )
-                        lines.append('')
+                lines.extend(self._doc_ip_allocation_section(self.get_ip_allocations(net_id)))
 
         return '\n'.join(lines)
 

@@ -238,7 +238,7 @@ class VolumeManager:
 
             # Check if volume already exists
             try:
-                existing = client.volumes.get(name)
+                _ = client.volumes.get(name)
                 raise ValidationError(f"Volume already exists: {name}")
             except NotFound:
                 pass  # Good, doesn't exist

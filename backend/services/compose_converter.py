@@ -93,149 +93,97 @@ class ComposeConverter:
                 'warnings': []
             }
 
+    # Maps flag aliases to (result_key, is_list) where is_list=True means append, False means set
+    _SINGLE_VALUE_FLAGS: Dict[str, str] = {
+        '--name': 'name',
+        '--network': 'network', '--net': 'network',
+        '--restart': 'restart',
+        '-m': 'memory', '--memory': 'memory',
+        '--cpus': 'cpus',
+    }
+    _LIST_APPEND_FLAGS: Dict[str, str] = {
+        '-p': 'ports', '--publish': 'ports',
+        '-v': 'volumes', '--volume': 'volumes',
+    }
+
     def _parse_docker_run(self, command: str) -> Dict:
         """
-        Parse docker run command and extract configuration
+        Parse docker run command and extract configuration.
 
         Returns:
-            dict: Parsed configuration with keys:
-                - image: Image name
-                - ports: List of port mappings
-                - volumes: List of volume mounts
-                - environment: Dict of env vars
-                - name: Container name
-                - network: Network name
-                - restart: Restart policy
-                - memory: Memory limit
-                - cpus: CPU limit
-                - labels: Dict of labels
-                - warnings: List of unsupported flags
+            dict with keys: image, ports, volumes, environment, name, network,
+            restart, memory, cpus, labels, warnings, detach
         """
-        # Remove 'docker run' prefix
         command = command.strip()
-        if command.startswith('docker run'):
-            command = command[10:].strip()
-        elif command.startswith('docker container run'):
+        if command.startswith('docker container run'):
             command = command[20:].strip()
+        elif command.startswith('docker run'):
+            command = command[10:].strip()
 
-        # Split command into tokens
         try:
             tokens = shlex.split(command)
         except ValueError as e:
             raise ValueError(f"Invalid command syntax: {e}")
 
-        result = {
-            'image': None,
-            'ports': [],
-            'volumes': [],
-            'environment': {},
-            'name': None,
-            'network': None,
-            'restart': None,
-            'memory': None,
-            'cpus': None,
-            'labels': {},
-            'warnings': [],
-            'detach': False
+        result: Dict = {
+            'image': None, 'ports': [], 'volumes': [], 'environment': {},
+            'name': None, 'network': None, 'restart': None,
+            'memory': None, 'cpus': None, 'labels': {}, 'warnings': [], 'detach': False,
         }
 
         i = 0
         while i < len(tokens):
             token = tokens[i]
+            i += 1
 
-            # Flags that take no arguments
-            if token in ['-d', '--detach']:
+            if token in ('-d', '--detach'):
                 result['detach'] = True
-                i += 1
                 continue
 
-            if token in ['-i', '--interactive', '-t', '--tty']:
+            if token in ('-i', '--interactive', '-t', '--tty'):
                 result['warnings'].append(f"Flag {token} (interactive/tty) not applicable in compose")
-                i += 1
                 continue
 
             if token == '--rm':
                 result['warnings'].append("Flag --rm (auto-remove) not directly supported in compose")
+                continue
+
+            if token in self._LIST_APPEND_FLAGS and i < len(tokens):
+                result[self._LIST_APPEND_FLAGS[token]].append(tokens[i])
                 i += 1
                 continue
 
-            # Flags that take one argument
-            if token in ['-p', '--publish']:
-                if i + 1 < len(tokens):
-                    result['ports'].append(tokens[i + 1])
-                    i += 2
-                    continue
+            if token in self._SINGLE_VALUE_FLAGS and i < len(tokens):
+                result[self._SINGLE_VALUE_FLAGS[token]] = tokens[i]
+                i += 1
+                continue
 
-            if token in ['-v', '--volume']:
-                if i + 1 < len(tokens):
-                    result['volumes'].append(tokens[i + 1])
-                    i += 2
-                    continue
+            if token in ('-e', '--env') and i < len(tokens):
+                env = tokens[i]
+                i += 1
+                if '=' in env:
+                    key, value = env.split('=', 1)
+                    result['environment'][key] = value
+                else:
+                    result['environment'][env] = ''
+                continue
 
-            if token in ['-e', '--env']:
-                if i + 1 < len(tokens):
-                    env = tokens[i + 1]
-                    if '=' in env:
-                        key, value = env.split('=', 1)
-                        result['environment'][key] = value
-                    else:
-                        result['environment'][env] = ''
-                    i += 2
-                    continue
+            if token in ('-l', '--label') and i < len(tokens):
+                label = tokens[i]
+                i += 1
+                if '=' in label:
+                    key, value = label.split('=', 1)
+                    result['labels'][key] = value
+                continue
 
-            if token in ['--name']:
-                if i + 1 < len(tokens):
-                    result['name'] = tokens[i + 1]
-                    i += 2
-                    continue
-
-            if token in ['--network', '--net']:
-                if i + 1 < len(tokens):
-                    result['network'] = tokens[i + 1]
-                    i += 2
-                    continue
-
-            if token in ['--restart']:
-                if i + 1 < len(tokens):
-                    result['restart'] = tokens[i + 1]
-                    i += 2
-                    continue
-
-            if token in ['-m', '--memory']:
-                if i + 1 < len(tokens):
-                    result['memory'] = tokens[i + 1]
-                    i += 2
-                    continue
-
-            if token in ['--cpus']:
-                if i + 1 < len(tokens):
-                    result['cpus'] = tokens[i + 1]
-                    i += 2
-                    continue
-
-            if token in ['-l', '--label']:
-                if i + 1 < len(tokens):
-                    label = tokens[i + 1]
-                    if '=' in label:
-                        key, value = label.split('=', 1)
-                        result['labels'][key] = value
-                    i += 2
-                    continue
-
-            # Unsupported flags
             if token.startswith('-'):
                 result['warnings'].append(f"Unsupported flag: {token}")
-                # Skip this flag and its potential argument
-                i += 1
                 if i < len(tokens) and not tokens[i].startswith('-'):
                     i += 1
                 continue
 
-            # Last non-flag token is the image (and potentially command)
+            # First non-flag token is the image
             result['image'] = token
-            i += 1
-
-            # Remaining tokens are the command
             if i < len(tokens):
                 result['command'] = tokens[i:]
             break

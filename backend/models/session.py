@@ -46,14 +46,14 @@ Usage:
     # Create session
     import secrets
     import hashlib
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     
     token = secrets.token_hex(32)  # 256 bits
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     
     session = Session(
         token_hash=token_hash,
-        expires_at=datetime.utcnow() + timedelta(hours=8),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
         user_agent=request.headers.get('User-Agent'),
         ip_address=request.remote_addr
     )
@@ -70,7 +70,7 @@ Verification:
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from sqlalchemy.sql import func
 from backend.models.database import Base
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 import hashlib
 import json
@@ -102,7 +102,7 @@ class Session(Base):
         # Creating a session (done by SessionManager)
         import secrets
         import hashlib
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         
         # Generate secure random token
         token = secrets.token_hex(32)  # 64 char hex string
@@ -113,7 +113,7 @@ class Session(Base):
         # Create session
         session = Session(
             token_hash=token_hash,
-            expires_at=datetime.utcnow() + timedelta(hours=8),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
             user_agent='Mozilla/5.0 ...',
             ip_address='192.168.1.100'
         )
@@ -210,7 +210,7 @@ class Session(Base):
                 db.commit()
                 return False  # Invalid session
         """
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
     
     def is_valid(self) -> bool:
         """
@@ -222,7 +222,7 @@ class Session(Base):
         Example:
             if session.is_valid():
                 # Update last accessed
-                session.last_accessed = datetime.utcnow()
+                session.last_accessed = datetime.now(timezone.utc)
                 db.commit()
         """
         return not self.is_expired()
@@ -240,7 +240,7 @@ class Session(Base):
                 session.update_last_accessed()
                 db.commit()
         """
-        self.last_accessed = datetime.utcnow()
+        self.last_accessed = datetime.now(timezone.utc)
     
     def to_dict(self, include_token_hash: bool = False) -> Dict:
         """
@@ -329,7 +329,7 @@ class Session(Base):
         """
         # Find all expired sessions
         expired_sessions = db.query(Session).filter(
-            Session.expires_at < datetime.utcnow()
+            Session.expires_at < datetime.now(timezone.utc)
         ).all()
         
         count = len(expired_sessions)
@@ -359,7 +359,7 @@ class Session(Base):
                 print(f"Active session from {session.ip_address}")
         """
         return db.query(Session).filter(
-            Session.expires_at > datetime.utcnow()
+            Session.expires_at > datetime.now(timezone.utc)
         ).all()
     
     @staticmethod
@@ -378,7 +378,7 @@ class Session(Base):
             print(f"Currently {count} active sessions")
         """
         return db.query(Session).filter(
-            Session.expires_at > datetime.utcnow()
+            Session.expires_at > datetime.now(timezone.utc)
         ).count()
     
     @staticmethod
@@ -444,21 +444,21 @@ if __name__ == "__main__":
         
         session1 = Session(
             token_hash=hash1,
-            expires_at=datetime.utcnow() + timedelta(hours=8),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
             user_agent='Mozilla/5.0 Test Browser',
-            ip_address='192.168.1.100'
+            ip_address='192.168.1.100'  # NOSONAR
         )
         db.add(session1)
-        
+
         # Create expired session
         token2 = secrets.token_hex(32)
         hash2 = hashlib.sha256(token2.encode()).hexdigest()
-        
+
         session2 = Session(
             token_hash=hash2,
-            expires_at=datetime.utcnow() - timedelta(hours=1),  # Already expired
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),  # Already expired
             user_agent='Mozilla/5.0 Test Browser',
-            ip_address='192.168.1.101'
+            ip_address='192.168.1.101'  # NOSONAR
         )
         db.add(session2)
         

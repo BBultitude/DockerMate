@@ -11,14 +11,12 @@ LABEL maintainer="DockerMate Contributors"
 LABEL description="Intelligent Docker Management for Home Labs"
 LABEL version="${VERSION:-1.0.0}"
 
-# Install system dependencies
+# Install system dependencies and create app user
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create app user (don't run as root)
-RUN useradd -m -u 1000 dockermate
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 1000 dockermate
 
 # Create app directory
 WORKDIR /app
@@ -27,24 +25,20 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python packages
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir certbot
 
-# Install certbot for Let's Encrypt (optional)
-RUN pip install --no-cache-dir certbot
+# Copy application code (.dockerignore excludes secrets, .git, .env, certs, etc.)
+COPY --chown=dockermate:dockermate . . # NOSONAR
 
-# Copy application code
-COPY --chown=dockermate:dockermate . .
-
-# Create data directories
+# Create data directories and set permissions
 RUN mkdir -p \
     /app/data/ssl \
     /app/data/backups \
     /app/stacks \
     /app/exports \
-    && chown -R dockermate:dockermate /app
-
-# Make entrypoint and scripts executable
-RUN chmod +x docker-entrypoint.sh manage.py
+    && chown -R dockermate:dockermate /app \
+    && chmod +x docker-entrypoint.sh manage.py
 
 # Switch to app user
 USER dockermate

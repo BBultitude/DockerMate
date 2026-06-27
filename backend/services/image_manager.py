@@ -39,7 +39,7 @@ Educational Notes:
 import logging
 import json
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from docker.errors import NotFound, APIError, ImageNotFound
@@ -56,6 +56,9 @@ from backend.models.image import Image
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+_SHA256_PREFIX = 'sha256:'
+_NONE_TAG = '<none>'
 
 
 class ImageManager:
@@ -140,10 +143,10 @@ class ImageManager:
 
             # Add usage info if requested
             if include_usage and all_containers:
-                image_id = docker_image.id.replace('sha256:', '')
+                image_id = docker_image.id.replace(_SHA256_PREFIX, '')
                 container_count = sum(
                     1 for c in all_containers
-                    if c.image.id.replace('sha256:', '') == image_id
+                    if c.image.id.replace(_SHA256_PREFIX, '') == image_id
                 )
                 image_data['containers_using'] = container_count
                 image_data['in_use'] = container_count > 0
@@ -386,10 +389,10 @@ class ImageManager:
         all_images = self.db.query(Image).all()
 
         for image in all_images:
-            image.last_checked = datetime.utcnow()
+            image.last_checked = datetime.now(timezone.utc)
 
             # Skip images we can't meaningfully check
-            if image.repository in ('<none>', '') or image.tag in ('<none>', ''):
+            if image.repository in (_NONE_TAG, '') or image.tag in (_NONE_TAG, ''):
                 continue
 
             remote_digest = get_remote_digest(image.repository, image.tag)
@@ -415,199 +418,114 @@ class ImageManager:
     # HELPER METHODS
     # =========================================================================
 
-    def _sync_database_state(self, docker_image) -> Dict[str, Any]:
-        """
-        Sync Docker image state to database.
-
-        Creates or updates Image record in database with current
-        state from Docker daemon.
-
-        Args:
-            docker_image: Docker SDK image object
-
-        Returns:
-            dict: Image data dictionary
-
-        Educational:
-            - Database keeps metadata even when image is removed
-            - Timestamps track lifecycle events
-            - Labels and digests stored for update detection
-        """
+    def _extract_image_metadata(self, docker_image) -> dict:
+        """Extract repository, tag, digest, size, created_at, labels_json from a Docker image object."""
         attrs = docker_image.attrs
+        image_id = docker_image.id.removeprefix(_SHA256_PREFIX)
 
-        # Extract image details
-        image_id = docker_image.id
-        if image_id.startswith('sha256:'):
-            image_id = image_id[7:]  # Remove 'sha256:' prefix
-
-        # Extract repository and tag from RepoTags
         repo_tags = docker_image.tags
         if repo_tags:
-            # Use first tag
             full_name = repo_tags[0]
-            if ':' in full_name:
-                repository, tag = full_name.rsplit(':', 1)
-            else:
-                repository = full_name
-                tag = 'latest'
+            repository, tag = full_name.rsplit(':', 1) if ':' in full_name else (full_name, 'latest')
         else:
-            # Untagged image
-            repository = '<none>'
-            tag = '<none>'
+            repository, tag = _NONE_TAG, _NONE_TAG
 
-        # Extract digest from RepoDigests
-        digest = None
         repo_digests = attrs.get('RepoDigests', [])
-        if repo_digests:
-            # Format: repository@sha256:digest
-            digest = repo_digests[0].split('@')[-1] if '@' in repo_digests[0] else None
+        digest = repo_digests[0].split('@')[-1] if repo_digests and '@' in repo_digests[0] else None
 
-        # Extract size
-        size_bytes = attrs.get('Size', 0)
-
-        # Extract creation timestamp
-        created_str = attrs.get('Created', '')
         created_at = None
+        created_str = attrs.get('Created', '')
         if created_str:
             try:
                 created_at = datetime.fromisoformat(created_str.rstrip('Z'))
             except Exception:
                 pass
 
-        # Extract labels
-        labels = attrs.get('Config', {}).get('Labels') or {}
-        labels_json = json.dumps(labels)
+        return {
+            'image_id': image_id,
+            'repository': repository,
+            'tag': tag,
+            'digest': digest,
+            'size_bytes': attrs.get('Size', 0),
+            'labels_json': json.dumps(attrs.get('Config', {}).get('Labels') or {}),
+            'created_at': created_at,
+        }
 
-        # Check if image exists in database
-        existing = self.db.query(Image).filter(
-            Image.image_id == image_id
-        ).first()
+    @staticmethod
+    def _looks_like_image_id(tag: str) -> bool:
+        """Return True if a tag string looks like a raw SHA256 image ID."""
+        return tag.startswith(_SHA256_PREFIX) or (len(tag) >= 12 and all(c in '0123456789abcdef' for c in tag[:12]))
 
+    def _sync_database_state(self, docker_image) -> Dict[str, Any]:
+        """Sync Docker image state to database, returning image dict."""
+        meta = self._extract_image_metadata(docker_image)
+        image_id = meta['image_id']
+
+        existing = self.db.query(Image).filter(Image.image_id == image_id).first()
         if existing:
-            # Update existing record
-            # Save previous tag before overwriting with <none> (dangling image tracking)
-            if (repository == '<none>' or tag == '<none>') and existing.tag != '<none>':
+            if (meta['repository'] == _NONE_TAG or meta['tag'] == _NONE_TAG) and existing.tag != _NONE_TAG:
                 existing.previous_tag = existing.tag
-
-            existing.repository = repository
-            existing.tag = tag
-            existing.digest = digest
-            existing.size_bytes = size_bytes
-            existing.labels_json = labels_json
-            if created_at:
-                existing.created_at = created_at
-
+            existing.repository = meta['repository']
+            existing.tag = meta['tag']
+            existing.digest = meta['digest']
+            existing.size_bytes = meta['size_bytes']
+            existing.labels_json = meta['labels_json']
+            if meta['created_at']:
+                existing.created_at = meta['created_at']
             image_record = existing
         else:
-            # Create new record
             image_record = Image(
                 image_id=image_id,
-                repository=repository,
-                tag=tag,
-                digest=digest,
-                size_bytes=size_bytes,
-                labels_json=labels_json,
-                created_at=created_at,
-                pulled_at=datetime.utcnow()
+                repository=meta['repository'],
+                tag=meta['tag'],
+                digest=meta['digest'],
+                size_bytes=meta['size_bytes'],
+                labels_json=meta['labels_json'],
+                created_at=meta['created_at'],
+                pulled_at=datetime.now(timezone.utc),
             )
             self.db.add(image_record)
 
         self.db.commit()
         self.db.refresh(image_record)
 
-        # Clean up invalid previous_tags (image IDs stored as tags)
-        if image_record.previous_tag:
-            tag = image_record.previous_tag
-            # Check if previous_tag looks like an image ID (SHA256 hash)
-            if tag.startswith('sha256:') or (len(tag) >= 12 and all(c in '0123456789abcdef' for c in tag[:12])):
-                logger.info(f"Clearing invalid previous_tag (image ID) for {image_record.image_id[:12]}: {tag[:12]}...")
-                image_record.previous_tag = None
-                self.db.commit()
-                self.db.refresh(image_record)
+        if image_record.previous_tag and self._looks_like_image_id(image_record.previous_tag):
+            logger.info(f"Clearing invalid previous_tag for {image_record.image_id[:12]}")
+            image_record.previous_tag = None
+            self.db.commit()
+            self.db.refresh(image_record)
 
-        # Infer previous_tag for already-dangling images by checking Docker container usage
-        if (image_record.tag == '<none>' and image_record.previous_tag is None):
+        if image_record.tag == _NONE_TAG and image_record.previous_tag is None:
             self._infer_previous_tag_from_docker_containers(image_record)
 
         return image_record.to_dict()
 
     def _infer_previous_tag_from_docker_containers(self, image_record):
-        """
-        Infer previous_tag for dangling images by checking Docker container usage.
-
-        Queries Docker API directly rather than database to find containers using
-        this image, avoiding need for foreign key relationship.
-
-        Logic:
-        1. Get all containers from Docker API
-        2. Find first container using this image (by matching image_id)
-        3. If no containers use it, skip (unused dangling image)
-        4. Extract tag from container's Config.Image field
-        5. Save as previous_tag
-
-        This handles already-dangling images at import/sync time.
-
-        Args:
-            image_record: Image model instance (must be dangling with no previous_tag)
-        """
+        """Infer previous_tag for a dangling image by checking which containers use it."""
         try:
             client = get_docker_client()
+            normalized_id = image_record.image_id.replace(_SHA256_PREFIX, '')
 
-            # Get all containers (including stopped ones)
-            containers = client.containers.list(all=True)
+            for container in client.containers.list(all=True):
+                if container.image.id.replace(_SHA256_PREFIX, '') != normalized_id:
+                    continue
+                image_name = container.attrs.get('Config', {}).get('Image', '')
+                if not image_name or ':' not in image_name:
+                    continue
+                try:
+                    repository, tag = image_name.rsplit(':', 1)
+                except ValueError:
+                    continue
+                if self._looks_like_image_id(tag) or repository in (_NONE_TAG, ''):
+                    continue
+                image_record.previous_tag = tag
+                self.db.commit()
+                logger.info(
+                    f"Inferred previous_tag '{tag}' for dangling image "
+                    f"{image_record.image_id[:12]} from container {container.name}"
+                )
+                return
 
-            # Find first container using this image by image ID
-            for container in containers:
-                # Container's image.id is like "sha256:abc123..." - need to compare properly
-                container_image_id = container.image.id
-
-                # Normalize both IDs (remove sha256: prefix if present)
-                normalized_container_id = container_image_id.replace('sha256:', '')
-                normalized_image_id = image_record.image_id.replace('sha256:', '')
-
-                if normalized_container_id == normalized_image_id:
-                    # Found a container using this image
-                    # Extract image name from container config (e.g., "nginx:1.28")
-                    image_name = container.attrs.get('Config', {}).get('Image', '')
-
-                    if not image_name or ':' not in image_name:
-                        logger.debug(f"Container {container.name} has invalid image format: {image_name}")
-                        continue
-
-                    try:
-                        # Split on last colon to handle registry URLs like "registry.io/nginx:1.28"
-                        repository, tag = image_name.rsplit(':', 1)
-
-                        # Validate tag is not an image ID (SHA256 hash)
-                        # Skip if tag looks like sha256 hash (64 hex chars or starts with sha256:)
-                        if tag.startswith('sha256:') or (len(tag) >= 12 and all(c in '0123456789abcdef' for c in tag[:12])):
-                            logger.debug(
-                                f"Skipping image ID as previous_tag for container {container.name}: {tag[:12]}..."
-                            )
-                            continue
-
-                        # Skip if repository is also <none> (fully untagged image)
-                        if repository == '<none>' or repository == '':
-                            logger.debug(
-                                f"Skipping <none> repository for container {container.name}"
-                            )
-                            continue
-
-                        # Save the inferred tag
-                        image_record.previous_tag = tag
-                        self.db.commit()
-
-                        logger.info(
-                            f"Inferred previous_tag '{tag}' for dangling image "
-                            f"{image_record.image_id[:12]} from container {container.name}"
-                        )
-                        return  # Found and saved, done
-
-                    except (IndexError, ValueError) as e:
-                        logger.warning(f"Failed to parse tag from image_name '{image_name}': {e}")
-                        continue
-
-            # No containers use this dangling image
             logger.debug(
                 f"Dangling image {image_record.image_id[:12]} has no containers - "
                 f"skipping tag inference"

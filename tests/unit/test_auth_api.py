@@ -189,7 +189,7 @@ class TestLogoutEndpoint:
     def test_logout_success(self, client, db_with_user):
         """Test successful logout"""
         # First login
-        login_response = client.post('/api/auth/login',
+        _login_response = client.post('/api/auth/login',
             json={'password': 'TestPassword123'},
             content_type='application/json'
         )
@@ -224,7 +224,7 @@ class TestSessionCheckEndpoint:
     def test_check_valid_session(self, client, db_with_user):
         """Test checking a valid session"""
         # Login first
-        login_response = client.post('/api/auth/login',
+        _login_response = client.post('/api/auth/login',
             json={'password': 'TestPassword123'},
             content_type='application/json'
         )
@@ -275,7 +275,7 @@ class TestChangePasswordEndpoint:
         assert data['success'] is True
         
         # Verify new password works
-        logout_response = client.post('/api/auth/logout')
+        _logout_response = client.post('/api/auth/logout')
         login_response = client.post('/api/auth/login',
             json={'password': 'NewPassword456'},
             content_type='application/json'
@@ -336,8 +336,8 @@ class TestChangePasswordEndpoint:
         response = client.post('/api/auth/change-password',
             json={
                 'current_password': 'TestPassword123',
-                'new_password': 'weak',
-                'confirm_password': 'weak'
+                'new_password': 'weak',  # NOSONAR
+                'confirm_password': 'weak'  # NOSONAR
             },
             content_type='application/json'
         )
@@ -402,7 +402,7 @@ class TestRevokeSessionEndpoint:
         token2 = SessionManager.create_session(ip_address="192.168.1.2")
         
         # Get session IDs
-        session1_id = SessionManager.get_session_id(token1)
+        _ = SessionManager.get_session_id(token1)
         session2_id = SessionManager.get_session_id(token2)
         
         # Login with token1 (set cookie manually)

@@ -109,12 +109,13 @@ function loginPage() {
 
                 if (data.success) {
                     // Redirect to dashboard
-                    window.location.href = data.redirect;
+                    globalThis.location.href = data.redirect;
                 } else {
                     this.errorMessage = data.error || 'Login failed';
                     this.loading = false;
                 }
             } catch (error) {
+                console.error('login:', error);
                 this.errorMessage = 'Connection failed. Please check your network.';
                 this.loading = false;
             }

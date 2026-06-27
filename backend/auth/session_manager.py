@@ -20,7 +20,7 @@ Security Notes:
 
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from backend.models.database import SessionLocal
 from backend.models.session import Session as SessionModel
@@ -46,9 +46,9 @@ class SessionManager:
         
         # Set expiry
         if remember_me:
-            expires_at = datetime.utcnow() + SessionManager.SESSION_EXPIRY_REMEMBER
+            expires_at = datetime.now(timezone.utc) + SessionManager.SESSION_EXPIRY_REMEMBER
         else:
-            expires_at = datetime.utcnow() + SessionManager.SESSION_EXPIRY_DEFAULT
+            expires_at = datetime.now(timezone.utc) + SessionManager.SESSION_EXPIRY_DEFAULT
         
         # Hash token before storing
         token_hash = SessionManager._hash_token(session_token)
@@ -70,7 +70,7 @@ class SessionManager:
         return session_token
     
     @staticmethod
-    def validate_session(session_token: str) -> bool:
+    def validate_session(session_token: Optional[str]) -> bool:
         """Validate session token"""
         if not session_token:
             return False
@@ -85,13 +85,13 @@ class SessionManager:
                 return False
             
             # Check expiry
-            if session.expires_at < datetime.utcnow():
+            if session.expires_at < datetime.now(timezone.utc):
                 db.delete(session)
                 db.commit()
                 return False
             
             # Update last accessed
-            session.last_accessed = datetime.utcnow()
+            session.last_accessed = datetime.now(timezone.utc)
             db.commit()
             
             return True
@@ -165,7 +165,7 @@ class SessionManager:
                 return None
             
             # Check if expired
-            if session.expires_at < datetime.utcnow():
+            if session.expires_at < datetime.now(timezone.utc):
                 return None
             
             return {
@@ -281,7 +281,7 @@ class SessionManager:
         try:
             # Get only non-expired sessions
             sessions = db.query(SessionModel).filter(
-                SessionModel.expires_at > datetime.utcnow()
+                SessionModel.expires_at > datetime.now(timezone.utc)
             ).order_by(SessionModel.created_at.desc()).all()
             
             result = []
