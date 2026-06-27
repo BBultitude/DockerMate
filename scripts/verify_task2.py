@@ -43,6 +43,8 @@ import secrets
 import hashlib
 import json
 
+_TESTING_TO_DICT_LABEL = "\n  Testing to_dict()..."
+
 # Colors for output
 GREEN = '\033[92m'
 RED = '\033[91m'
@@ -104,7 +106,7 @@ def test_database_initialization():
         traceback.print_exc()
         return False
 
-def test_user_model():
+def test_user_model():  # nosonar(python:S3776)
     """Test 2: User Model Operations"""
     print("\n" + "=" * 80)
     print("Test 2: User Model CRUD Operations")
@@ -143,7 +145,7 @@ def test_user_model():
             return False
         
         # Test to_dict
-        print("\n  Testing to_dict()...")
+        print(_TESTING_TO_DICT_LABEL)
         user_dict = retrieved.to_dict()
         print_success(f"to_dict() working: {json.dumps(user_dict, indent=2)}")
         
@@ -258,7 +260,7 @@ def test_session_model():
         print_success(f"{remaining} active sessions remaining")
         
         # Test to_dict
-        print("\n  Testing to_dict()...")
+        print(_TESTING_TO_DICT_LABEL)
         if active:
             session_dict = active[0].to_dict()
             print_success(f"to_dict() working: {json.dumps(session_dict, indent=2)}")
@@ -318,7 +320,7 @@ def test_environment_model():
             return False
         
         # Test to_dict
-        print("\n  Testing to_dict()...")
+        print(_TESTING_TO_DICT_LABEL)
         env_dict = prd.to_dict()
         print_success(f"to_dict() working: {json.dumps(env_dict, indent=2)}")
         

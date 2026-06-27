@@ -126,6 +126,20 @@ class NetworkManager:
     # List
     # ------------------------------------------------------------------
 
+    def _extract_ipam_config(self, net) -> tuple:
+        """Return (subnet, gateway) from a network's IPAM config."""
+        ipam_config = net.attrs.get('IPAM', {}).get('Config', [])
+        subnet = ipam_config[0].get('Subnet') if ipam_config else None
+        gateway = ipam_config[0].get('Gateway') if ipam_config else None
+        return subnet, gateway
+
+    def _resolve_driver(self, net) -> str:
+        """Return the network driver, falling back to net name for built-ins."""
+        driver = net.attrs.get('Driver') or 'unknown'
+        if driver == 'unknown' and net.name in ('bridge', 'host', 'none'):
+            return net.name
+        return driver
+
     def list_networks(self) -> List[Dict[str, Any]]:
         """
         Return all Docker networks enriched with DB metadata and live
@@ -150,20 +164,14 @@ class NetworkManager:
             net_id = net.id
             db_net = db_networks.get(net_id)
 
-            # Pull IPAM config from Docker attrs
-            ipam_config = net.attrs.get('IPAM', {}).get('Config', [])
-            subnet = ipam_config[0].get('Subnet') if ipam_config else None
-            gateway = ipam_config[0].get('Gateway') if ipam_config else None
+            subnet, gateway = self._extract_ipam_config(net)
 
             # Count containers attached to this network
             container_count = len(net.attrs.get('Containers', {}))
 
             is_default = net.name in ('bridge', 'host', 'none')
 
-            # Driver — some Docker versions return null for built-in networks
-            driver = net.attrs.get('Driver') or 'unknown'
-            if driver == 'unknown' and net.name in ('bridge', 'host', 'none'):
-                driver = net.name
+            driver = self._resolve_driver(net)
 
             oversized = not is_default and bool(subnet) and _is_oversized(subnet, container_count)
             entry: Dict[str, Any] = {

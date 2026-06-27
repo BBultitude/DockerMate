@@ -1404,8 +1404,8 @@ function containersComponent() {
             type: 'info'
         },
         
-        // Health check polling state (Task 7 Fix - Issue 4)
-        healthCheckPolling: {}, // { containerName: { intervalId, attempts, startTime } }
+        // Health check polling state — keyed by container name, tracks interval and attempt count
+        healthCheckPolling: {},
         
         deleteModal: { // state for the delete confirmation modal
             show: false,
@@ -1553,35 +1553,10 @@ function containersComponent() {
                     const newMap = new Map(newContainers.map(c => [c.container_id, c]));
 
                     // Update existing containers in-place (Alpine.js detects changes)
-                    this.containers.forEach((container, index) => {
+                    this.containers.forEach((container) => {
                         const newData = newMap.get(container.container_id);
-                        if (newData) {
-                            // Container still exists - update ALL properties to keep in sync
-                            // Use Object.assign to batch updates and reduce reactivity overhead
-                            const oldKeys = Object.keys(container);
-                            const newKeys = Object.keys(newData);
-
-                            // Check if anything actually changed before updating
-                            let hasChanges = oldKeys.length !== newKeys.length;
-                            if (!hasChanges) {
-                                for (const key of newKeys) {
-                                    if (key === 'ports') {
-                                        // Special handling for ports array
-                                        if (JSON.stringify(container[key]) !== JSON.stringify(newData[key])) {
-                                            hasChanges = true;
-                                            break;
-                                        }
-                                    } else if (container[key] !== newData[key]) {
-                                        hasChanges = true;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Only update if there are actual changes
-                            if (hasChanges) {
-                                Object.assign(container, newData);
-                            }
+                        if (newData && this.containerHasChanged(container, newData)) {
+                            Object.assign(container, newData);
                         }
                     });
 
@@ -1626,6 +1601,20 @@ function containersComponent() {
             }
         },
         
+        containerHasChanged(container, newData) {
+            const oldKeys = Object.keys(container);
+            const newKeys = Object.keys(newData);
+            if (oldKeys.length !== newKeys.length) return true;
+            for (const key of newKeys) {
+                if (key === 'ports') {
+                    if (JSON.stringify(container[key]) !== JSON.stringify(newData[key])) return true;
+                } else if (container[key] !== newData[key]) {
+                    return true;
+                }
+            }
+            return false;
+        },
+
         /**
          * Apply filters to container list
          * UI-007: Uses intelligent merge to prevent DOM flicker
@@ -2100,67 +2089,61 @@ function containersComponent() {
             this.createModal.formData.env_vars.splice(index, 1);
         },
         
+        validatePortMappings(ports, errors) {
+            ports.forEach((port, index) => {
+                const hasAnyValue = port.container || port.host;
+                if (!hasAnyValue) return;
+                if (!port.container) {
+                    errors[`port_${index}`] = 'Container port is required';
+                } else if (port.container < 1 || port.container > 65535) {
+                    errors[`port_${index}`] = 'Container port must be between 1 and 65535';
+                }
+                if (!port.host) {
+                    errors[`port_${index}`] = 'Host port is required';
+                } else if (port.host < 1 || port.host > 65535) {
+                    errors[`port_${index}`] = 'Host port must be between 1 and 65535';
+                }
+            });
+        },
+        validateVolumeMappings(volumes, errors) {
+            volumes.forEach((volume, index) => {
+                const hasAnyValue = volume.host || volume.container;
+                if (!hasAnyValue) return;
+                if (!volume.host) errors[`volume_${index}`] = 'Host path is required';
+                if (!volume.container) errors[`volume_${index}`] = 'Container path is required';
+            });
+        },
+        validateEnvVars(env_vars, errors) {
+            env_vars.forEach((envVar, index) => {
+                const hasAnyValue = envVar.key || envVar.value;
+                if (!hasAnyValue) return;
+                if (!envVar.key) errors[`env_${index}`] = 'Variable name is required';
+                if (!envVar.value) errors[`env_${index}`] = 'Variable value is required';
+            });
+        },
+
         /**
          * Task 7: Validate form client-side
          */
         validateForm() {
             const errors = {};
             const formData = this.createModal.formData;
-            
+
             // Validate required fields
             if (!formData.name || !formData.name.trim()) {
                 errors.name = 'Container name is required';
             } else if (!/^[a-zA-Z0-9_-]+$/.test(formData.name)) {
                 errors.name = 'Name must contain only alphanumeric characters, hyphens, and underscores';
             }
-            
+
             if (!formData.image || !formData.image.trim()) {
                 errors.image = 'Image name is required';
             }
-            
-            // Validate port mappings - only check if at least one field is filled
-            formData.ports.forEach((port, index) => {
-                const hasAnyValue = port.container || port.host;
-                if (hasAnyValue) {
-                    if (!port.container) {
-                        errors[`port_${index}`] = 'Container port is required';
-                    } else if (port.container < 1 || port.container > 65535) {
-                        errors[`port_${index}`] = 'Container port must be between 1 and 65535';
-                    }
 
-                    if (!port.host) {
-                        errors[`port_${index}`] = 'Host port is required';
-                    } else if (port.host < 1 || port.host > 65535) {
-                        errors[`port_${index}`] = 'Host port must be between 1 and 65535';
-                    }
-                }
-            });
-            
-            // Validate volumes - only check if at least one field is filled
-            formData.volumes.forEach((volume, index) => {
-                const hasAnyValue = volume.host || volume.container;
-                if (hasAnyValue) {
-                    if (!volume.host) {
-                        errors[`volume_${index}`] = 'Host path is required';
-                    }
-                    if (!volume.container) {
-                        errors[`volume_${index}`] = 'Container path is required';
-                    }
-                }
-            });
-            
-            // Validate environment variables - only check if at least one field is filled
-            formData.env_vars.forEach((envVar, index) => {
-                const hasAnyValue = envVar.key || envVar.value;
-                if (hasAnyValue) {
-                    if (!envVar.key) {
-                        errors[`env_${index}`] = 'Variable name is required';
-                    }
-                    if (!envVar.value) {
-                        errors[`env_${index}`] = 'Variable value is required';
-                    }
-                }
-            });
+            // Validate port mappings, volumes, and env vars
+            this.validatePortMappings(formData.ports, errors);
+            this.validateVolumeMappings(formData.volumes, errors);
+            this.validateEnvVars(formData.env_vars, errors);
             
             // Validate resource limits
             if (formData.cpu_limit !== null && formData.cpu_limit !== '' && formData.cpu_limit <= 0) {
@@ -2200,6 +2183,36 @@ function containersComponent() {
             return Object.keys(errors).length === 0;
         },
         
+        buildPortsPayload(ports) {
+            if (!ports.length) return null;
+            const portsMap = {};
+            ports.forEach(port => {
+                if (port.container && port.host) {
+                    const portKey = `${port.container}/${port.protocol || 'tcp'}`;
+                    portsMap[portKey] = parseInt(port.host, 10);
+                }
+            });
+            return Object.keys(portsMap).length ? portsMap : null;
+        },
+        buildVolumesPayload(volumes) {
+            if (!volumes.length) return null;
+            const volMap = {};
+            volumes.forEach(volume => {
+                if (volume.host && volume.container) {
+                    volMap[volume.host] = { bind: volume.container, mode: volume.mode };
+                }
+            });
+            return Object.keys(volMap).length ? volMap : null;
+        },
+        buildEnvVarsPayload(env_vars) {
+            if (!env_vars.length) return null;
+            const envMap = {};
+            env_vars.forEach(envVar => {
+                if (envVar.key && envVar.value) envMap[envVar.key] = envVar.value;
+            });
+            return Object.keys(envMap).length ? envMap : null;
+        },
+
         /**
          * Task 7: Submit create form
          * Educational: Equivalent to `docker run` with all specified options
@@ -2238,40 +2251,15 @@ function containersComponent() {
                     requestData.network = this.createModal.formData.network;
                 }
 
-                // Transform ports array to API format
-                if (this.createModal.formData.ports.length > 0) {
-                    requestData.ports = {};
-                    this.createModal.formData.ports.forEach(port => {
-                        if (port.container && port.host) {
-                            // Combine port number with protocol (e.g., "80/tcp")
-                            const portKey = `${port.container}/${port.protocol || 'tcp'}`;
-                            requestData.ports[portKey] = Number.parseInt(port.host);
-                        }
-                    });
-                }
-                
-                // Transform volumes array to API format
-                if (this.createModal.formData.volumes.length > 0) {
-                    requestData.volumes = {};
-                    this.createModal.formData.volumes.forEach(volume => {
-                        if (volume.host && volume.container) {
-                            requestData.volumes[volume.host] = {
-                                bind: volume.container,
-                                mode: volume.mode
-                            };
-                        }
-                    });
-                }
-                
-                // Transform env vars array to API format
-                if (this.createModal.formData.env_vars.length > 0) {
-                    requestData.env_vars = {};
-                    this.createModal.formData.env_vars.forEach(envVar => {
-                        if (envVar.key && envVar.value) {
-                            requestData.env_vars[envVar.key] = envVar.value;
-                        }
-                    });
-                }
+                // Transform ports, volumes, env vars arrays to API format
+                const ports = this.buildPortsPayload(this.createModal.formData.ports);
+                if (ports) requestData.ports = ports;
+
+                const volumes = this.buildVolumesPayload(this.createModal.formData.volumes);
+                if (volumes) requestData.volumes = volumes;
+
+                const envVars = this.buildEnvVarsPayload(this.createModal.formData.env_vars);
+                if (envVars) requestData.env_vars = envVars;
                 
                 // Add resource limits if specified
                 if (this.createModal.formData.cpu_limit) {
@@ -2688,6 +2676,58 @@ function containersComponent() {
             }
         },
 
+        parsePortsFromJson(ports_json) {
+            if (!ports_json) return [];
+            const result = [];
+            const ports = JSON.parse(ports_json);
+            for (const [containerPort, hostBindings] of Object.entries(ports)) {
+                if (hostBindings && hostBindings[0]) {
+                    result.push({ container: containerPort, host: hostBindings[0].HostPort || '' });
+                }
+            }
+            return result;
+        },
+        parseVolumesFromJson(volumes_json) {
+            if (!volumes_json) return [];
+            const volumes = JSON.parse(volumes_json);
+            return Array.isArray(volumes) ? [...volumes] : [];
+        },
+        parseEnvVarsFromJson(env_vars_json) {
+            if (!env_vars_json) return [];
+            const result = [];
+            for (const [key, value] of Object.entries(JSON.parse(env_vars_json))) {
+                result.push({ key, value });
+            }
+            return result;
+        },
+        buildReconfigurePayload() {
+            const payload = {};
+            if (this.reconfigureModal.ports.length > 0) {
+                const portsMap = {};
+                for (const port of this.reconfigureModal.ports) {
+                    if (port.container && port.host) {
+                        portsMap[port.container] = [{ 'HostPort': port.host }];
+                    }
+                }
+                if (Object.keys(portsMap).length > 0) payload.ports = portsMap;
+            }
+            if (this.reconfigureModal.volumes.length > 0) {
+                const validVolumes = this.reconfigureModal.volumes.filter(v => v.trim());
+                if (validVolumes.length > 0) payload.volumes = validVolumes;
+            }
+            if (this.reconfigureModal.environment.length > 0) {
+                const envMap = {};
+                for (const env of this.reconfigureModal.environment) {
+                    if (env.key) envMap[env.key] = env.value || '';
+                }
+                if (Object.keys(envMap).length > 0) payload.environment = envMap;
+            }
+            if (this.reconfigureModal.restartPolicy) payload.restart_policy = this.reconfigureModal.restartPolicy;
+            if (this.reconfigureModal.cpuLimit) payload.cpu_limit = Number.parseFloat(this.reconfigureModal.cpuLimit);
+            if (this.reconfigureModal.memoryLimit) payload.memory_limit = Number.parseInt(this.reconfigureModal.memoryLimit);
+            return payload;
+        },
+
         /**
          * FEATURE-003: Open reconfigure modal (Sprint 5)
          */
@@ -2704,42 +2744,10 @@ function containersComponent() {
                 if (data.success) {
                     const details = data.data;
 
-                    // Parse ports
-                    this.reconfigureModal.ports = [];
-                    if (details.ports_json) {
-                        const ports = JSON.parse(details.ports_json);
-                        for (const [containerPort, hostBindings] of Object.entries(ports)) {
-                            if (hostBindings && hostBindings[0]) {
-                                this.reconfigureModal.ports.push({
-                                    container: containerPort,
-                                    host: hostBindings[0].HostPort || ''
-                                });
-                            }
-                        }
-                    }
-
-                    // Parse volumes
-                    this.reconfigureModal.volumes = [];
-                    if (details.volumes_json) {
-                        const volumes = JSON.parse(details.volumes_json);
-                        if (Array.isArray(volumes)) {
-                            this.reconfigureModal.volumes = [...volumes];
-                        }
-                    }
-
-                    // Parse environment variables
-                    this.reconfigureModal.environment = [];
-                    if (details.env_vars_json) {
-                        const envVars = JSON.parse(details.env_vars_json);
-                        for (const [key, value] of Object.entries(envVars)) {
-                            this.reconfigureModal.environment.push({ key, value });
-                        }
-                    }
-
-                    // Current restart policy (leave empty to not change)
+                    this.reconfigureModal.ports = this.parsePortsFromJson(details.ports_json);
+                    this.reconfigureModal.volumes = this.parseVolumesFromJson(details.volumes_json);
+                    this.reconfigureModal.environment = this.parseEnvVarsFromJson(details.env_vars_json);
                     this.reconfigureModal.restartPolicy = '';
-
-                    // Resource limits (leave empty to not change)
                     this.reconfigureModal.cpuLimit = '';
                     this.reconfigureModal.memoryLimit = '';
                 }
@@ -2758,55 +2766,7 @@ function containersComponent() {
             this.reconfigureModal.error = null;
 
             try {
-                // Build request payload - only include non-empty fields
-                const payload = {};
-
-                // Ports - convert to Docker format
-                if (this.reconfigureModal.ports.length > 0) {
-                    const portsMap = {};
-                    for (const port of this.reconfigureModal.ports) {
-                        if (port.container && port.host) {
-                            portsMap[port.container] = [{ 'HostPort': port.host }];
-                        }
-                    }
-                    if (Object.keys(portsMap).length > 0) {
-                        payload.ports = portsMap;
-                    }
-                }
-
-                // Volumes
-                if (this.reconfigureModal.volumes.length > 0) {
-                    const validVolumes = this.reconfigureModal.volumes.filter(v => v.trim());
-                    if (validVolumes.length > 0) {
-                        payload.volumes = validVolumes;
-                    }
-                }
-
-                // Environment variables - convert to dict
-                if (this.reconfigureModal.environment.length > 0) {
-                    const envMap = {};
-                    for (const env of this.reconfigureModal.environment) {
-                        if (env.key) {
-                            envMap[env.key] = env.value || '';
-                        }
-                    }
-                    if (Object.keys(envMap).length > 0) {
-                        payload.environment = envMap;
-                    }
-                }
-
-                // Restart policy
-                if (this.reconfigureModal.restartPolicy) {
-                    payload.restart_policy = this.reconfigureModal.restartPolicy;
-                }
-
-                // Resource limits
-                if (this.reconfigureModal.cpuLimit) {
-                    payload.cpu_limit = Number.parseFloat(this.reconfigureModal.cpuLimit);
-                }
-                if (this.reconfigureModal.memoryLimit) {
-                    payload.memory_limit = Number.parseInt(this.reconfigureModal.memoryLimit);
-                }
+                const payload = this.buildReconfigurePayload();
 
                 // Validate at least one change
                 if (Object.keys(payload).length === 0) {

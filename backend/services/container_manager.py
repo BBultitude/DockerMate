@@ -277,7 +277,67 @@ class ContainerManager:
     # =========================================================================
     # CREATE OPERATION
     # =========================================================================
-    
+
+    def _ensure_image_available(self, client, image: str, pull_if_missing: bool) -> None:
+        try:
+            client.images.get(image)
+            logger.debug(f"Image found locally: {image}")
+        except ImageNotFound:
+            if pull_if_missing:
+                logger.info(f"Pulling image: {image}")
+                try:
+                    client.images.pull(image)
+                    logger.info(f"Successfully pulled image: {image}")
+                except Exception as e:
+                    raise ContainerOperationError(f"Failed to pull image {image}: {e}")
+            else:
+                raise ValidationError(
+                    f"Image '{image}' not found locally. Set pull_if_missing=True to auto-pull."
+                )
+
+    def _check_name_unique(self, client, name: str) -> None:
+        try:
+            existing = client.containers.get(name)
+            raise ValidationError(
+                f"Container with name '{name}' already exists (ID: {existing.short_id})"
+            )
+        except NotFound:
+            pass
+
+    def _build_container_config(
+        self, name: str, image: str, command, environment, ports,
+        volumes, env_vars, labels, restart_policy, cpu_limit, memory_limit, network
+    ) -> dict:
+        docker_labels = labels or {}
+        docker_labels['com.dockermate.managed'] = 'true'
+        docker_labels['com.dockermate.version'] = '0.1.0'
+        docker_labels['com.dockermate.created_at'] = datetime.now().isoformat()
+        if environment:
+            docker_labels['com.dockermate.environment'] = environment
+
+        config = {
+            'name': name,
+            'image': image,
+            'detach': True,
+            'labels': docker_labels,
+            'environment': env_vars or {},
+        }
+        if command:
+            config['command'] = command
+        if ports:
+            config['ports'] = ports
+        if volumes:
+            config['volumes'] = volumes
+        if restart_policy and restart_policy != 'no':
+            config['restart_policy'] = self._build_restart_policy(restart_policy)
+        if cpu_limit:
+            config['nano_cpus'] = int(cpu_limit * 1e9)
+        if memory_limit:
+            config['mem_limit'] = memory_limit
+        if network:
+            config['network'] = network
+        return config
+
     @docker_operation
     def create_container(
         self,
@@ -357,78 +417,16 @@ class ContainerManager:
         client = get_docker_client()
         
         # Step 3: Check image availability
-        try:
-            client.images.get(image)
-            logger.debug(f"Image found locally: {image}")
-        except ImageNotFound:
-            if pull_if_missing:
-                logger.info(f"Pulling image: {image}")
-                try:
-                    client.images.pull(image)
-                    logger.info(f"Successfully pulled image: {image}")
-                except Exception as e:
-                    raise ContainerOperationError(
-                        f"Failed to pull image {image}: {e}"
-                    )
-            else:
-                raise ValidationError(
-                    f"Image '{image}' not found locally. Set pull_if_missing=True to auto-pull."
-                )
-        
+        self._ensure_image_available(client, image, pull_if_missing)
+
         # Step 4: Check name uniqueness
-        try:
-            existing = client.containers.get(name)
-            raise ValidationError(
-                f"Container with name '{name}' already exists (ID: {existing.short_id})"
-            )
-        except NotFound:
-            pass  # Good - name is unique
-        
+        self._check_name_unique(client, name)
+
         # Step 5: Prepare container configuration
-        # Add DockerMate management labels
-        docker_labels = labels or {}
-        docker_labels['com.dockermate.managed'] = 'true'
-        docker_labels['com.dockermate.version'] = '0.1.0'
-        docker_labels['com.dockermate.created_at'] = datetime.now().isoformat()
-        if environment:
-            docker_labels['com.dockermate.environment'] = environment
-
-        container_config = {
-            'name': name,
-            'image': image,
-            'detach': True,
-            'labels': docker_labels,
-            'environment': env_vars or {},
-        }
-
-        # FEAT-021: Add command override if specified
-        if command:
-            container_config['command'] = command
-
-        # Add port mappings (format: {'80/tcp': 8080})
-        if ports:
-            container_config['ports'] = ports
-        
-        # Add volume mounts (format: {'/host': {'bind': '/container', 'mode': 'rw'}})
-        if volumes:
-            container_config['volumes'] = volumes
-        
-        # Add restart policy (direct parameter, not nested in host_config)
-        if restart_policy and restart_policy != 'no':
-            restart_config = self._build_restart_policy(restart_policy)
-            container_config['restart_policy'] = restart_config
-        
-        # Add resource limits (use correct Docker SDK parameter names)
-        if cpu_limit:
-            # CPU limit in nano CPUs (1.0 = 1e9 nano CPUs)
-            container_config['nano_cpus'] = int(cpu_limit * 1e9)
-        
-        if memory_limit:
-            # Memory limit in bytes
-            container_config['mem_limit'] = memory_limit
-
-        if network:
-            container_config['network'] = network
+        container_config = self._build_container_config(
+            name, image, command, environment, ports,
+            volumes, env_vars, labels, restart_policy, cpu_limit, memory_limit, network
+        )
 
         # Step 6: Create container
         try:
@@ -865,6 +863,31 @@ class ContainerManager:
         
         return result
 
+    @staticmethod
+    def _should_include_container(is_managed: bool, managed_only: bool, unmanaged_only: bool) -> bool:
+        if managed_only and not is_managed:
+            return False
+        if unmanaged_only and is_managed:
+            return False
+        return True
+
+    def _enrich_managed_container(
+        self, container_data: dict, container_id: str, attrs: dict, rollbackable_names: set
+    ) -> None:
+        db_container = self.db.query(Container).filter_by(container_id=container_id).first()
+        if db_container:
+            container_data['environment'] = db_container.environment
+            container_data['ports_json'] = db_container.ports_json
+            container_data['db_id'] = db_container.id
+            container_data['rollback_available'] = db_container.name in rollbackable_names
+            try:
+                container_data['ports'] = json.loads(db_container.ports_json or '[]')
+            except Exception:
+                container_data['ports'] = []
+        else:
+            container_data['ports'] = self._extract_port_list(attrs.get('NetworkSettings', {}))
+            container_data['environment'] = None
+
     def list_all_docker_containers(
         self,
         all: bool = True,
@@ -927,10 +950,7 @@ class ContainerManager:
             container_id = docker_container.id
             is_managed = container_id in managed_ids
 
-            # Apply managed/unmanaged filter
-            if managed_only and not is_managed:
-                continue
-            if unmanaged_only and is_managed:
+            if not self._should_include_container(is_managed, managed_only, unmanaged_only):
                 continue
 
             # Build basic container data
@@ -947,24 +967,10 @@ class ContainerManager:
                 'labels': docker_container.labels or {}
             }
 
-            # If managed, augment with database metadata
+            # Augment container data with metadata
             if is_managed:
-                db_container = self.db.query(Container).filter_by(
-                    container_id=container_id
-                ).first()
-                if db_container:
-                    container_data['environment'] = db_container.environment
-                    container_data['ports_json'] = db_container.ports_json
-                    container_data['db_id'] = db_container.id
-                    container_data['rollback_available'] = db_container.name in rollbackable_names
-
-                    # Parse ports from JSON
-                    try:
-                        container_data['ports'] = json.loads(db_container.ports_json or '[]')
-                    except Exception:
-                        container_data['ports'] = []
+                self._enrich_managed_container(container_data, container_id, attrs, rollbackable_names)
             else:
-                # For unmanaged containers, extract ports from Docker directly
                 container_data['ports'] = self._extract_port_list(attrs.get('NetworkSettings', {}))
                 container_data['environment'] = None
 

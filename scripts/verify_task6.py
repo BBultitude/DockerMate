@@ -16,6 +16,11 @@ Usage:
 import sys
 import os
 
+SETTINGS_TEMPLATE = 'frontend/templates/settings.html'
+CONTAINERS_TEMPLATE = 'frontend/templates/containers.html'
+IMAGES_TEMPLATE = 'frontend/templates/images.html'
+NETWORKS_TEMPLATE = 'frontend/templates/networks.html'
+
 # Colors for output
 class Colors:
     GREEN = '\033[92m'
@@ -33,7 +38,7 @@ def test_pass(message):
 def test_fail(message):
     print(f"{Colors.RED}❌ FAIL{Colors.END} - {message}")
 
-def run_tests():
+def run_tests():  # nosonar(python:S3776)
     """Run all verification tests"""
     passed = 0
     failed = 0
@@ -49,10 +54,10 @@ def run_tests():
     test_header("Test 1: Template files exist")
     try:
         required_templates = [
-            'frontend/templates/settings.html',
-            'frontend/templates/containers.html',
-            'frontend/templates/images.html',
-            'frontend/templates/networks.html'
+            SETTINGS_TEMPLATE,
+            CONTAINERS_TEMPLATE,
+            IMAGES_TEMPLATE,
+            NETWORKS_TEMPLATE,
         ]
         
         missing_templates = []
@@ -111,12 +116,12 @@ def run_tests():
     test_header("Test 4: Templates contain navigation")
     try:
         templates_to_check = [
-            'frontend/templates/settings.html',
-            'frontend/templates/containers.html',
-            'frontend/templates/images.html',
-            'frontend/templates/networks.html'
+            SETTINGS_TEMPLATE,
+            CONTAINERS_TEMPLATE,
+            IMAGES_TEMPLATE,
+            NETWORKS_TEMPLATE,
         ]
-        
+
         missing_nav = []
         for template in templates_to_check:
             template_path = os.path.join(script_dir, template)
@@ -140,12 +145,12 @@ def run_tests():
     test_header("Test 5: Templates extend base.html")
     try:
         templates_to_check = [
-            'frontend/templates/settings.html',
-            'frontend/templates/containers.html',
-            'frontend/templates/images.html',
-            'frontend/templates/networks.html'
+            SETTINGS_TEMPLATE,
+            CONTAINERS_TEMPLATE,
+            IMAGES_TEMPLATE,
+            NETWORKS_TEMPLATE,
         ]
-        
+
         not_extending = []
         for template in templates_to_check:
             template_path = os.path.join(script_dir, template)
@@ -167,7 +172,7 @@ def run_tests():
     # Test 6: Check settings page has password change form
     test_header("Test 6: Settings page has password change form")
     try:
-        settings_path = os.path.join(script_dir, 'frontend/templates/settings.html')
+        settings_path = os.path.join(script_dir, SETTINGS_TEMPLATE)
         with open(settings_path, 'r') as f:
             content = f.read()
             has_password_fields = (
@@ -190,9 +195,9 @@ def run_tests():
     test_header("Test 7: Placeholder pages have sprint indicators")
     try:
         placeholder_checks = {
-            'frontend/templates/containers.html': 'Sprint 2',
-            'frontend/templates/images.html': 'Sprint 3',
-            'frontend/templates/networks.html': 'Sprint 4'
+            CONTAINERS_TEMPLATE: 'Sprint 2',
+            IMAGES_TEMPLATE: 'Sprint 3',
+            NETWORKS_TEMPLATE: 'Sprint 4',
         }
         
         missing_indicators = []

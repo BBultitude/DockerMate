@@ -745,6 +745,44 @@ function stacksComponent() {
             setTimeout(() => { this.toast.show = false; }, 5000);
         },
 
+        getServicesType(services) {
+            if (Array.isArray(services)) return 'array';
+            return typeof services;
+        },
+        validateServicesMapping(services) {
+            const type = this.getServicesType(services);
+            if (type !== 'object') {
+                return `"services:" must be a mapping (object), not a ${type} value`;
+            }
+            const serviceNames = Object.keys(services);
+            if (serviceNames.length === 0) {
+                return '"services:" section must contain at least one service';
+            }
+            return null;
+        },
+        validateSingleService(serviceName, service) {
+            if (service === null || service === undefined) {
+                return `Service "${serviceName}" has no configuration (check indentation)`;
+            }
+            if (typeof service !== 'object' || Array.isArray(service)) {
+                const actualType = Array.isArray(service) ? 'array' : typeof service;
+                return `Service "${serviceName}" must be a mapping (object), not a ${actualType}`;
+            }
+            if (Object.keys(service).length === 0) {
+                return `Service "${serviceName}" is empty - must have at least "image:" or "build:"`;
+            }
+            return null;
+        },
+        validateTopLevelKeys(parsed) {
+            const invalidKeys = ['port', 'ports', 'volume', 'volumes', 'environment', 'networks', 'depends_on', 'command', 'entrypoint'];
+            for (const key of invalidKeys) {
+                if (parsed[key]) {
+                    return `"${key}:" should be under a service, not at root level (check indentation)`;
+                }
+            }
+            return null;
+        },
+
         validateYaml(modalType) {
             // Get YAML from appropriate modal
             const yaml = modalType === 'create' ? this.createModal.composeYaml : this.editModal.composeYaml;
@@ -788,61 +826,27 @@ function stacksComponent() {
                     return;
                 }
 
-                // 5. Validate services is an object (not a scalar or array)
-                // In JavaScript: typeof "string" === "string", typeof {} === "object"
-                const servicesType = typeof parsed.services;
-                const isServicesString = servicesType === 'string';
-                const isServicesNumber = servicesType === 'number';
-                const isServicesBoolean = servicesType === 'boolean';
-                const isServicesArray = Array.isArray(parsed.services);
-
-                if (isServicesString || isServicesNumber || isServicesBoolean || isServicesArray) {
-                    let actualType;
-                    if (isServicesString) { actualType = 'string'; }
-                    else if (isServicesNumber) { actualType = 'number'; }
-                    else if (isServicesBoolean) { actualType = 'boolean'; }
-                    else { actualType = 'array'; }
-                    this.yamlValidation = { status: 'invalid', error: `"services:" must be a mapping (object), not a ${actualType} value` };
+                // 5-6. Validate services is a non-empty mapping
+                const servicesMappingError = this.validateServicesMapping(parsed.services);
+                if (servicesMappingError) {
+                    this.yamlValidation = { status: 'invalid', error: servicesMappingError };
                     return;
                 }
 
-                // 6. Check that services has at least one service defined
-                const serviceNames = Object.keys(parsed.services);
-                if (serviceNames.length === 0) {
-                    this.yamlValidation = { status: 'invalid', error: '"services:" section must contain at least one service' };
+                // 7. Validate each service is properly configured
+                for (const serviceName of Object.keys(parsed.services)) {
+                    const serviceError = this.validateSingleService(serviceName, parsed.services[serviceName]);
+                    if (serviceError) {
+                        this.yamlValidation = { status: 'invalid', error: serviceError };
+                        return;
+                    }
+                }
+
+                // 8. Check for common misplaced top-level keys
+                const topLevelError = this.validateTopLevelKeys(parsed);
+                if (topLevelError) {
+                    this.yamlValidation = { status: 'invalid', error: topLevelError };
                     return;
-                }
-
-                // 7. Validate each service is properly configured (not null, not scalar)
-                for (const serviceName of serviceNames) {
-                    const service = parsed.services[serviceName];
-
-                    if (service === null || service === undefined) {
-                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" has no configuration (check indentation)` };
-                        return;
-                    }
-
-                    if (typeof service !== 'object' || Array.isArray(service)) {
-                        const actualType = Array.isArray(service) ? 'array' : typeof service;
-                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" must be a mapping (object), not a ${actualType}` };
-                        return;
-                    }
-
-                    // Each service should have at least one property (image, build, etc.)
-                    const serviceKeys = Object.keys(service);
-                    if (serviceKeys.length === 0) {
-                        this.yamlValidation = { status: 'invalid', error: `Service "${serviceName}" is empty - must have at least "image:" or "build:"` };
-                        return;
-                    }
-                }
-
-                // 8. Check for common misplaced top-level keys (ports, volumes at root instead of under service)
-                const invalidTopLevelKeys = ['port', 'ports', 'volume', 'volumes', 'environment', 'networks', 'depends_on', 'command', 'entrypoint'];
-                for (const key of invalidTopLevelKeys) {
-                    if (parsed[key]) {
-                        this.yamlValidation = { status: 'invalid', error: `"${key}:" should be under a service, not at root level (check indentation)` };
-                        return;
-                    }
                 }
 
                 // 9. Additional style checks

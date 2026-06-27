@@ -308,7 +308,7 @@ class CertificateManager:
             logger.info(f"Private key written to: {key_path}")
             
             # Set secure permissions on private key (owner read/write only)
-            os.chmod(key_path, 0o600)  # NOSONAR: 600 is correct for private keys
+            os.chmod(key_path, 0o600)  # nosonar(python:S2612)
             logger.info("Set private key permissions to 600 (owner only)")
             
             result = {
@@ -478,7 +478,7 @@ class CertificateManager:
                 dst.write(key_data)
             
             # Set private key permissions (600 - owner only, CRITICAL)
-            os.chmod(dest_key_path, 0o600)  # NOSONAR: 600 is correct for private keys
+            os.chmod(dest_key_path, 0o600)  # nosonar(python:S2612)
             logger.info("Set private key permissions to 600 (owner only)")
             
             # Step 6: Get certificate info for metadata

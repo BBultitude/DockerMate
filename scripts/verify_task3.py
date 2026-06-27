@@ -59,7 +59,7 @@ def print_info(message):
     """Print info message"""
     print(f"{YELLOW}ℹ️  {message}{RESET}")
 
-def test_password_manager():
+def test_password_manager():  # nosonar(python:S3776)
     """Test 1: Password Manager"""
     print("\n" + "=" * 80)
     print("Test 1: Password Manager")
@@ -147,7 +147,7 @@ def test_password_manager():
         traceback.print_exc()
         return False
 
-def test_session_manager():
+def test_session_manager():  # nosonar(python:S3776)
     """Test 2: Session Manager"""
     print("\n" + "=" * 80)
     print("Test 2: Session Manager")

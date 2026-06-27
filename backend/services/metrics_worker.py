@@ -93,7 +93,7 @@ class MetricsWorker:
             self.collector.collect_container_metrics(db)
         except Exception as e:
             logger.error(f"Error collecting container metrics: {e}")
-        if random.random() < (1.0 / 1440):  # NOSONAR: probabilistic jitter, not security
+        if random.random() < (1.0 / 1440):  # nosonar(python:S2245)
             try:
                 logger.info("Running daily metrics cleanup...")
                 self.collector.cleanup_old_metrics(db, retention_days=7)

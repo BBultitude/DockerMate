@@ -34,7 +34,7 @@ def test_pass(message):
 def test_fail(message):
     print(f"{Colors.RED}❌ FAIL{Colors.END} - {message}")
 
-def run_tests():
+def run_tests():  # nosonar(python:S3776)
     """Run all verification tests"""
     passed = 0
     failed = 0

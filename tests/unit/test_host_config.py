@@ -396,7 +396,7 @@ class TestRaspberryPiLimits:
         assert level in ['warning', 'critical']  # Should be warning
         
         # 14 containers = 93% of 15
-        at_limit, level = config.is_at_container_limit(current_count=14)
+        _, level = config.is_at_container_limit(current_count=14)
         assert level == 'critical'
         
         # 16 containers = over limit

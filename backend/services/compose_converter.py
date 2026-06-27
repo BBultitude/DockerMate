@@ -106,6 +106,65 @@ class ComposeConverter:
         '-v': 'volumes', '--volume': 'volumes',
     }
 
+    def _strip_docker_prefix(self, command: str) -> str:
+        command = command.strip()
+        if command.startswith('docker container run'):
+            return command[20:].strip()
+        if command.startswith('docker run'):
+            return command[10:].strip()
+        return command
+
+    def _init_parse_result(self) -> Dict:
+        return {
+            'image': None, 'ports': [], 'volumes': [], 'environment': {},
+            'name': None, 'network': None, 'restart': None,
+            'memory': None, 'cpus': None, 'labels': {}, 'warnings': [], 'detach': False,
+        }
+
+    def _handle_env_token(self, result: Dict, tokens: list, i: int) -> int:
+        env = tokens[i]
+        if '=' in env:
+            key, value = env.split('=', 1)
+            result['environment'][key] = value
+        else:
+            result['environment'][env] = ''
+        return i + 1
+
+    def _handle_label_token(self, result: Dict, tokens: list, i: int) -> int:
+        label = tokens[i]
+        if '=' in label:
+            key, value = label.split('=', 1)
+            result['labels'][key] = value
+        return i + 1
+
+    def _dispatch_token(self, result: Dict, tokens: list, token: str, i: int):
+        """Handle one token from a docker run command. Returns new index, or None if image was found."""
+        if token in ('-d', '--detach'):
+            result['detach'] = True
+            return i
+        if token in ('-i', '--interactive', '-t', '--tty'):
+            result['warnings'].append(f"Flag {token} (interactive/tty) not applicable in compose")
+            return i
+        if token == '--rm':
+            result['warnings'].append("Flag --rm (auto-remove) not directly supported in compose")
+            return i
+        if token in self._LIST_APPEND_FLAGS and i < len(tokens):
+            result[self._LIST_APPEND_FLAGS[token]].append(tokens[i])
+            return i + 1
+        if token in self._SINGLE_VALUE_FLAGS and i < len(tokens):
+            result[self._SINGLE_VALUE_FLAGS[token]] = tokens[i]
+            return i + 1
+        if token in ('-e', '--env') and i < len(tokens):
+            return self._handle_env_token(result, tokens, i)
+        if token in ('-l', '--label') and i < len(tokens):
+            return self._handle_label_token(result, tokens, i)
+        if token.startswith('-'):
+            result['warnings'].append(f"Unsupported flag: {token}")
+            if i < len(tokens) and not tokens[i].startswith('-'):
+                return i + 1
+            return i
+        return None  # Image token found
+
     def _parse_docker_run(self, command: str) -> Dict:
         """
         Parse docker run command and extract configuration.
@@ -114,84 +173,41 @@ class ComposeConverter:
             dict with keys: image, ports, volumes, environment, name, network,
             restart, memory, cpus, labels, warnings, detach
         """
-        command = command.strip()
-        if command.startswith('docker container run'):
-            command = command[20:].strip()
-        elif command.startswith('docker run'):
-            command = command[10:].strip()
-
+        command = self._strip_docker_prefix(command)
         try:
             tokens = shlex.split(command)
         except ValueError as e:
             raise ValueError(f"Invalid command syntax: {e}")
 
-        result: Dict = {
-            'image': None, 'ports': [], 'volumes': [], 'environment': {},
-            'name': None, 'network': None, 'restart': None,
-            'memory': None, 'cpus': None, 'labels': {}, 'warnings': [], 'detach': False,
-        }
-
+        result = self._init_parse_result()
         i = 0
         while i < len(tokens):
             token = tokens[i]
             i += 1
-
-            if token in ('-d', '--detach'):
-                result['detach'] = True
-                continue
-
-            if token in ('-i', '--interactive', '-t', '--tty'):
-                result['warnings'].append(f"Flag {token} (interactive/tty) not applicable in compose")
-                continue
-
-            if token == '--rm':
-                result['warnings'].append("Flag --rm (auto-remove) not directly supported in compose")
-                continue
-
-            if token in self._LIST_APPEND_FLAGS and i < len(tokens):
-                result[self._LIST_APPEND_FLAGS[token]].append(tokens[i])
-                i += 1
-                continue
-
-            if token in self._SINGLE_VALUE_FLAGS and i < len(tokens):
-                result[self._SINGLE_VALUE_FLAGS[token]] = tokens[i]
-                i += 1
-                continue
-
-            if token in ('-e', '--env') and i < len(tokens):
-                env = tokens[i]
-                i += 1
-                if '=' in env:
-                    key, value = env.split('=', 1)
-                    result['environment'][key] = value
-                else:
-                    result['environment'][env] = ''
-                continue
-
-            if token in ('-l', '--label') and i < len(tokens):
-                label = tokens[i]
-                i += 1
-                if '=' in label:
-                    key, value = label.split('=', 1)
-                    result['labels'][key] = value
-                continue
-
-            if token.startswith('-'):
-                result['warnings'].append(f"Unsupported flag: {token}")
-                if i < len(tokens) and not tokens[i].startswith('-'):
-                    i += 1
-                continue
-
-            # First non-flag token is the image
-            result['image'] = token
-            if i < len(tokens):
-                result['command'] = tokens[i:]
-            break
+            new_i = self._dispatch_token(result, tokens, token, i)
+            if new_i is None:
+                result['image'] = token
+                if i < len(tokens):
+                    result['command'] = tokens[i:]
+                break
+            i = new_i
 
         if not result['image']:
             raise ValueError("No image specified in docker run command")
-
         return result
+
+    def _build_resources_deploy(self, parsed: Dict):
+        """Build the deploy.resources section, or return None if no limits specified."""
+        if not parsed['memory'] and not parsed['cpus']:
+            return None
+        limits = {}
+        if parsed['memory']:
+            limits['memory'] = parsed['memory']
+        if parsed['cpus']:
+            limits['cpus'] = parsed['cpus']
+        if not limits:
+            return None
+        return {'resources': {'limits': limits}}
 
     def _build_compose_structure(self, parsed: Dict, service_name: str) -> Dict:
         """
@@ -235,20 +251,9 @@ class ComposeConverter:
             }
 
         # Resources
-        if parsed['memory'] or parsed['cpus']:
-            deploy = {}
-            resources = {}
-            limits = {}
-
-            if parsed['memory']:
-                limits['memory'] = parsed['memory']
-            if parsed['cpus']:
-                limits['cpus'] = parsed['cpus']
-
-            if limits:
-                resources['limits'] = limits
-                deploy['resources'] = resources
-                service_config['deploy'] = deploy
+        deploy = self._build_resources_deploy(parsed)
+        if deploy:
+            service_config['deploy'] = deploy
 
         # Labels
         if parsed['labels']:

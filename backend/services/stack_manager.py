@@ -617,6 +617,32 @@ class StackManager:
 
         return created_containers
 
+    def _sync_network_record(self, network_name: str, Network) -> None:
+        """Upsert a stack-created network into the database as managed=True."""
+        try:
+            docker_network = self.client.networks.get(network_name)
+            db_network = self.db.query(Network).filter(
+                Network.network_id == docker_network.id
+            ).first()
+            if db_network:
+                db_network.managed = True
+                logger.info(f"Updated network '{network_name}' to managed=True")
+            else:
+                attrs = docker_network.attrs
+                ipam = attrs.get('IPAM', {}).get('Config', [])
+                db_network = Network(
+                    network_id=docker_network.id,
+                    name=docker_network.name,
+                    driver=attrs.get('Driver', 'bridge'),
+                    subnet=ipam[0].get('Subnet') if ipam else None,
+                    gateway=ipam[0].get('Gateway') if ipam else None,
+                    managed=True,
+                )
+                self.db.add(db_network)
+                logger.info(f"Created database record for network '{network_name}'")
+        except Exception as e:
+            logger.warning(f"Failed to sync network '{network_name}': {e}")
+
     def _sync_stack_resources_to_database(self, network_names: list, volume_names: list) -> None:
         """
         Sync stack-created resources to their respective database tables.
@@ -645,38 +671,7 @@ class StackManager:
 
             # Sync networks to database
             for network_name in network_names:
-                try:
-                    docker_network = self.client.networks.get(network_name)
-
-                    # Check if network already in database
-                    db_network = self.db.query(Network).filter(
-                        Network.network_id == docker_network.id
-                    ).first()
-
-                    if db_network:
-                        # Update existing record to mark as managed
-                        db_network.managed = True
-                        logger.info(f"Updated network '{network_name}' to managed=True")
-                    else:
-                        # Create new network record with managed=True
-                        attrs = docker_network.attrs
-                        ipam = attrs.get('IPAM', {}).get('Config', [])
-                        subnet = ipam[0].get('Subnet') if ipam else None
-                        gateway = ipam[0].get('Gateway') if ipam else None
-
-                        db_network = Network(
-                            network_id=docker_network.id,
-                            name=docker_network.name,
-                            driver=attrs.get('Driver', 'bridge'),
-                            subnet=subnet,
-                            gateway=gateway,
-                            managed=True  # Stack-created networks are managed
-                        )
-                        self.db.add(db_network)
-                        logger.info(f"Created database record for network '{network_name}'")
-
-                except Exception as e:
-                    logger.warning(f"Failed to sync network '{network_name}': {e}")
+                self._sync_network_record(network_name, Network)
 
             # Sync volumes to database
             volume_manager = VolumeManager(self.db)
@@ -802,6 +797,48 @@ class StackManager:
             'message': f"Started {started_count} containers"
         }
 
+    def _remove_stack_containers(self, container_ids: list) -> int:
+        removed = 0
+        for container_id in container_ids:
+            try:
+                container = self.client.containers.get(container_id)
+                container.stop(timeout=10)
+                container.remove()
+                removed += 1
+            except NotFound:
+                pass
+        return removed
+
+    def _remove_stack_networks(self, network_names: list) -> int:
+        removed = 0
+        for network_name in network_names:
+            try:
+                network = self.client.networks.get(network_name)
+                network.remove()
+                removed += 1
+            except NotFound:
+                pass
+        return removed
+
+    def _remove_stack_volumes(self, volume_names: list) -> int:
+        removed = 0
+        for volume_name in volume_names:
+            try:
+                volume = self.client.volumes.get(volume_name)
+                volume.remove()
+                removed += 1
+            except NotFound:
+                pass
+        return removed
+
+    def _cleanup_stack_directory(self, file_path: str) -> None:
+        if not file_path or not os.path.exists(file_path):
+            return
+        os.remove(file_path)
+        stack_dir = os.path.dirname(file_path)
+        if os.path.exists(stack_dir) and not os.listdir(stack_dir):
+            os.rmdir(stack_dir)
+
     def delete_stack(self, name_or_id: str, remove_volumes: bool = False) -> dict:
         """
         Delete a stack and all its resources
@@ -816,7 +853,6 @@ class StackManager:
         Raises:
             StackNotFoundError: If stack not found
         """
-        # Find stack
         try:
             stack_id = int(name_or_id)
             stack = self.db.query(Stack).filter(Stack.id == stack_id).first()
@@ -826,50 +862,18 @@ class StackManager:
         if not stack:
             raise StackNotFoundError(f"Stack '{name_or_id}' not found")
 
-        # Remove containers
         container_ids = json.loads(stack.container_ids_json) if stack.container_ids_json else []
-        removed_containers = 0
-        for container_id in container_ids:
-            try:
-                container = self.client.containers.get(container_id)
-                container.stop(timeout=10)
-                container.remove()
-                removed_containers += 1
-            except NotFound:
-                pass
-
-        # Remove networks
         network_names = json.loads(stack.network_names_json) if stack.network_names_json else []
-        removed_networks = 0
-        for network_name in network_names:
-            try:
-                network = self.client.networks.get(network_name)
-                network.remove()
-                removed_networks += 1
-            except NotFound:
-                pass
+        removed_containers = self._remove_stack_containers(container_ids)
+        removed_networks = self._remove_stack_networks(network_names)
 
-        # Remove volumes if requested
         removed_volumes = 0
         if remove_volumes:
             volume_names = json.loads(stack.volume_names_json) if stack.volume_names_json else []
-            for volume_name in volume_names:
-                try:
-                    volume = self.client.volumes.get(volume_name)
-                    volume.remove()
-                    removed_volumes += 1
-                except NotFound:
-                    pass
+            removed_volumes = self._remove_stack_volumes(volume_names)
 
-        # Remove compose file
-        if stack.file_path and os.path.exists(stack.file_path):
-            os.remove(stack.file_path)
-            # Remove directory if empty
-            stack_dir = os.path.dirname(stack.file_path)
-            if os.path.exists(stack_dir) and not os.listdir(stack_dir):
-                os.rmdir(stack_dir)
+        self._cleanup_stack_directory(stack.file_path)
 
-        # Remove database record
         self.db.delete(stack)
         self.db.commit()
 

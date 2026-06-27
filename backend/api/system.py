@@ -208,27 +208,41 @@ def _hc_docker():
         return "error", None, [{"domain": "infrastructure", "message": "Docker daemon is not reachable"}]
 
 
+def _check_exit_code(container, result_list):
+    if container.status != 'exited':
+        return
+    try:
+        container.reload()
+        if container.attrs.get('State', {}).get('ExitCode', 0) != 0:
+            result_list.append(container.name.lstrip('/'))
+    except Exception:
+        pass
+
+
+def _check_health(container, result_list):
+    try:
+        health = container.attrs.get('State', {}).get('Health')
+        if health and health.get('Status') == 'unhealthy':
+            result_list.append(container.name.lstrip('/'))
+    except Exception:
+        pass
+
+
+def _inspect_containers(client):
+    exited_nonzero, unhealthy = [], []
+    for c in client.containers.list(all=True):
+        if 'dockermate' in (c.name or '').lower():
+            continue
+        _check_exit_code(c, exited_nonzero)
+        _check_health(c, unhealthy)
+    return exited_nonzero, unhealthy
+
+
 def _hc_containers(client):
     if not client:
         return "ok", []
     try:
-        exited_nonzero, unhealthy = [], []
-        for c in client.containers.list(all=True):
-            if 'dockermate' in (c.name or '').lower():
-                continue
-            if c.status == 'exited':
-                try:
-                    c.reload()
-                    if c.attrs.get('State', {}).get('ExitCode', 0) != 0:
-                        exited_nonzero.append(c.name.lstrip('/'))
-                except Exception:
-                    pass
-            try:
-                health = c.attrs.get('State', {}).get('Health')
-                if health and health.get('Status') == 'unhealthy':
-                    unhealthy.append(c.name.lstrip('/'))
-            except Exception:
-                pass
+        exited_nonzero, unhealthy = _inspect_containers(client)
         warns = []
         if exited_nonzero:
             warns.append({"domain": "containers",

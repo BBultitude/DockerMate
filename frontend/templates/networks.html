@@ -870,7 +870,7 @@ function networksComponent() {
                 } else {
                     this.ipAllocations = null;
                 }
-            } catch (e) {
+            } catch {
                 this.showToast('Failed to load network details', 'error');
             }
         },
@@ -917,7 +917,7 @@ function networksComponent() {
                     body: JSON.stringify({ subnet: this.createForm.subnet })
                 });
                 this.subnetValidation = await res.json();
-            } catch (e) {
+            } catch {
                 this.subnetValidation = { valid: false, reason: 'Validation request failed' };
             }
         },

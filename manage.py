@@ -43,6 +43,40 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 
+def _prompt_new_password(PasswordManager, getpass):
+    """Prompt user for a new password interactively, re-prompting on failures."""
+    print("\n  Enter a new password (min 12 chars, upper + lower + digit).\n")
+    while True:
+        new_password = getpass.getpass("  New password:      ")
+        if not new_password:
+            print("  Password cannot be empty.\n")
+            continue
+        confirm = getpass.getpass("  Confirm password:  ")
+        if new_password != confirm:
+            print("  Passwords do not match. Try again.\n")
+            continue
+        validation = PasswordManager.validate_password_strength(new_password)
+        if not validation['valid']:
+            print("  Password does not meet requirements:")
+            for issue in validation['issues']:
+                print(f"    - {issue}")
+            print()
+            continue
+        return new_password
+
+
+def _apply_temp_password(user, db, PasswordManager, logger, datetime, timezone):
+    """Set a generated temporary password and force change on next login."""
+    temp_password = PasswordManager.generate_temp_password()
+    user.password_hash = PasswordManager.hash_password(temp_password)
+    user.force_password_change = True
+    user.password_reset_at = datetime.now(timezone.utc)
+    db.commit()
+    logger.info("Password reset via CLI (temporary password)")
+    print(f"\n  ✓  Temporary password set:  {temp_password}")
+    print("      User must change password on next login.\n")
+
+
 def reset_password():
     """
     Reset the admin password via CLI.
@@ -80,35 +114,9 @@ def reset_password():
             sys.exit(1)
 
         if use_temp:
-            temp_password = PasswordManager.generate_temp_password()
-            user.password_hash = PasswordManager.hash_password(temp_password)
-            user.force_password_change = True
-            user.password_reset_at = datetime.now(timezone.utc)
-            db.commit()
-            logger.info("Password reset via CLI (temporary password)")
-            print(f"\n  ✓  Temporary password set:  {temp_password}")
-            print("      User must change password on next login.\n")
+            _apply_temp_password(user, db, PasswordManager, logger, datetime, timezone)
         else:
-            print("\n  Enter a new password (min 12 chars, upper + lower + digit).\n")
-            while True:
-                new_password = getpass.getpass("  New password:      ")
-                if not new_password:
-                    print("  Password cannot be empty.\n")
-                    continue
-                confirm = getpass.getpass("  Confirm password:  ")
-                if new_password != confirm:
-                    print("  Passwords do not match. Try again.\n")
-                    continue
-
-                validation = PasswordManager.validate_password_strength(new_password)
-                if not validation['valid']:
-                    print("  Password does not meet requirements:")
-                    for issue in validation['issues']:
-                        print(f"    - {issue}")
-                    print()
-                    continue
-                break
-
+            new_password = _prompt_new_password(PasswordManager, getpass)
             user.password_hash = PasswordManager.hash_password(new_password)
             user.force_password_change = False
             user.password_reset_at = datetime.now(timezone.utc)

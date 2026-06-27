@@ -81,8 +81,8 @@ def app():
     
     app = Flask(__name__)
     app.config['TESTING'] = True
-    app.config['SECRET_KEY'] = secrets.token_hex(32)
-    
+    app.config['SECRET_KEY'] = secrets.token_hex(32)  # nosonar(python:S2068)
+
     # Register containers blueprint
     app.register_blueprint(containers_bp)
     

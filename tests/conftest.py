@@ -203,7 +203,7 @@ def test_app(db_setup):
     """
     app = Flask(__name__)
     app.config['TESTING'] = True
-    app.config['SECRET_KEY'] = secrets.token_hex(32)
+    app.config['SECRET_KEY'] = secrets.token_hex(32)  # nosonar(python:S2068)
     app.config['WTF_CSRF_ENABLED'] = False  # Disable CSRF for testing
     
     # Import and register routes

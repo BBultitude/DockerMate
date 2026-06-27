@@ -192,7 +192,36 @@ class PasswordManager:
     # ==========================================================================
     # Password Strength Validation
     # ==========================================================================
-    
+
+    @staticmethod
+    def _check_length_strength(password: str) -> tuple:
+        """Return (strength_delta, issues) for the length requirement."""
+        if len(password) < PasswordManager.MIN_PASSWORD_LENGTH:
+            return 0, [f"Must be at least {PasswordManager.MIN_PASSWORD_LENGTH} characters"]
+        strength = 1 + (1 if len(password) >= 16 else 0) + (1 if len(password) >= 20 else 0)
+        return strength, []
+
+    @staticmethod
+    def _check_charset_strength(password: str) -> tuple:
+        """Return (strength_delta, issues) for uppercase/lowercase/digit/special requirements."""
+        issues = []
+        strength = 0
+        if not re.search(r'[A-Z]', password):
+            issues.append("Must contain at least one uppercase letter (A-Z)")
+        else:
+            strength += 1
+        if not re.search(r'[a-z]', password):
+            issues.append("Must contain at least one lowercase letter (a-z)")
+        else:
+            strength += 1
+        if not re.search(r'\d', password):
+            issues.append("Must contain at least one digit (0-9)")
+        else:
+            strength += 1
+        if re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+            strength += 1
+        return strength, []
+
     @staticmethod
     def validate_password_strength(password: str) -> Dict:
         """
@@ -237,41 +266,10 @@ class PasswordManager:
             #   - Use a passphrase: 4-5 random words
             #   - Use a password manager
         """
-        issues = []
-        strength = 0
-        
-        # Length check
-        if len(password) < PasswordManager.MIN_PASSWORD_LENGTH:
-            issues.append(f"Must be at least {PasswordManager.MIN_PASSWORD_LENGTH} characters")
-        else:
-            strength += 1
-            # Bonus for extra length
-            if len(password) >= 16:
-                strength += 1
-            if len(password) >= 20:
-                strength += 1
-        
-        # Uppercase check
-        if not re.search(r'[A-Z]', password):
-            issues.append("Must contain at least one uppercase letter (A-Z)")
-        else:
-            strength += 1
-        
-        # Lowercase check
-        if not re.search(r'[a-z]', password):
-            issues.append("Must contain at least one lowercase letter (a-z)")
-        else:
-            strength += 1
-        
-        # Digit check
-        if not re.search(r'\d', password):
-            issues.append("Must contain at least one digit (0-9)")
-        else:
-            strength += 1
-        
-        # Special character check (recommended, not required)
-        if re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-            strength += 1
+        length_strength, length_issues = PasswordManager._check_length_strength(password)
+        charset_strength, charset_issues = PasswordManager._check_charset_strength(password)
+        issues = length_issues + charset_issues
+        strength = length_strength + charset_strength
         
         # ===== IMPROVED WEAK PASSWORD DETECTION =====
         # Check for common weak patterns that should be rejected
