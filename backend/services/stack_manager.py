@@ -617,12 +617,12 @@ class StackManager:
 
         return created_containers
 
-    def _sync_network_record(self, network_name: str, Network) -> None:
+    def _sync_network_record(self, network_name: str, network_model) -> None:
         """Upsert a stack-created network into the database as managed=True."""
         try:
             docker_network = self.client.networks.get(network_name)
-            db_network = self.db.query(Network).filter(
-                Network.network_id == docker_network.id
+            db_network = self.db.query(network_model).filter(
+                network_model.network_id == docker_network.id
             ).first()
             if db_network:
                 db_network.managed = True
@@ -630,7 +630,7 @@ class StackManager:
             else:
                 attrs = docker_network.attrs
                 ipam = attrs.get('IPAM', {}).get('Config', [])
-                db_network = Network(
+                db_network = network_model(
                     network_id=docker_network.id,
                     name=docker_network.name,
                     driver=attrs.get('Driver', 'bridge'),

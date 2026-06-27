@@ -15,10 +15,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code (.dockerignore excludes secrets, .git, .env, certs, etc.)
-COPY --chown=dockermate:dockermate . . # NOSONAR
+COPY --chown=dockermate:dockermate --chmod=755 . .
 
 # Copy entrypoint, set permissions, and create data directories in one layer
-COPY --chown=dockermate:dockermate docker-entrypoint.sh /usr/local/bin/
+COPY --chown=dockermate:dockermate --chmod=755 docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
     mkdir -p /app/data /app/certs && \
     chown -R dockermate:dockermate /app/data /app/certs

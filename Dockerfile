@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir certbot
 
 # Copy application code (.dockerignore excludes secrets, .git, .env, certs, etc.)
-COPY --chown=dockermate:dockermate . . # NOSONAR
+COPY --chown=dockermate:dockermate --chmod=755 . .
 
 # Create data directories and set permissions
 RUN mkdir -p \

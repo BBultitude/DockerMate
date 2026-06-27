@@ -2189,7 +2189,7 @@ function containersComponent() {
             ports.forEach(port => {
                 if (port.container && port.host) {
                     const portKey = `${port.container}/${port.protocol || 'tcp'}`;
-                    portsMap[portKey] = parseInt(port.host, 10);
+                    portsMap[portKey] = Number.parseInt(port.host, 10);
                 }
             });
             return Object.keys(portsMap).length ? portsMap : null;

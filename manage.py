@@ -43,7 +43,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 
-def _prompt_new_password(PasswordManager, getpass):
+def _prompt_new_password(password_manager_cls, getpass):
     """Prompt user for a new password interactively, re-prompting on failures."""
     print("\n  Enter a new password (min 12 chars, upper + lower + digit).\n")
     while True:
@@ -55,7 +55,7 @@ def _prompt_new_password(PasswordManager, getpass):
         if new_password != confirm:
             print("  Passwords do not match. Try again.\n")
             continue
-        validation = PasswordManager.validate_password_strength(new_password)
+        validation = password_manager_cls.validate_password_strength(new_password)
         if not validation['valid']:
             print("  Password does not meet requirements:")
             for issue in validation['issues']:
@@ -65,10 +65,10 @@ def _prompt_new_password(PasswordManager, getpass):
         return new_password
 
 
-def _apply_temp_password(user, db, PasswordManager, logger, datetime, timezone):
+def _apply_temp_password(user, db, password_manager_cls, logger, datetime, timezone):
     """Set a generated temporary password and force change on next login."""
-    temp_password = PasswordManager.generate_temp_password()
-    user.password_hash = PasswordManager.hash_password(temp_password)
+    temp_password = password_manager_cls.generate_temp_password()
+    user.password_hash = password_manager_cls.hash_password(temp_password)
     user.force_password_change = True
     user.password_reset_at = datetime.now(timezone.utc)
     db.commit()
