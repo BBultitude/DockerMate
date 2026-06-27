@@ -50,6 +50,7 @@ CLI Equivalents Shown:
 """
 
 import logging
+import json
 import docker
 from typing import Dict, Any, Optional, List
 from flask import Blueprint, request, jsonify
@@ -65,13 +66,14 @@ from backend.utils.exceptions import (
 )
 from backend.models.database import SessionLocal
 from backend.models.container import Container
+from backend.models.image import Image
+from backend.models.update_history import UpdateHistory
 from backend.extensions import mutation_limit
 
-# Configure logging
 logger = logging.getLogger(__name__)
-
-# Create blueprint for container routes
 containers_bp = Blueprint('containers', __name__, url_prefix='/api/containers')
+
+_DOCKER_CONN_ERROR = _DOCKER_CONN_ERROR
 
 
 # =============================================================================
@@ -204,26 +206,19 @@ def _check_port_conflicts(ports: Dict[str, int], exclude_container_id: Optional[
     """
     db = SessionLocal()
     try:
-        # Extract host ports from request
-        requested_host_ports = set(int(host_port) for host_port in ports.values())
-        
-        # Query all running containers with port mappings
+        requested_host_ports = {int(host_port) for host_port in ports.values()}
+
         query = db.query(Container).filter(
             Container.state.in_(['running', 'created', 'restarting']),
             Container.ports_json.isnot(None)
         )
-        
-        # Exclude current container if updating
         if exclude_container_id:
             query = query.filter(Container.container_id != exclude_container_id)
-        
+
         existing_containers = query.all()
-        
-        # Check for conflicts
         conflicts = []
         for container in existing_containers:
             if container.ports_json:
-                import json
                 try:
                     existing_ports = json.loads(container.ports_json)
                     for port_mapping in existing_ports:
@@ -234,8 +229,7 @@ def _check_port_conflicts(ports: Dict[str, int], exclude_container_id: Optional[
                                 'container_name': container.name,
                                 'container_id': container.container_id[:12]
                             })
-                except (json.JSONDecodeError, ValueError, TypeError):
-                    # Skip malformed port data
+                except (ValueError, TypeError):
                     continue
         
         # Raise error if conflicts found
@@ -455,7 +449,7 @@ def create_container():
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -587,7 +581,7 @@ def list_containers():
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -681,7 +675,7 @@ def get_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -773,10 +767,10 @@ def get_container_health(name_or_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
-    
+
     except Exception as e:
         logger.exception(f"Unexpected error during health check: {e}")
         return jsonify({
@@ -904,7 +898,7 @@ def update_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -1009,7 +1003,7 @@ def delete_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -1106,7 +1100,7 @@ def start_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -1215,7 +1209,7 @@ def stop_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -1324,7 +1318,7 @@ def restart_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
     
@@ -1443,7 +1437,7 @@ def get_container_logs(container_id: str):
         line_count = len([line for line in log_lines if line.strip()])
 
         # Build CLI command equivalent
-        cli_command = f"docker logs"
+        cli_command = "docker logs"
         if timestamps:
             cli_command += " --timestamps"
         if tail_int:
@@ -1472,7 +1466,7 @@ def get_container_logs(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 
@@ -1551,7 +1545,7 @@ def update_container_image(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 
@@ -1627,7 +1621,7 @@ def rollback_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 
@@ -1715,7 +1709,7 @@ def retag_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 
@@ -1839,7 +1833,7 @@ def recreate_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 
@@ -1879,8 +1873,6 @@ def update_all_containers():
     }
     """
     try:
-        from backend.models.image import Image
-
         db = SessionLocal()
         try:
             # Get all managed containers
@@ -1969,8 +1961,6 @@ def get_container_history(container_id: str):
     }
     """
     try:
-        from backend.models.update_history import UpdateHistory
-
         db = SessionLocal()
         try:
             history = db.query(UpdateHistory).filter(
@@ -2113,7 +2103,7 @@ def import_container(container_id: str):
         logger.error(f"Docker connection failed: {e}")
         return jsonify({
             "success": False,
-            "error": "Cannot connect to Docker daemon. Is Docker running?",
+            "error": _DOCKER_CONN_ERROR,
             "error_type": "DockerConnectionError"
         }), 500
 

@@ -36,6 +36,8 @@ cookies.txt
 
 # Claude Code
 .claude/
+CLAUDE.md
+Handoff.md
 
 # DockerMate specific
 data/*.db

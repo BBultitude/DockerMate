@@ -28,21 +28,22 @@ Design Philosophy:
 - Educational comments for learning
 """
 
-from flask import Blueprint, request, jsonify, make_response, redirect
+from flask import Blueprint, request, jsonify, make_response, redirect, current_app
 from backend.models.database import SessionLocal
 from backend.models.user import User
 from backend.models.session import Session as SessionModel
 from backend.auth.password_manager import PasswordManager
 from backend.auth.session_manager import SessionManager
 from backend.extensions import limiter
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
-# Create blueprint for authentication routes
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
-
-# Set up logging
 logger = logging.getLogger(__name__)
+
+_SESSION_COOKIE = 'auth_session'
+_MSG_NOT_AUTHENTICATED = "Not authenticated"
+_MSG_INTERNAL_ERROR = "Internal server error"
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -165,20 +166,15 @@ def login():
             # secure: HTTPS only (no plain HTTP)
             # samesite: Strict CSRF protection
             max_age = 604800 if remember_me else 28800  # 7 days or 8 hours
-            
-            # Conditionally set secure flag based on app mode
-            # In production (HTTPS): secure=True
-            # In testing (HTTP): secure=False to avoid browser rejection
-            from flask import current_app
             secure_cookie = current_app.config.get('DOCKERMATE_SSL_MODE', 'self-signed') != 'disabled'
 
             response.set_cookie(
-                'auth_session',  # Use unique name to avoid Flask session conflict
+                _SESSION_COOKIE,
                 session_token,
                 httponly=True,
-                secure=secure_cookie,  # HTTPS only in production
+                secure=secure_cookie,
                 samesite='Strict',
-                path='/',  # Ensure cookie is sent with all requests
+                path='/',
                 max_age=max_age
             )
             
@@ -189,10 +185,7 @@ def login():
     
     except Exception as e:
         logger.error(f"Login error: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"success": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -220,32 +213,22 @@ def logout():
          --cookie "session=<your-token>"
     """
     try:
-        # Get session token from cookie
-        session_token = request.cookies.get('session')
-        
-        # Revoke session if exists
+        session_token = request.cookies.get(_SESSION_COOKIE)
         if session_token:
             SessionManager.revoke_session(session_token)
             logger.info(f"User logged out from {request.remote_addr}")
-        
-        # Prepare response
+
         response = make_response(jsonify({
             "success": True,
             "message": "Logged out successfully",
             "redirect": "/login"
         }))
-        
-        # Clear session cookie by setting it to expire immediately
-        response.set_cookie('session', '', expires=0)
-        
+        response.set_cookie(_SESSION_COOKIE, '', expires=0)
         return response
-    
+
     except Exception as e:
         logger.error(f"Logout error: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"success": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 @auth_bp.route('/session', methods=['GET'])
@@ -278,17 +261,13 @@ def check_session():
          --cookie "session=<your-token>"
     """
     try:
-        session_token = request.cookies.get('session')
-        
+        session_token = request.cookies.get(_SESSION_COOKIE)
+
         if not session_token:
-            return jsonify({
-                "valid": False,
-                "error": "No session token"
-            }), 401
-        
-        # Validate session and get details
+            return jsonify({"valid": False, "error": "No session token"}), 401
+
         session_info = SessionManager.get_session_info(session_token)
-        
+
         if session_info:
             return jsonify({
                 "valid": True,
@@ -296,17 +275,11 @@ def check_session():
                 "last_accessed": session_info['last_accessed'].isoformat() if session_info['last_accessed'] else None
             })
         else:
-            return jsonify({
-                "valid": False,
-                "error": "Session expired or invalid"
-            }), 401
-    
+            return jsonify({"valid": False, "error": "Session expired or invalid"}), 401
+
     except Exception as e:
         logger.error(f"Session check error: {str(e)}", exc_info=True)
-        return jsonify({
-            "valid": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"valid": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 @auth_bp.route('/change-password', methods=['POST'])
@@ -356,15 +329,12 @@ def change_password():
     """
     try:
         # Require authentication
-        session_token = request.cookies.get('auth_session')
+        session_token = request.cookies.get(_SESSION_COOKIE)
         logger.info(f"Password change request - Session token present: {bool(session_token)}")
 
         if not SessionManager.validate_session(session_token):
             logger.warning(f"Password change failed - Invalid session. Token: {session_token[:20] if session_token else 'None'}...")
-            return jsonify({
-                "success": False,
-                "error": "Not authenticated"
-            }), 401
+            return jsonify({"success": False, "error": _MSG_NOT_AUTHENTICATED}), 401
         
         # Get request data
         data = request.get_json()
@@ -428,7 +398,7 @@ def change_password():
             # Update password in database
             user.password_hash = new_password_hash
             user.force_password_change = False
-            user.password_reset_at = datetime.utcnow()
+            user.password_reset_at = datetime.now(timezone.utc)
             
             db.commit()
             
@@ -449,10 +419,7 @@ def change_password():
     
     except Exception as e:
         logger.error(f"Password change error: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"success": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 @auth_bp.route('/sessions', methods=['GET'])
@@ -492,27 +459,16 @@ def list_sessions():
          --cookie "session=<your-token>"
     """
     try:
-        # Require authentication
-        session_token = request.cookies.get('session')
+        session_token = request.cookies.get(_SESSION_COOKIE)
         if not SessionManager.validate_session(session_token):
-            return jsonify({
-                "success": False,
-                "error": "Not authenticated"
-            }), 401
-        
-        # Get all sessions
+            return jsonify({"success": False, "error": _MSG_NOT_AUTHENTICATED}), 401
+
         sessions_data = SessionManager.get_all_sessions(session_token)
-        
-        return jsonify({
-            "sessions": sessions_data
-        })
-    
+        return jsonify({"sessions": sessions_data})
+
     except Exception as e:
         logger.error(f"List sessions error: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"success": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 @auth_bp.route('/sessions/<int:session_id>', methods=['DELETE'])
@@ -548,43 +504,28 @@ def revoke_session(session_id):
          --cookie "session=<your-token>"
     """
     try:
-        # Require authentication
-        session_token = request.cookies.get('session')
+        session_token = request.cookies.get(_SESSION_COOKIE)
         if not SessionManager.validate_session(session_token):
-            return jsonify({
-                "success": False,
-                "error": "Not authenticated"
-            }), 401
-        
-        # Prevent revoking current session (use logout instead)
+            return jsonify({"success": False, "error": _MSG_NOT_AUTHENTICATED}), 401
+
         current_session_id = SessionManager.get_session_id(session_token)
         if current_session_id == session_id:
             return jsonify({
                 "success": False,
                 "error": "Cannot revoke current session. Use logout endpoint instead."
             }), 400
-        
-        # Revoke the session
+
         success = SessionManager.revoke_session_by_id(session_id)
-        
+
         if success:
             logger.info(f"Session {session_id} revoked from {request.remote_addr}")
-            return jsonify({
-                "success": True,
-                "message": "Session revoked successfully"
-            })
+            return jsonify({"success": True, "message": "Session revoked successfully"})
         else:
-            return jsonify({
-                "success": False,
-                "error": "Session not found"
-            }), 404
-    
+            return jsonify({"success": False, "error": "Session not found"}), 404
+
     except Exception as e:
         logger.error(f"Revoke session error: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "error": "Internal server error"
-        }), 500
+        return jsonify({"success": False, "error": _MSG_INTERNAL_ERROR}), 500
 
 
 # Error handlers for the auth blueprint

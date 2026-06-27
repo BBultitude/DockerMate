@@ -67,6 +67,8 @@ venv.bak/
 # Claude Code
 # ============================================
 .claude/
+CLAUDE.md
+Handoff.md
 
 # ============================================
 # IDEs and Editors

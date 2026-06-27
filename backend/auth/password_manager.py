@@ -284,7 +284,7 @@ class PasswordManager:
         # - (password|admin|...) = followed by a weak base word
         # - [\d!@#$...]* = followed by any number of digits/symbols
         # - $ = end of string
-        weak_pattern = r'^[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*(password|admin|welcome|letmein|qwerty|monkey|dragon|master|login|user)[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*$'
+        weak_pattern = r'^[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*(password|admin|welcome|letmein|qwerty|monkey|dragon|master|login|user)[\d!@#$%^&*()_+=\-\[\]{};:,.<>?/\\|~`]*$'  # NOSONAR: not a hardcoded credential, this is a weak-pattern detection regex
         
         if re.match(weak_pattern, password_lower):
             issues.append("Don't use common words (password, admin, etc.) with just numbers/symbols")

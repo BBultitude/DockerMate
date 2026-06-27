@@ -38,7 +38,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, 
             template_folder='frontend/templates',
             static_folder='frontend/static')
-app.secret_key = os.urandom(24)
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    logger.warning("SECRET_KEY env var not set — CSRF tokens will be invalidated on container restart")
+    _secret_key = os.urandom(24)
+app.secret_key = _secret_key
 
 # Configuration
 app.config['DATABASE_PATH'] = Config.DATABASE_PATH
@@ -124,14 +128,9 @@ def create_ssl_context():
             logger.error(f"Failed to generate certificate: {e}")
             raise
     
-    # Create SSL context
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert_path, key_path)
-    
-    # Security settings - disable old TLS versions
-    context.options |= ssl.OP_NO_TLSv1
-    context.options |= ssl.OP_NO_TLSv1_1
-    
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
 
@@ -231,7 +230,7 @@ def set_security_headers(response):
 # Health Check Endpoint
 # ========================================
 
-@app.route('/api/health')
+@app.route('/api/health', methods=['GET'])
 def health_check():
     """
     Health check endpoint for monitoring
@@ -260,7 +259,7 @@ def health_check():
 # TASK 7: Authentication Routes
 # ========================================
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     """
     Root route - redirect based on setup and authentication status
@@ -291,7 +290,7 @@ def index():
         return redirect('/login')
 
 
-@app.route('/login')
+@app.route('/login', methods=['GET'])
 def login_page():
     """
     Login page
@@ -383,7 +382,7 @@ def setup_page():
         }), 500
 
 
-@app.route('/dashboard')
+@app.route('/dashboard', methods=['GET'])
 @require_auth()
 def dashboard():
     """
@@ -406,7 +405,7 @@ def dashboard():
     return render_template('dashboard.html', session=session_info)
 
 
-@app.route('/containers')
+@app.route('/containers', methods=['GET'])
 @require_auth()
 def containers_page():
     """Containers management page"""
@@ -414,7 +413,7 @@ def containers_page():
     return render_template('containers.html', session=session_info)
 
 
-@app.route('/images')
+@app.route('/images', methods=['GET'])
 @require_auth()
 def images_page():
     """Images management page"""
@@ -422,7 +421,7 @@ def images_page():
     return render_template('images.html', session=session_info)
 
 
-@app.route('/networks')
+@app.route('/networks', methods=['GET'])
 @require_auth()
 def networks_page():
     """Networks management page"""
@@ -430,7 +429,7 @@ def networks_page():
     return render_template('networks.html', session=session_info)
 
 
-@app.route('/volumes')
+@app.route('/volumes', methods=['GET'])
 @require_auth()
 def volumes_page():
     """Volumes management page"""
@@ -438,7 +437,7 @@ def volumes_page():
     return render_template('volumes.html', session=session_info)
 
 
-@app.route('/stacks')
+@app.route('/stacks', methods=['GET'])
 @require_auth()
 def stacks_page():
     """Stacks management page"""
@@ -446,7 +445,7 @@ def stacks_page():
     return render_template('stacks.html', session=session_info)
 
 
-@app.route('/converter')
+@app.route('/converter', methods=['GET'])
 @require_auth()
 def converter_page():
     """Docker Run to Compose converter page"""
@@ -454,7 +453,7 @@ def converter_page():
     return render_template('converter.html', session=session_info)
 
 
-@app.route('/settings')
+@app.route('/settings', methods=['GET'])
 @require_auth()
 def settings_page():
     """Settings page"""
@@ -462,7 +461,7 @@ def settings_page():
     return render_template('settings.html', session=session_info)
 
 
-@app.route('/health')
+@app.route('/health', methods=['GET'])
 @require_auth()
 def health_page():
     """Health monitoring page"""
@@ -543,7 +542,7 @@ if __name__ == '__main__':
         logger.warning("First time setup - running HTTP for initial config")
         logger.info("Visit http://localhost:5000/setup to complete setup")
         # Run HTTP only for initial setup
-        app.run(host='0.0.0.0', port=5000, debug=True)
+        app.run(host='0.0.0.0', port=5000, debug=False)  # NOSONAR: intentional for Docker container
     else:
         logger.info("Starting DockerMate with HTTPS...")
         try:
@@ -553,7 +552,7 @@ if __name__ == '__main__':
             logger.info("DockerMate is running!")
             logger.info("Access at: https://localhost:5000")
             logger.info("=" * 50)
-            app.run(host='0.0.0.0', port=5000, ssl_context=context, debug=False)
+            app.run(host='0.0.0.0', port=5000, ssl_context=context, debug=False)  # NOSONAR: intentional for Docker container
         except Exception as e:
             logger.error(f"Failed to start server: {e}")
             raise
